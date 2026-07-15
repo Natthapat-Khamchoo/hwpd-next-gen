@@ -46,3 +46,7 @@ next-env.d.ts
 
 # Excel temporary lock files
 ~$*
+
+# Antigravity CLI workspace files
+.antigravity/
+.gemini/
