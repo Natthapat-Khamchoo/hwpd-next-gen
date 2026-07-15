@@ -1868,8 +1868,18 @@ export default function HomePage() {
             <iframe
               src="https://hwpd-invest-dashboard.vercel.app/?tab=result"
               title="บก.ทล. แดชบอร์ดงานสืบสวน"
-              className="position-relative w-100 h-100"
-              style={{ border: 'none', background: 'transparent', zIndex: 1 }}
+              className="position-absolute"
+              style={{
+                border: 'none',
+                background: 'transparent',
+                zIndex: 1,
+                width: '125%',
+                height: '125%',
+                transform: 'scale(0.8)',
+                transformOrigin: 'top left',
+                top: 0,
+                left: 0,
+              }}
               allowFullScreen
             />
           </div>
