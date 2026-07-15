@@ -1,0 +1,154 @@
+@import "tailwindcss";
+
+:root {
+  --neon-blue: #00f2ff;
+  --deep-dark: #0a0b10;
+  --card-bg: rgba(255, 255, 255, 0.05);
+}
+
+body {
+  font-family: 'Kanit', 'Noto Sans Thai', sans-serif;
+  background: radial-gradient(circle at center, #1a1c2c 0%, var(--deep-dark) 100%);
+  min-height: 100vh;
+  margin: 0;
+  color: white;
+  padding: 20px;
+}
+
+.glass-card {
+  background: var(--card-bg);
+  backdrop-filter: blur(15px);
+  border-radius: 20px;
+  border: 1px solid rgba(0, 242, 255, 0.2);
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.5), 0 0 15px rgba(0, 242, 255, 0.1);
+  width: 100%;
+  max-width: 900px;
+  padding: 30px;
+  transition: all 0.3s ease;
+  margin: 0 auto;
+}
+
+.title-area {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.title-area h2 {
+  font-weight: 600;
+  text-shadow: 0 0 10px var(--neon-blue);
+  color: white;
+}
+
+.form-control, .form-select {
+  background: rgba(0, 0, 0, 0.3) !important;
+  border: 1px solid rgba(0, 242, 255, 0.3) !important;
+  color: white !important;
+  padding: 12px !important;
+  border-radius: 10px !important;
+}
+
+.form-control:focus, .form-select:focus {
+  background: rgba(0, 0, 0, 0.5) !important;
+  border-color: var(--neon-blue) !important;
+  box-shadow: 0 0 10px rgba(0, 242, 255, 0.5) !important;
+  color: white !important;
+}
+
+.btn-primary-custom {
+  background: linear-gradient(45deg, #0066ff, var(--neon-blue));
+  border: none;
+  padding: 12px;
+  font-weight: 600;
+  border-radius: 10px;
+  width: 100%;
+  color: white;
+  margin-top: 15px;
+  box-shadow: 0 5px 15px rgba(0, 102, 255, 0.4);
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.btn-primary-custom:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 102, 255, 0.6), 0 0 10px rgba(0, 242, 255, 0.4);
+}
+
+.profile-section {
+  background: rgba(0, 0, 0, 0.4);
+  border-left: 5px solid var(--neon-blue);
+  padding: 15px 20px;
+  border-radius: 15px;
+  margin-bottom: 25px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.profile-info h5 {
+  margin: 0;
+  color: var(--neon-blue);
+  font-weight: 600;
+}
+
+.profile-info p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #ccc;
+}
+
+.menu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 15px;
+}
+
+.menu-btn {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 15px;
+  padding: 20px 10px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.menu-btn i {
+  font-size: 30px;
+  margin-bottom: 10px;
+  color: var(--neon-blue);
+}
+
+.menu-btn:hover {
+  background: rgba(0, 242, 255, 0.1);
+  border-color: var(--neon-blue);
+  transform: translateY(-5px);
+  box-shadow: 0 5px 15px rgba(0, 242, 255, 0.2);
+}
+
+::placeholder {
+  color: rgba(255, 255, 255, 0.6) !important;
+  opacity: 1 !important;
+}
+
+/* Custom styles for tab navs in bootstrap dark */
+.nav-pills .nav-link {
+  color: #aaa;
+  border-radius: 10px;
+  font-weight: 500;
+  transition: all 0.3s;
+}
+
+.nav-pills .nav-link.active {
+  background-color: var(--neon-blue) !important;
+  color: #0a0b10 !important;
+  font-weight: bold;
+}
+
+/* Custom border classes */
+.border-info {
+  border-color: var(--neon-blue) !important;
+}
+
+.text-info {
+  color: var(--neon-blue) !important;
+}

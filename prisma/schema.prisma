@@ -1,0 +1,276 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  username     String   @id
+  password     String
+  fullName     String
+  station      String
+  unit         String
+  role         String
+  helpGoTo     String?
+  helpFrom     String?
+  note         String?
+  phone        String?
+  code         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Charge {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+}
+
+model DailyResult {
+  recordId       String   @id
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  actionBy       String
+  status         String
+  isActive       Boolean  @default(true)
+  actualDate     String
+  stationId      String
+  unitId         String
+  reportDateTime String
+  v43            Int
+  service        Int
+  v42            Int
+  v20            Int
+  chargesText    String
+  mapLink        String?
+  signatureUrl   String?
+  notes          String?
+  folderUrl      String?
+}
+
+model Arrest {
+  recordId       String   @id
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  actionBy       String
+  status         String
+  isActive       Boolean  @default(true)
+  actualDate     String
+  stationId      String
+  unitId         String
+  reportDateTime String
+  suspectCount   Int
+  suspectsText   String
+  offense        String
+  circumstances  String
+  mapLink        String?
+  folderUrl      String?
+}
+
+model Accident {
+  recordId       String   @id
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  actionBy       String
+  status         String
+  isActive       Boolean  @default(true)
+  actualDate     String
+  stationId      String
+  unitId         String
+  reportDateTime String
+  route          String
+  km             String
+  direction      String
+  locDetails     String
+  deadCount      Int
+  injuredCount   Int
+  hospital       String?
+  mainVehicle    String
+  oppVehicle     String
+  cHuman         Float
+  cVehicle       Float
+  cRoad          Float
+  cEnv           Float
+  solutions      String?
+  govDamage      String?
+  carNumber      String?
+  jointUnits     String?
+  description    String?
+  lat            String?
+  lng            String?
+  folderUrl      String?
+}
+
+model OtherDuty {
+  recordId   String   @id
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  actionBy   String
+  status     String
+  isActive   Boolean  @default(true)
+  actualDate String
+  stationId  String
+  unitId     String
+  dutyType   String
+  details    String
+  location   String
+  folderUrl  String?
+}
+
+model RoyalGuard {
+  recordId       String   @id
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  actionBy       String
+  status         String
+  isActive       Boolean  @default(true)
+  actualDate     String
+  stationId      String
+  unitId         String
+  reportType     String
+  reportDateTime String
+  commanders     String
+  missionName    String
+  carNumbers     String
+  details        String
+  folderUrl      String?
+  targetCount    Int
+}
+
+model Mission {
+  recordId       String   @id
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  actionBy       String
+  status         String
+  isActive       Boolean  @default(true)
+  actualDate     String
+  stationId      String
+  unitId         String
+  reportDateTime String
+  startTime      String
+  endTime        String
+  targetUnits    String
+  missionDetails String
+  location       String
+  folderUrl      String?
+}
+
+model Inventory {
+  recordId        String   @id
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  actionBy        String
+  status          String
+  isActive        Boolean  @default(true)
+  actualDate      String
+  stationId       String
+  unitId          String
+  actionDateTime  String
+  transactionType String
+  category        String
+  itemName        String
+  qty             Float
+  unitMeasure     String
+  receiverName    String
+  signatureUrl    String?
+  notes           String?
+}
+
+model Repair {
+  recordId       String   @id
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  actionBy       String
+  status         String
+  isActive       Boolean  @default(true)
+  actualDate     String
+  stationId      String
+  unitId         String
+  reportDateTime String
+  brokenItem     String
+  issueDetail    String
+  reporterName   String
+  repairStatus   String
+  folderUrl      String?
+}
+
+model OnlineDocument {
+  recordId       String   @id
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  actionBy       String
+  status         String
+  isActive       Boolean  @default(true)
+  actualDate     String
+  stationId      String
+  unitId         String
+  reportDateTime String
+  subject        String
+  docType        String
+  senderName     String
+  docStatus      String
+  fileUrl        String?
+}
+
+model FuelOil {
+  recordId       String   @id
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  actionBy       String
+  status         String
+  isActive       Boolean  @default(true)
+  actualDate     String
+  stationId      String
+  unitId         String
+  recordType     String
+  actionDateTime String
+  actionPerson   String
+  plateNumber    String
+  currentMileage Float
+  liters         Float
+  fuelType       String?
+  price          Float?
+  receiptNumber  String?
+  prevMileage    Float?
+  distanceUsed   Float?
+}
+
+model FuelQuota {
+  id             Int      @id @default(autoincrement())
+  monthYear      String
+  stationId      String
+  quotaLiters    Float
+  quotaBaht      Float
+  quotaOilLiters Float
+  lastUpdate     DateTime @default(now())
+  actionBy       String
+}
+
+model NationalSummary {
+  recordId            String   @id
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  actionBy            String
+  status              String
+  isActive            Boolean  @default(true)
+  dateStr             String
+  div                 String
+  divName             String
+  arrestsCount        Int
+  v20Count            Int
+  v43Count            Int
+  v42Count            Int
+  serviceCount        Int
+  accCount            Int
+  deadCount           Int
+  injuredCount        Int
+  volCount            Int
+  royalCount          Int
+  missionCount        Int
+  jsonArrest          String
+  jsonCharge          String
+  jsonAccCause        String
+}
