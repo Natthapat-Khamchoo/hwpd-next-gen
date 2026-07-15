@@ -40,13 +40,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# SQLite
-*.db
-*.db-journal
-
-# Excel temporary lock files
-~$*
-
 # Antigravity CLI workspace files
 .antigravity/
 .gemini/
