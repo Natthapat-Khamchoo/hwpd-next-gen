@@ -1,0 +1,31 @@
+# Ignore Legacy Apps Script Original Folder
+original file/
+original file
+
+# Dependency & Build Output
+node_modules/
+dist/
+build/
+.vite/
+
+# Python Virtual Environments & Cache
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.venv/
+env/
+.env
+
+# Environment & Secrets
+*.env
+*.pem
+*.key
+.clasp.json
+
+# IDE & OS System Files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
