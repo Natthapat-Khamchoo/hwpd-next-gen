@@ -20,16 +20,42 @@ export const api = {
             .checkLogin(username, password);
         });
       }
+      if (username === 'sib51' && password === 'password123') {
+        return {
+          status: 'success',
+          user: {
+            username: 'sib51',
+            fullName: 'ร.ต.อ. หัวหน้า สิบเวร',
+            station: '51',
+            unit: 'ส.ทล.1 กก.5',
+            role: 'Station_Admin',
+            token: 'demo-token-station-admin',
+          },
+        };
+      }
       if (username === 'admin50' && password === 'password123') {
         return {
           status: 'success',
           user: {
             username: 'admin50',
-            fullName: 'ผู้ดูแล กก.5 (ฝอ.)',
+            fullName: 'พ.ต.ท. ฝอ.กก.5',
             station: '50',
             unit: 'ฝอ.กก.5',
             role: 'Division_Admin',
             token: 'demo-token-division-admin',
+          },
+        };
+      }
+      if (username === 'commander50' && password === 'password123') {
+        return {
+          status: 'success',
+          user: {
+            username: 'commander50',
+            fullName: 'พ.ต.อ. ผกก.5',
+            station: '50',
+            unit: 'กก.5',
+            role: 'Division_Commander',
+            token: 'demo-token-division-commander',
           },
         };
       }

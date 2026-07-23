@@ -61,10 +61,14 @@ def login(req: LoginRequest):
     if not username:
         raise HTTPException(status_code=400, detail="กรุณาระบุ Username")
 
-    # ตัวอย่างข้อมูลผู้ใช้สำหรับการทดสอบ
+    # ตัวอย่างข้อมูลผู้ใช้สำหรับการทดสอบ — ครบทั้ง 6 role (รหัสผ่านเดียวกัน: password123)
     dummy_users = {
-        "admin50": {"fullName": "ผู้ดูแล กก.5", "station": "50", "unit": "ฝอ.กก.5", "role": "Division_Admin", "password": "password123"},
-        "super1": {"fullName": "ผู้บังคับการ", "station": "00", "unit": "บก.ทล.", "role": "Super_Commander", "password": "password123"},
+        "officer51": {"fullName": "ด.ต. สมชาย สายตรวจ", "station": "51", "unit": "หน่วยฯดอนจาน", "role": "Unit_Staff", "password": "password123"},
+        "sib51": {"fullName": "ร.ต.อ. หัวหน้า สิบเวร", "station": "51", "unit": "ส.ทล.1 กก.5", "role": "Station_Admin", "password": "password123"},
+        "admin50": {"fullName": "พ.ต.ท. ฝอ.กก.5", "station": "50", "unit": "ฝอ.กก.5", "role": "Division_Admin", "password": "password123"},
+        "commander50": {"fullName": "พ.ต.อ. ผกก.5", "station": "50", "unit": "กก.5", "role": "Division_Commander", "password": "password123"},
+        "super1": {"fullName": "พล.ต.ต. ผู้บังคับการตำรวจทางหลวง", "station": "00", "unit": "บก.ทล.", "role": "Super_Commander", "password": "password123"},
+        "hqadmin1": {"fullName": "พ.ต.อ. ฝอ.บก.ทล.", "station": "00", "unit": "บก.ทล.", "role": "HQ_Admin", "password": "password123"},
     }
 
     user = dummy_users.get(username)
