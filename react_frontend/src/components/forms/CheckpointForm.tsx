@@ -1,152 +1,149 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
-import { ShieldCheck, ArrowLeft, Send } from 'lucide-react';
+import { useStationData } from '../../hooks/useStationData';
+import { FormShell } from './FormShell';
+import {
+  getNowDateTimeLocal,
+  getFrontendStationData,
+  formatPreviewDate,
+  filesToBase64,
+  confirmLinePreview,
+  showLineCopyResult,
+  loadingModal,
+} from '../../utils/formHelpers';
 import Swal from 'sweetalert2';
 
-interface CheckpointFormProps {
-  onBack: () => void;
-}
+const LOCATIONS = [
+  'หน้าหน่วยบริการสามเงา ทล.1 กม 571-572 ต.วังจันทร์ อ.สามเงา จ.ตาก',
+  'หน้าหน่วยฯ คลองขลุง ทล.1 กม. 414-415 ต.คลองขลุง อ.คลองขลุง จ.กำแพงเพชร',
+];
 
-export const CheckpointForm: React.FC<CheckpointFormProps> = ({ onBack }) => {
+export const CheckpointForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { user } = useAuth();
-  const [submitting, setSubmitting] = useState(false);
-
-  const today = new Date().toISOString().split('T')[0];
-  const [formData, setFormData] = useState({
-    reportDateTime: `${today}T10:00`,
-    stationId: user?.station || '51',
-    unitId: user?.unit || 'หน่วยฯดอนจาน',
-    dutyOfficer: user?.fullName || '',
-    totalPersonnel: 4,
-    carNumber: '5101',
-    location: 'ทางหลวงหมายเลข 12 กม. 45+000 ต.ดอนจาน อ.ดอนจาน จ.กาฬสินธุ์',
-    actionBy: user?.fullName || 'เจ้าหน้าที่',
+  const { units, users, phoneMap } = useStationData();
+  const [f, setF] = useState({
+    reportDateTime: getNowDateTimeLocal(),
+    unitId: '',
+    dutyOfficer: '',
+    totalPersonnel: '',
+    carNumber: '',
+    location: '',
+    locationOther: '',
   });
+  const [files, setFiles] = useState<FileList | null>(null);
+  const set = (k: string, v: string) => setF((p) => ({ ...p, [k]: v }));
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
-    try {
-      const res = await api.submitReport('checkpoint', formData, user?.token);
-      if (res.status === 'success') {
-        Swal.fire({
-          icon: 'success',
-          title: 'บันทึกจุดตรวจ ว.43 สำเร็จ',
-          text: `รหัสอ้างอิง: ${res.recordId || 'CHK-SUCCESS'}`,
-        }).then(() => onBack());
-      } else {
-        Swal.fire('ข้อผิดพลาด', res.message || 'บันทึกไม่สำเร็จ', 'error');
-      }
-    } catch (err: any) {
-      Swal.fire('เกิดข้อผิดพลาด', err.message, 'error');
-    } finally {
-      setSubmitting(false);
+  const submit = async () => {
+    if (!f.unitId || !f.dutyOfficer || !f.totalPersonnel || !f.carNumber || !f.location) {
+      Swal.fire('ข้อมูลไม่ครบ', 'กรุณากรอกข้อมูลที่มีเครื่องหมาย * ให้ครบถ้วน', 'warning');
+      return;
+    }
+    if (f.location === 'อื่นๆ' && !f.locationOther) {
+      Swal.fire('ข้อมูลไม่ครบ', 'กรุณาระบุสถานที่ตั้งด่าน', 'warning');
+      return;
+    }
+    const st = getFrontendStationData(user?.station);
+    const finalLocation = f.location === 'อื่นๆ' ? f.locationOther : f.location;
+    const dateText = formatPreviewDate(f.reportDateTime);
+    const previewText =
+      `เรียน ผู้บังคับบัญชา\nกองบัญชาการตำรวจสอบสวนกลาง(CIB)​\nโดย ${st.f} (${st.p})\nวันนี้ ${dateText}\n` +
+      `หน่วยบริการฯตำรวจทางหลวง ${f.unitId}\nรถวิทยุ ${f.carNumber}\n` +
+      `${f.dutyOfficer} พร้อมพวกรวม ${f.totalPersonnel} นาย ตั้ง ว.43 อาญา/จราจร \n` +
+      `บริเวณ ${finalLocation} ผลการปฏิบัติจะรายงานให้ทราบต่อไป\n\nจึงเรียนมาเพื่อโปรดทราบ\n    (${st.p})\n` +
+      `ไฟล์แนบ: [ระบบจะแนบลิงก์ไฟล์อัตโนมัติ]`;
+
+    const { confirmed, copied } = await confirmLinePreview(previewText);
+    if (!confirmed) return;
+    loadingModal('กำลังบันทึกรายงานด่าน...');
+    const payload = { ...f, location: finalLocation, stationId: user?.station, actionBy: user?.username };
+    const attachments = await filesToBase64(files);
+    const res = await api.submitReport('checkpoint', payload, user?.token, { files: attachments });
+    if (res.status === 'success') {
+      await showLineCopyResult(res.message || 'บันทึกรายงานด่านสำเร็จ', res.lineText || previewText, copied);
+      onBack();
+    } else {
+      Swal.fire('ผิดพลาด', res.message || 'บันทึกไม่สำเร็จ', 'error');
     }
   };
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 animate-fade-in space-y-6">
-      <div className="flex items-center justify-between">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm font-medium"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>ย้อนกลับเมนูหลัก</span>
-        </button>
-
-        <div className="flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
-          <ShieldCheck className="w-3.5 h-3.5" />
-          <span>ฟอร์ม CHK (ตั้งด่าน/จุดตรวจ)</span>
-        </div>
-      </div>
-
-      <div className="glass-card p-6 md:p-8 space-y-6">
-        <div>
-          <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <ShieldCheck className="w-6 h-6 text-purple-400" />
-            <span>รายงานการตั้งจุดตรวจ ว.43 (อาญา/จราจร)</span>
-          </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            สังกัด {formData.unitId} (ส.ทล.{formData.stationId} กก.{formData.stationId[0]} บก.ทล.)
-          </p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="form-label">วันเวลาที่ตั้งด่าน</label>
-              <input
-                type="datetime-local"
-                className="form-input"
-                value={formData.reportDateTime}
-                onChange={(e) => setFormData({ ...formData, reportDateTime: e.target.value })}
-                required
-              />
-            </div>
-            <div>
-              <label className="form-label">รถวิทยุประจำจุดตรวจ</label>
-              <input
-                type="text"
-                className="form-input"
-                value={formData.carNumber}
-                onChange={(e) => setFormData({ ...formData, carNumber: e.target.value })}
-                required
-              />
+    <FormShell title="รายงานด่าน จุดตรวจ จุดสกัด" onBack={onBack} backLabel="กลับ">
+      <div className="glass-card w-100">
+        <div className="row g-3">
+          <div className="col-12 col-md-6">
+            <label className="form-label small text-white-50">วันที่เวลาที่รายงาน</label>
+            <div className="d-flex gap-2 align-items-stretch">
+              <input type="datetime-local" className="form-control" value={f.reportDateTime} onChange={(e) => set('reportDateTime', e.target.value)} />
+              <button type="button" className="btn btn-outline-info" onClick={() => set('reportDateTime', getNowDateTimeLocal())} title="ใช้เวลาปัจจุบัน">
+                <i className="fa-solid fa-clock-rotate-left"></i>
+              </button>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="form-label">หัวหน้าชุดควบคุมการปฏิบัติ</label>
-              <input
-                type="text"
-                className="form-input"
-                value={formData.dutyOfficer}
-                onChange={(e) => setFormData({ ...formData, dutyOfficer: e.target.value })}
-                required
-              />
-            </div>
-            <div>
-              <label className="form-label">จำนวนกำลังพลรวม (นาย)</label>
-              <input
-                type="number"
-                min="1"
-                className="form-input"
-                value={formData.totalPersonnel}
-                onChange={(e) => setFormData({ ...formData, totalPersonnel: parseInt(e.target.value) || 1 })}
-                required
-              />
-            </div>
+          <div className="col-12 col-md-6">
+            <label className="form-label small text-white-50">หน่วยบริการ *</label>
+            <select className="form-select" value={f.unitId} onChange={(e) => set('unitId', e.target.value)} required>
+              <option value="">-- เลือกหน่วยบริการ --</option>
+              {units.map((u) => (
+                <option key={u} value={u}>{u}</option>
+              ))}
+            </select>
           </div>
 
-          <div>
-            <label className="form-label">สถานที่ตั้งจุดตรวจ / พิกัดทางหลวง</label>
-            <textarea
-              rows={3}
-              className="form-textarea"
-              value={formData.location}
-              onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-              required
-            ></textarea>
+          <div className="col-12"><hr className="border-secondary" /></div>
+
+          <div className="col-12 col-md-8">
+            <label className="form-label small text-white-50">ผู้ปฏิบัติหน้าที่ประจำหน่วย (ยศ ชื่อ สกุล ตำแหน่ง) *</label>
+            <select className="form-select" value={f.dutyOfficer} onChange={(e) => set('dutyOfficer', e.target.value)} required>
+              <option value="">-- เลือกรายชื่อ --</option>
+              {users.map((u) => (
+                <option key={u} value={u}>{u}</option>
+              ))}
+            </select>
+            {f.dutyOfficer && phoneMap[f.dutyOfficer] && (
+              <div className="small text-info mt-1"><i className="fa-solid fa-phone"></i> {phoneMap[f.dutyOfficer]}</div>
+            )}
+          </div>
+          <div className="col-12 col-md-4">
+            <label className="form-label small text-white-50">จำนวนผู้ปฏิบัติรวม (นาย) *</label>
+            <input type="number" className="form-control" placeholder="รวมผู้รายงาน" value={f.totalPersonnel} onChange={(e) => set('totalPersonnel', e.target.value)} required />
           </div>
 
-          <div className="pt-4 flex justify-end gap-3">
-            <button type="button" onClick={onBack} className="px-5 py-2.5 rounded-xl border border-white/20 text-slate-300 hover:bg-white/5 text-sm">
-              ยกเลิก
-            </button>
-            <button type="submit" disabled={submitting} className="btn-neon-purple px-6 py-2.5 text-sm">
-              {submitting ? 'กำลังบันทึก...' : (
-                <span className="flex items-center gap-2">
-                  <Send className="w-4 h-4" />
-                  ส่งรายงานตั้งด่าน
-                </span>
-              )}
+          <div className="col-12">
+            <label className="form-label small text-white-50">รถวิทยุตรวจเขต *</label>
+            <input type="text" className="form-control" placeholder="ระบุเลขรถวิทยุ" value={f.carNumber} onChange={(e) => set('carNumber', e.target.value)} required />
+          </div>
+
+          <div className="col-12 col-md-6">
+            <label className="form-label small text-white-50">สถานที่ตั้งด่าน *</label>
+            <select className="form-select" value={f.location} onChange={(e) => set('location', e.target.value)} required>
+              <option value="">-- เลือกสถานที่ --</option>
+              {LOCATIONS.map((l) => (
+                <option key={l} value={l}>{l}</option>
+              ))}
+              <option value="อื่นๆ">อื่นๆ (ระบุเอง)</option>
+            </select>
+          </div>
+          {f.location === 'อื่นๆ' && (
+            <div className="col-12 col-md-6">
+              <label className="form-label small text-white-50">ระบุสถานที่อื่นๆ</label>
+              <input type="text" className="form-control border-info" placeholder="กรอกสถานที่" value={f.locationOther} onChange={(e) => set('locationOther', e.target.value)} />
+            </div>
+          )}
+
+          <div className="col-12">
+            <label className="form-label small text-white-50">แนบภาพประกอบด่าน (เลือกได้หลายไฟล์)</label>
+            <input type="file" className="form-control" multiple accept="image/*" onChange={(e) => setFiles(e.target.files)} />
+          </div>
+
+          <div className="col-12 mt-4">
+            <button type="button" className="btn-primary-custom" onClick={submit}>
+              <i className="fa-solid fa-paper-plane"></i> ตรวจสอบข้อมูลก่อนส่ง
             </button>
           </div>
-        </form>
+        </div>
       </div>
-    </div>
+    </FormShell>
   );
 };

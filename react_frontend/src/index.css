@@ -1,167 +1,286 @@
-@import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap');
+/* Layer order: Bootstrap (lowest) < Tailwind theme/utilities < unlayered neon theme (wins). */
+@layer bootstrap, theme, utilities;
 
+@import "bootstrap/dist/css/bootstrap.min.css" layer(bootstrap);
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+/* ============================================================
+   Design tokens — ported 1:1 from the original GAS index.html.
+   Everything below is UNLAYERED so it wins over Bootstrap.
+   ============================================================ */
 :root {
   --neon-blue: #00f2ff;
-  --neon-purple: #a855f7;
-  --neon-gold: #facc15;
-  --neon-green: #10b981;
-  --neon-red: #ef4444;
-  
-  --bg-deep: #07090e;
-  --card-bg: rgba(17, 24, 39, 0.7);
-  --card-border: rgba(255, 255, 255, 0.1);
-  --text-main: #f3f4f6;
-  --text-muted: #9ca3af;
+  --deep-dark: #0a0b10;
+  --card-bg: rgba(255, 255, 255, 0.05);
 }
 
 * {
   box-sizing: border-box;
-  margin: 0;
-  padding: 0;
 }
 
 body {
-  font-family: 'Kanit', 'Outfit', sans-serif;
-  background: radial-gradient(circle at 15% 15%, #181b30 0%, var(--bg-deep) 85%);
+  margin: 0;
+  font-family: 'Kanit', sans-serif;
+  background: radial-gradient(circle at center, #1a1c2c 0%, var(--deep-dark) 100%);
+  background-attachment: fixed;
   min-height: 100vh;
-  color: var(--text-main);
+  color: #fff;
   line-height: 1.5;
-  overflow-x: hidden;
 }
 
-/* Glassmorphism Containers */
+::placeholder {
+  color: rgba(255, 255, 255, 0.6) !important;
+  opacity: 1 !important;
+}
+
+.text-neon {
+  color: var(--neon-blue);
+}
+
+/* ---- Glass cards ---- */
 .glass-card {
   background: var(--card-bg);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
   border-radius: 20px;
-  border: 1px solid var(--card-border);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), 0 0 20px rgba(0, 242, 255, 0.05);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid rgba(0, 242, 255, 0.2);
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.5), 0 0 15px rgba(0, 242, 255, 0.1);
+  padding: 30px;
+  transition: all 0.3s ease;
+}
+.glass-card.login-card {
+  padding: 40px;
 }
 
+.title-area {
+  text-align: center;
+  margin-bottom: 30px;
+}
+.title-area h2 {
+  font-weight: 600;
+  text-shadow: 0 0 10px var(--neon-blue);
+  margin: 0;
+}
+
+/* ---- Form controls (neon) — override Bootstrap ---- */
+.form-control,
+.form-select {
+  background-color: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(0, 242, 255, 0.3);
+  color: #fff;
+  border-radius: 10px;
+  transition: all 0.2s ease;
+}
+.form-control:focus,
+.form-select:focus {
+  background-color: rgba(0, 0, 0, 0.5);
+  border-color: var(--neon-blue);
+  box-shadow: 0 0 10px rgba(0, 242, 255, 0.5);
+  color: #fff;
+}
+.form-select option {
+  background-color: #14161f;
+  color: #fff;
+}
+.form-control::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.btn-primary-custom {
+  background: linear-gradient(45deg, #0066ff, var(--neon-blue));
+  border: none;
+  padding: 12px;
+  font-weight: 600;
+  border-radius: 10px;
+  width: 100%;
+  color: #fff;
+  margin-top: 5px;
+  box-shadow: 0 5px 15px rgba(0, 102, 255, 0.4);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-primary-custom:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 6px 18px rgba(0, 102, 255, 0.55);
+  color: #fff;
+}
+.btn-primary-custom:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+/* ---- Main-menu profile section + tiles ---- */
+.profile-section {
+  background: rgba(0, 0, 0, 0.4);
+  border-left: 5px solid var(--neon-blue);
+  padding: 15px 20px;
+  border-radius: 15px;
+  margin-bottom: 25px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.profile-info h5 {
+  margin: 0;
+  color: var(--neon-blue);
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+.profile-info p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #ccc;
+}
+
+.menu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 15px;
+}
+.menu-btn {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 15px;
+  padding: 20px 10px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s;
+  color: #fff;
+}
+.menu-btn i {
+  font-size: 30px;
+  margin-bottom: 10px;
+  color: var(--neon-blue);
+  display: block;
+}
+.menu-btn:hover {
+  background: rgba(0, 242, 255, 0.1);
+  border-color: var(--neon-blue);
+  transform: translateY(-5px);
+  box-shadow: 0 5px 15px rgba(0, 242, 255, 0.2);
+}
+
+/* Small round action buttons in the profile bar */
+.btn-outline-round {
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
+}
+.btn-outline-round:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.btn-outline-info { color: var(--neon-blue); }
+.btn-outline-danger { color: #ff5b6e; }
+.btn-outline-warning { color: #ffc107; }
+
+/* ---- LINE preview <pre> used in Swal modals ---- */
+.line-preview {
+  text-align: left;
+  background: #1c2128;
+  color: #00f2ff;
+  padding: 15px;
+  border-radius: 10px;
+  font-family: 'Kanit', sans-serif;
+  font-size: 14px;
+  white-space: pre-wrap;
+  border: 1px solid rgba(0, 242, 255, 0.3);
+  line-height: 1.6;
+  max-height: 320px;
+  overflow: auto;
+}
+
+/* ---- Helper classes kept for dashboard components ---- */
 .glass-card-hover:hover {
   transform: translateY(-4px);
   border-color: rgba(0, 242, 255, 0.3);
   box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), 0 0 25px rgba(0, 242, 255, 0.15);
 }
-
-/* Buttons */
-.btn-neon {
-  background: linear-gradient(135deg, #0066ff 0%, var(--neon-blue) 100%);
-  color: #fff;
-  font-weight: 600;
-  border: none;
-  padding: 12px 24px;
-  border-radius: 12px;
-  cursor: pointer;
-  box-shadow: 0 4px 15px rgba(0, 242, 255, 0.3);
-  transition: all 0.2s ease;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
-.btn-neon:hover {
-  transform: scale(1.02);
-  box-shadow: 0 6px 20px rgba(0, 242, 255, 0.5);
-}
-
-.btn-neon-purple {
-  background: linear-gradient(135deg, #7e22ce 0%, var(--neon-purple) 100%);
-  box-shadow: 0 4px 15px rgba(168, 85, 247, 0.3);
-}
-
-.btn-neon-purple:hover {
-  box-shadow: 0 6px 20px rgba(168, 85, 247, 0.5);
-}
-
-.btn-neon-gold {
-  background: linear-gradient(135deg, #ca8a04 0%, var(--neon-gold) 100%);
-  color: #000;
-  box-shadow: 0 4px 15px rgba(250, 204, 21, 0.3);
-}
-
-.btn-neon-gold:hover {
-  box-shadow: 0 6px 20px rgba(250, 204, 21, 0.5);
-}
-
-/* Form Controls */
-.form-input, .form-select, .form-textarea {
-  width: 100%;
-  background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #fff;
-  padding: 12px 16px;
-  border-radius: 12px;
-  font-family: inherit;
-  font-size: 0.95rem;
-  outline: none;
-  transition: all 0.2s ease;
-}
-
-.form-input:focus, .form-select:focus, .form-textarea:focus {
-  border-color: var(--neon-blue);
-  box-shadow: 0 0 12px rgba(0, 242, 255, 0.4);
-  background: rgba(0, 0, 0, 0.6);
-}
-
-.form-label {
-  display: block;
-  font-size: 0.85rem;
-  font-weight: 500;
-  margin-bottom: 6px;
-  color: var(--text-muted);
-}
-
-/* KPI Badges */
 .kpi-box {
   padding: 20px;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
   text-align: center;
-  position: relative;
-  overflow: hidden;
 }
+.kpi-box .val { font-size: 2rem; font-weight: 700; line-height: 1.2; }
+.kpi-box .lbl { font-size: 0.8rem; color: #9ca3af; margin-top: 4px; }
 
-.kpi-box .val {
-  font-size: 2rem;
-  font-weight: 700;
-  line-height: 1.2;
+/* ============================================================
+   Dashboard shell (ported from admin/hq/super dashboards)
+   ============================================================ */
+.dashboard-wrapper { display: flex; min-height: 100vh; width: 100%; }
+.hq-bg { background: radial-gradient(circle at top right, #0a0b10 0%, #111827 100%); }
+.sc-bg { background: radial-gradient(circle at top left, #0d1117 0%, #000 100%); }
+
+.dash-sidebar {
+  background: rgba(15, 23, 42, 0.95);
+  border-right: 1px solid rgba(0, 242, 255, 0.2);
+  display: flex; flex-direction: column; width: 260px; min-width: 260px; flex-shrink: 0;
 }
-
-.kpi-box .lbl {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-top: 4px;
+.dash-sidebar.sc { border-right-color: rgba(250, 204, 21, 0.2); width: 280px; min-width: 280px; }
+.dash-sidebar.hqa { border-right-color: rgba(168, 85, 247, 0.25); }
+.hqa-bg { background: radial-gradient(circle at top right, #0a0b10 0%, #1a1030 100%); }
+.sidebar-header { padding: 20px; border-bottom: 1px solid rgba(0, 242, 255, 0.3); }
+.dash-sidebar.sc .sidebar-header { border-bottom-color: rgba(250, 204, 21, 0.3); }
+.sidebar-menu { flex-grow: 1; padding: 20px 0; overflow-y: auto; }
+.sidebar-item {
+  padding: 12px 25px; color: rgba(255, 255, 255, 0.7); cursor: pointer; transition: all 0.2s;
+  display: flex; align-items: center; gap: 15px; border-left: 4px solid transparent; font-size: 0.95rem;
 }
+.sidebar-item:hover, .sidebar-item.active { background: rgba(0, 242, 255, 0.1); color: #00f2ff; border-left-color: #00f2ff; }
+.dash-sidebar.sc .sidebar-item:hover, .dash-sidebar.sc .sidebar-item.active { background: rgba(250, 204, 21, 0.1); color: #facc15; border-left-color: #facc15; }
+.dash-sidebar.hqa .sidebar-item:hover, .dash-sidebar.hqa .sidebar-item.active { background: rgba(168, 85, 247, 0.12); color: #c084fc; border-left-color: #a855f7; }
+.main-content { flex-grow: 1; padding: 20px; overflow-y: auto; width: 100%; }
 
-/* Animations */
+/* Dashboard KPI cards */
+.kpi-card { border-radius: 15px; padding: 15px; text-align: center; border: 1px solid rgba(255,255,255,0.1); transition: transform 0.2s; }
+.kpi-card:hover { transform: translateY(-5px); }
+.kpi-card .value { font-size: 1.8rem; font-weight: 600; margin: 10px 0 0; }
+.kpi-card .title { font-size: 0.85rem; color: rgba(255,255,255,0.7); }
+
+.sc-kpi { text-align: center; padding: 20px 10px; border-radius: 12px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); transition: transform 0.3s; }
+.sc-kpi:hover { transform: translateY(-5px); border-color: #facc15; background: rgba(250, 204, 21, 0.05); }
+.sc-kpi .icon { font-size: 2rem; margin-bottom: 10px; opacity: 0.8; }
+.sc-kpi .value { font-size: 2.2rem; font-weight: 700; margin: 0; line-height: 1; }
+.sc-kpi .title { font-size: 0.85rem; color: #8b949e; margin-top: 8px; text-transform: uppercase; letter-spacing: 1px; }
+
+/* Dashboard tables */
+.table-hq, .table-hq td, .table-hq th { background-color: transparent !important; color: #fff !important; border-color: rgba(255,255,255,0.05); vertical-align: middle; }
+.table-hq th { background: rgba(30, 41, 59, 0.9) !important; color: #38bdf8 !important; border-bottom: 2px solid #0ea5e9; font-weight: 400; }
+.table-sc, .table-sc td { background: rgba(15, 23, 42, 0.8) !important; color: #fff !important; border-color: rgba(255,255,255,0.05); vertical-align: middle; }
+.table-sc th { background: rgba(30, 41, 59, 0.9) !important; color: #facc15 !important; border-bottom: 2px solid #facc15; font-weight: 400; }
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
-
 .animate-fade-in {
   animation: fadeIn 0.3s ease-out forwards;
 }
 
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+@media (max-width: 768px) {
+  .dashboard-wrapper { flex-direction: column; }
+  .dash-sidebar, .dash-sidebar.sc { width: 100%; min-width: 0; flex-direction: row; flex-wrap: wrap; height: auto; }
+  .sidebar-menu { display: flex; flex-wrap: wrap; padding: 8px; }
 }
-::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.2);
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
+.spin {
+  animation: spin 0.8s linear infinite;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: var(--neon-blue);
-}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.2); }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--neon-blue); }
