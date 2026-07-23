@@ -25,6 +25,7 @@ from app.services.report_service import (
     prepare_arrest_report,
 )
 from app.services.line_service import push_line_message
+from app.services.user_service import get_user
 
 app = FastAPI(
     title="HWPD Next Gen API",
@@ -57,21 +58,24 @@ def login(req: LoginRequest):
     ระบบล็อกอิน ตรวจสอบรหัสผ่าน SHA-256 / Plaintext และคืนค่า Session Token (HMAC)
     """
     username = req.username.strip()
-    # ในการใช้งานจริง จะอ่านจาก tb_Users ใน Master Spreadsheet หรือ SQL DB
     if not username:
         raise HTTPException(status_code=400, detail="กรุณาระบุ Username")
 
-    # ตัวอย่างข้อมูลผู้ใช้สำหรับการทดสอบ — ครบทั้ง 6 role (รหัสผ่านเดียวกัน: password123)
-    dummy_users = {
-        "officer51": {"fullName": "ด.ต. สมชาย สายตรวจ", "station": "51", "unit": "หน่วยฯดอนจาน", "role": "Unit_Staff", "password": "password123"},
-        "sib51": {"fullName": "ร.ต.อ. หัวหน้า สิบเวร", "station": "51", "unit": "ส.ทล.1 กก.5", "role": "Station_Admin", "password": "password123"},
-        "admin50": {"fullName": "พ.ต.ท. ฝอ.กก.5", "station": "50", "unit": "ฝอ.กก.5", "role": "Division_Admin", "password": "password123"},
-        "commander50": {"fullName": "พ.ต.อ. ผกก.5", "station": "50", "unit": "กก.5", "role": "Division_Commander", "password": "password123"},
-        "super1": {"fullName": "พล.ต.ต. ผู้บังคับการตำรวจทางหลวง", "station": "00", "unit": "บก.ทล.", "role": "Super_Commander", "password": "password123"},
-        "hqadmin1": {"fullName": "พ.ต.อ. ฝอ.บก.ทล.", "station": "00", "unit": "บก.ทล.", "role": "HQ_Admin", "password": "password123"},
-    }
+    # 1) แหล่งข้อมูลหลัก: อ่าน tb_Users จาก Master Spreadsheet (แชร์แบบ public link)
+    user = get_user(username)
 
-    user = dummy_users.get(username)
+    # 2) สำรอง: บัญชีทดสอบในโค้ด (ใช้เมื่ออ่านชีตไม่ได้) — รหัสผ่าน password123
+    if not user:
+        dummy_users = {
+            "officer51": {"fullName": "ด.ต. สมชาย สายตรวจ", "station": "51", "unit": "หน่วยฯดอนจาน", "role": "Unit_Staff", "password": "password123"},
+            "sib51": {"fullName": "ร.ต.อ. หัวหน้า สิบเวร", "station": "51", "unit": "ส.ทล.1 กก.5", "role": "Station_Admin", "password": "password123"},
+            "admin50": {"fullName": "พ.ต.ท. ฝอ.กก.5", "station": "50", "unit": "ฝอ.กก.5", "role": "Division_Admin", "password": "password123"},
+            "commander50": {"fullName": "พ.ต.อ. ผกก.5", "station": "50", "unit": "กก.5", "role": "Division_Commander", "password": "password123"},
+            "super1": {"fullName": "พล.ต.ต. ผู้บังคับการตำรวจทางหลวง", "station": "00", "unit": "บก.ทล.", "role": "Super_Commander", "password": "password123"},
+            "hqadmin1": {"fullName": "พ.ต.อ. ฝอ.บก.ทล.", "station": "00", "unit": "บก.ทล.", "role": "HQ_Admin", "password": "password123"},
+        }
+        user = dummy_users.get(username)
+
     if not user or not verify_password(username, req.password, user["password"]):
         return {"status": "error", "message": "Username หรือ Password ไม่ถูกต้อง"}
 

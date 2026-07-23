@@ -1,6 +1,8 @@
 import type { User } from '../types';
 
-const API_BASE_URL = 'http://localhost:8000/api';
+// Set VITE_API_BASE_URL on the host (e.g. Vercel) to point at a deployed backend.
+// Falls back to localhost for dev; if unreachable, api.* methods use offline demo data.
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:8000/api';
 
 export const api = {
   login: async (username: string, password: string): Promise<{ status: string; user?: User; message?: string }> => {
