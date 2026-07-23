@@ -3,7 +3,10 @@ HWPD Next Gen - Python FastAPI Backend Entry Point
 Exposes REST Endpoints matching the Google Apps Script RPC contracts.
 """
 
+import os
+
 from fastapi import FastAPI, Header, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
 
@@ -31,6 +34,18 @@ app = FastAPI(
     title="HWPD Next Gen API",
     description="Python Backend API for Highway Police Division (บก.ทล.)",
     version="1.0.0",
+)
+
+# CORS — the frontend (Vercel) calls this API from a different origin.
+# Set CORS_ORIGINS on the host to a comma-separated allowlist; defaults to "*"
+# (safe here because auth uses a bearer-style token header, not cookies).
+_cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 

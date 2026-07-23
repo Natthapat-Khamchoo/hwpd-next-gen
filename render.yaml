@@ -1,0 +1,19 @@
+# Render Blueprint — deploys the FastAPI backend in python_backend/
+# In Render: New + → Blueprint → connect this repo → it reads this file.
+services:
+  - type: web
+    name: hwpd-backend
+    runtime: python
+    plan: free
+    rootDir: python_backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      # Optional overrides (defaults already point at the tb_Users sheet):
+      # - key: MASTER_SHEET_ID
+      #   value: "186cb2LBLhfFD_6i-Z-kycPK_vGD4NZxkxCNI2MJop9A"
+      # - key: CORS_ORIGINS
+      #   value: "https://your-app.vercel.app"
