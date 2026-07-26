@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { useStationData } from '../../hooks/useStationData';
 import { FormShell } from './FormShell';
+import { ThaiDateInput } from './ThaiDateInput';
 import { getNowDateTimeLocal, loadingModal } from '../../utils/formHelpers';
 import Swal from 'sweetalert2';
 
@@ -73,7 +74,7 @@ export const FuelForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <h5 className="text-center text-warning mb-4">บันทึกการเติมน้ำมันเชื้อเพลิง</h5>
           <div className="row g-3">
             <div className="col-12 col-md-6"><label className="form-label small text-white-50">วันเวลาที่เติมน้ำมัน</label>
-              <div className="d-flex gap-2"><input type="datetime-local" className="form-control" value={refuel.actionDateTime} onChange={(e) => rset('actionDateTime', e.target.value)} /><button type="button" className="btn btn-outline-warning" onClick={() => rset('actionDateTime', getNowDateTimeLocal())}><i className="fa-solid fa-clock-rotate-left"></i></button></div>
+              <div className="d-flex gap-2"><ThaiDateInput type="datetime-local" value={refuel.actionDateTime} onChange={(v) => rset('actionDateTime', v)} /><button type="button" className="btn btn-outline-warning" onClick={() => rset('actionDateTime', getNowDateTimeLocal())}><i className="fa-solid fa-clock-rotate-left"></i></button></div>
             </div>
             <div className="col-12 col-md-6"><label className="form-label small text-white-50">ผู้เติมน้ำมัน</label>
               <select className="form-select border-warning" value={refuel.actionPerson} onChange={(e) => rset('actionPerson', e.target.value)}><option value="">-- เลือกรายชื่อ --</option>{users.map((u) => <option key={u} value={u}>{u}</option>)}</select>
@@ -97,7 +98,7 @@ export const FuelForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <h5 className="text-center text-info mb-4">บันทึกเปลี่ยนน้ำมันเครื่อง</h5>
           <div className="row g-3">
             <div className="col-12 col-md-6"><label className="form-label small text-white-50">วันเวลาที่เปลี่ยนน้ำมันเครื่อง</label>
-              <div className="d-flex gap-2"><input type="datetime-local" className="form-control" value={oil.actionDateTime} onChange={(e) => oset('actionDateTime', e.target.value)} /><button type="button" className="btn btn-outline-info" onClick={() => oset('actionDateTime', getNowDateTimeLocal())}><i className="fa-solid fa-clock-rotate-left"></i></button></div>
+              <div className="d-flex gap-2"><ThaiDateInput type="datetime-local" value={oil.actionDateTime} onChange={(v) => oset('actionDateTime', v)} /><button type="button" className="btn btn-outline-info" onClick={() => oset('actionDateTime', getNowDateTimeLocal())}><i className="fa-solid fa-clock-rotate-left"></i></button></div>
             </div>
             <div className="col-12 col-md-6"><label className="form-label small text-white-50">ผู้เปลี่ยนน้ำมันเครื่อง</label>
               <select className="form-select border-info" value={oil.actionPerson} onChange={(e) => oset('actionPerson', e.target.value)}><option value="">-- เลือกรายชื่อ --</option>{users.map((u) => <option key={u} value={u}>{u}</option>)}</select>

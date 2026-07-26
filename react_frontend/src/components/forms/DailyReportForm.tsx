@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { useStationData } from '../../hooks/useStationData';
 import { FormShell } from './FormShell';
+import { ThaiDateInput } from './ThaiDateInput';
 import {
   getNowDateTimeLocal,
   getNowDateLocal,
@@ -274,7 +275,7 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
         <div className="glass-card w-100">
           <h5 className="text-center text-info mb-4">1. รายงานประจำวัน (เวรผลัด)</h5>
           <div className="row g-3">
-            <div className="col-12 col-md-6"><label className="form-label small text-white-50">วันที่เวลาที่รายงาน</label><div className="d-flex gap-2"><input type="datetime-local" className="form-control" value={t1.reportDateTime} onChange={(e) => s1('reportDateTime', e.target.value)} /><button type="button" className="btn btn-outline-info" onClick={() => s1('reportDateTime', getNowDateTimeLocal())}><i className="fa-solid fa-clock-rotate-left"></i></button></div></div>
+            <div className="col-12 col-md-6"><label className="form-label small text-white-50">วันที่เวลาที่รายงาน</label><div className="d-flex gap-2"><ThaiDateInput type="datetime-local" value={t1.reportDateTime} onChange={(v) => s1('reportDateTime', v)} /><button type="button" className="btn btn-outline-info" onClick={() => s1('reportDateTime', getNowDateTimeLocal())}><i className="fa-solid fa-clock-rotate-left"></i></button></div></div>
             <div className="col-12 col-md-6"><label className="form-label small text-white-50">หน่วยบริการ</label><UnitSelect value={t1.unitId} onChange={(v) => s1('unitId', v)} /></div>
             <div className="col-12"><hr className="border-secondary" /></div>
             <div className="col-12 col-md-8"><label className="form-label small text-white-50">ผู้ปฏิบัติหน้าที่ประจำหน่วย</label><UserSelect value={t1.dutyOfficer} onChange={(v) => s1user('dutyOfficer', 'dutyPhone', v)} /></div>
@@ -282,8 +283,8 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
             <div className="col-12"><label className="form-label small text-white-50">รถวิทยุตรวจเขต</label><input type="text" className="form-control" placeholder="เลขรถ" value={t1.carNumber} onChange={(e) => s1('carNumber', e.target.value)} /></div>
             <div className="col-12 col-md-6"><label className="form-label small text-white-50">พลขับ</label><UserSelect value={t1.driverName} onChange={(v) => s1user('driverName', 'driverPhone', v)} /><input type="tel" className="form-control mt-2" placeholder="เบอร์โทรพลขับ" value={t1.driverPhone} onChange={(e) => s1('driverPhone', e.target.value)} /></div>
             <div className="col-12 col-md-6"><label className="form-label small text-white-50">พนักงานวิทยุ</label><UserSelect value={t1.radioOpName} onChange={(v) => s1user('radioOpName', 'radioOpPhone', v)} /><input type="tel" className="form-control mt-2" placeholder="เบอร์โทรพงว." value={t1.radioOpPhone} onChange={(e) => s1('radioOpPhone', e.target.value)} /></div>
-            <div className="col-12 col-md-6"><label className="form-label small text-white-50">ปฏิบัติหน้าที่ตั้งแต่ (ว/ด/ป)</label><input type="date" className="form-control" value={t1.startTime} onChange={(e) => s1('startTime', e.target.value)} /></div>
-            <div className="col-12 col-md-6"><label className="form-label small text-white-50">ถึงวันที่ (ว/ด/ป)</label><input type="date" className="form-control" value={t1.endTime} onChange={(e) => s1('endTime', e.target.value)} /></div>
+            <div className="col-12 col-md-6"><label className="form-label small text-white-50">ปฏิบัติหน้าที่ตั้งแต่ (ว/ด/ป)</label><ThaiDateInput type="date" value={t1.startTime} onChange={(v) => s1('startTime', v)} /></div>
+            <div className="col-12 col-md-6"><label className="form-label small text-white-50">ถึงวันที่ (ว/ด/ป)</label><ThaiDateInput type="date" value={t1.endTime} onChange={(v) => s1('endTime', v)} /></div>
             <div className="col-12"><span className="badge bg-info">กล้อง Bodyworn</span></div>
             <div className="col-4"><label className="small text-white-50">ทั้งหมด</label><input type="number" className="form-control text-center" value={t1.camTotal} onChange={(e) => s1('camTotal', e.target.value)} /></div>
             <div className="col-4"><label className="small text-white-50">พร้อมใช้</label><input type="number" className="form-control text-center" value={t1.camReady} onChange={(e) => s1('camReady', e.target.value)} /></div>
@@ -300,7 +301,7 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
           <h5 className="text-center text-info mb-4">2. ผลการปฏิบัติประจำวัน</h5>
           <div className="row g-3">
             <div className="col-12 col-md-6"><label className="form-label small text-white-50">หน่วยบริการ</label><UnitSelect value={t2.unitId} onChange={(v) => s2('unitId', v)} /></div>
-            <div className="col-12 col-md-6"><label className="form-label small text-white-50">วันที่เวลาที่รายงาน</label><div className="d-flex gap-2"><input type="datetime-local" className="form-control" value={t2.reportDateTime} onChange={(e) => s2('reportDateTime', e.target.value)} /><button type="button" className="btn btn-outline-info" onClick={() => s2('reportDateTime', getNowDateTimeLocal())}><i className="fa-solid fa-clock-rotate-left"></i></button></div></div>
+            <div className="col-12 col-md-6"><label className="form-label small text-white-50">วันที่เวลาที่รายงาน</label><div className="d-flex gap-2"><ThaiDateInput type="datetime-local" value={t2.reportDateTime} onChange={(v) => s2('reportDateTime', v)} /><button type="button" className="btn btn-outline-info" onClick={() => s2('reportDateTime', getNowDateTimeLocal())}><i className="fa-solid fa-clock-rotate-left"></i></button></div></div>
             <div className="col-12"><hr className="border-secondary" /></div>
             <div className="col-md-3 col-6"><Num2 k="v43" label="ว.43 (ครั้ง)" /></div>
             <div className="col-md-3 col-6"><Num2 k="service" label="บริการ (ครั้ง)" /></div>
@@ -373,7 +374,7 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
         <div className="glass-card w-100">
           <h5 className="text-center text-info mb-4">3. รายงานประจำวันสิบเวร</h5>
           <div className="row g-3">
-            <div className="col-12"><label className="form-label small text-white-50">วันที่เวลาที่รายงาน</label><div className="d-flex gap-2"><input type="datetime-local" className="form-control" value={t3.reportDateTime} onChange={(e) => s3('reportDateTime', e.target.value)} /><button type="button" className="btn btn-outline-info" onClick={() => s3('reportDateTime', getNowDateTimeLocal())}><i className="fa-solid fa-clock-rotate-left"></i></button></div></div>
+            <div className="col-12"><label className="form-label small text-white-50">วันที่เวลาที่รายงาน</label><div className="d-flex gap-2"><ThaiDateInput type="datetime-local" value={t3.reportDateTime} onChange={(v) => s3('reportDateTime', v)} /><button type="button" className="btn btn-outline-info" onClick={() => s3('reportDateTime', getNowDateTimeLocal())}><i className="fa-solid fa-clock-rotate-left"></i></button></div></div>
             <div className="col-12"><hr className="border-secondary" /></div>
             <div className="col-12 col-md-8"><label className="form-label small text-white-50">ร้อยเวรฯ</label><UserSelect value={t3.inspectorName} onChange={(v) => s3user('inspectorName', 'inspectorPhone', v)} /></div>
             <div className="col-12 col-md-4"><label className="form-label small text-white-50">เบอร์โทรศัพท์</label><input type="tel" className="form-control" value={t3.inspectorPhone} onChange={(e) => s3('inspectorPhone', e.target.value)} /></div>
@@ -382,8 +383,8 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
             <div className="col-12 col-md-8"><label className="form-label small text-white-50">พนักงานวิทยุ</label><UserSelect value={t3.radioOpName} onChange={(v) => s3user('radioOpName', 'radioOpPhone', v)} /></div>
             <div className="col-12 col-md-4"><label className="form-label small text-white-50">เบอร์โทรศัพท์</label><input type="tel" className="form-control" value={t3.radioOpPhone} onChange={(e) => s3('radioOpPhone', e.target.value)} /></div>
             <div className="col-12"><hr className="border-secondary" /></div>
-            <div className="col-12 col-md-6"><label className="form-label small text-white-50">ปฏิบัติหน้าที่ตั้งแต่ (ว/ด/ป)</label><input type="date" className="form-control" value={t3.startTime} onChange={(e) => s3('startTime', e.target.value)} /></div>
-            <div className="col-12 col-md-6"><label className="form-label small text-white-50">ถึงวันที่ (ว/ด/ป)</label><input type="date" className="form-control" value={t3.endTime} onChange={(e) => s3('endTime', e.target.value)} /></div>
+            <div className="col-12 col-md-6"><label className="form-label small text-white-50">ปฏิบัติหน้าที่ตั้งแต่ (ว/ด/ป)</label><ThaiDateInput type="date" value={t3.startTime} onChange={(v) => s3('startTime', v)} /></div>
+            <div className="col-12 col-md-6"><label className="form-label small text-white-50">ถึงวันที่ (ว/ด/ป)</label><ThaiDateInput type="date" value={t3.endTime} onChange={(v) => s3('endTime', v)} /></div>
             <div className="col-12 mt-4"><button type="button" className="btn-primary-custom" onClick={submitT3}><i className="fa-solid fa-paper-plane"></i> ตรวจสอบข้อมูลก่อนส่ง</button></div>
           </div>
         </div>
@@ -394,11 +395,11 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
         <div className="glass-card w-100">
           <h5 className="text-center text-info mb-4">4. สรุปผลประจำวัน (Auto-Summary)</h5>
           <div className="row g-3">
-            <div className="col-12"><label className="form-label small text-white-50">วันที่เวลาที่รายงาน</label><div className="d-flex gap-2"><input type="datetime-local" className="form-control" value={t4.reportDateTime} onChange={(e) => setT4((p) => ({ ...p, reportDateTime: e.target.value }))} /><button type="button" className="btn btn-outline-info" onClick={() => setT4((p) => ({ ...p, reportDateTime: getNowDateTimeLocal() }))}><i className="fa-solid fa-clock-rotate-left"></i></button></div></div>
+            <div className="col-12"><label className="form-label small text-white-50">วันที่เวลาที่รายงาน</label><div className="d-flex gap-2"><ThaiDateInput type="datetime-local" value={t4.reportDateTime} onChange={(v) => setT4((p) => ({ ...p, reportDateTime: v }))} /><button type="button" className="btn btn-outline-info" onClick={() => setT4((p) => ({ ...p, reportDateTime: getNowDateTimeLocal() }))}><i className="fa-solid fa-clock-rotate-left"></i></button></div></div>
             <div className="col-12"><hr className="border-secondary" /></div>
             <div className="col-12"><span className="badge bg-warning text-dark mb-2">กำหนดช่วงเวลาที่ต้องการดึงข้อมูลสรุป</span></div>
-            <div className="col-12 col-md-5"><label className="form-label small text-white-50">เรียกข้อมูลตั้งแต่</label><input type="date" className="form-control" value={t4.startDate} onChange={(e) => setT4((p) => ({ ...p, startDate: e.target.value }))} /></div>
-            <div className="col-12 col-md-5"><label className="form-label small text-white-50">ถึงวันที่</label><input type="date" className="form-control" value={t4.endDate} onChange={(e) => setT4((p) => ({ ...p, endDate: e.target.value }))} /></div>
+            <div className="col-12 col-md-5"><label className="form-label small text-white-50">เรียกข้อมูลตั้งแต่</label><ThaiDateInput type="date" value={t4.startDate} onChange={(v) => setT4((p) => ({ ...p, startDate: v }))} /></div>
+            <div className="col-12 col-md-5"><label className="form-label small text-white-50">ถึงวันที่</label><ThaiDateInput type="date" value={t4.endDate} onChange={(v) => setT4((p) => ({ ...p, endDate: v }))} /></div>
             <div className="col-12 col-md-2 d-flex align-items-end"><button type="button" className="btn btn-warning w-100 fw-bold" onClick={fetchSummary}>ดึงข้อมูล <i className="fa-solid fa-sync"></i></button></div>
             {summary && (
               <div className="col-12 mt-4">
@@ -425,7 +426,7 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
         <div className="glass-card w-100">
           <h5 className="text-center text-info mb-4">5. รายงาน ว.4 อื่นๆ</h5>
           <div className="row g-3">
-            <div className="col-12 col-md-6"><label className="form-label small text-white-50">วันที่เวลาที่รายงาน</label><div className="d-flex gap-2"><input type="datetime-local" className="form-control" value={t5.reportDateTime} onChange={(e) => s5('reportDateTime', e.target.value)} /><button type="button" className="btn btn-outline-info" onClick={() => s5('reportDateTime', getNowDateTimeLocal())}><i className="fa-solid fa-clock-rotate-left"></i></button></div></div>
+            <div className="col-12 col-md-6"><label className="form-label small text-white-50">วันที่เวลาที่รายงาน</label><div className="d-flex gap-2"><ThaiDateInput type="datetime-local" value={t5.reportDateTime} onChange={(v) => s5('reportDateTime', v)} /><button type="button" className="btn btn-outline-info" onClick={() => s5('reportDateTime', getNowDateTimeLocal())}><i className="fa-solid fa-clock-rotate-left"></i></button></div></div>
             <div className="col-12 col-md-6"><label className="form-label small text-white-50">หน่วยบริการ</label><UnitSelect value={t5.unitId} onChange={(v) => s5('unitId', v)} /></div>
             <div className="col-12"><hr className="border-secondary" /></div>
             <div className="col-12" style={{ background: 'rgba(0, 242, 255, 0.05)', padding: 15, borderRadius: 10, border: '1px dashed rgba(0, 242, 255, 0.3)' }}>

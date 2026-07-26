@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { FormShell } from './FormShell';
+import { ThaiDateInput } from './ThaiDateInput';
 import { getNowDateTimeLocal, loadingModal } from '../../utils/formHelpers';
 import Swal from 'sweetalert2';
 
@@ -44,8 +45,8 @@ export const ToolsForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <div className="glass-card w-100">
           <h5 className="text-info mt-2"><i className="fa-solid fa-clock"></i> ๑. ข้อมูลวันเวลา</h5>
           <div className="row g-3 mb-4">
-            <div className="col-12 col-md-6"><label className="form-label text-light">วันที่เวลาที่บันทึก</label><input type="datetime-local" className="form-control" value={aa.recordDate} onChange={(e) => set('recordDate', e.target.value)} /></div>
-            <div className="col-12 col-md-6"><label className="form-label text-light">วันที่เวลาที่จับกุม</label><input type="datetime-local" className="form-control" value={aa.arrestDate} onChange={(e) => set('arrestDate', e.target.value)} /></div>
+            <div className="col-12 col-md-6"><label className="form-label text-light">วันที่เวลาที่บันทึก</label><ThaiDateInput type="datetime-local" value={aa.recordDate} onChange={(v) => set('recordDate', v)} /></div>
+            <div className="col-12 col-md-6"><label className="form-label text-light">วันที่เวลาที่จับกุม</label><ThaiDateInput type="datetime-local" value={aa.arrestDate} onChange={(v) => set('arrestDate', v)} /></div>
           </div>
 
           <h5 className="text-info mt-4"><i className="fa-solid fa-users"></i> ๒. ข้อมูลผู้ต้องหาทั้งหมด</h5>

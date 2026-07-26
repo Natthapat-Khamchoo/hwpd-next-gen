@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { useStationData } from '../../hooks/useStationData';
 import { FormShell } from './FormShell';
+import { ThaiDateInput } from './ThaiDateInput';
 import {
   getNowDateTimeLocal,
   getFrontendStationData,
@@ -67,13 +68,13 @@ export const MissionForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <div className="col-12">
             <label className="form-label small text-white-50">วันที่เวลาที่รายงานแจ้งภารกิจ</label>
             <div className="d-flex gap-2 align-items-stretch">
-              <input type="datetime-local" className="form-control" value={f.reportDateTime} onChange={(e) => set('reportDateTime', e.target.value)} />
+              <ThaiDateInput type="datetime-local" value={f.reportDateTime} onChange={(v) => set('reportDateTime', v)} />
               <button type="button" className="btn btn-outline-success" onClick={() => set('reportDateTime', getNowDateTimeLocal())}><i className="fa-solid fa-clock-rotate-left"></i></button>
             </div>
           </div>
           <div className="col-12"><hr className="border-secondary" /></div>
-          <div className="col-12 col-md-6"><label className="form-label small text-white-50">วันที่เวลาเริ่มภารกิจ (ตั้งแต่)</label><input type="datetime-local" className="form-control border-success" value={f.startTime} onChange={(e) => set('startTime', e.target.value)} /></div>
-          <div className="col-12 col-md-6"><label className="form-label small text-white-50">วันที่เวลาสิ้นสุดภารกิจ (ถึง)</label><input type="datetime-local" className="form-control border-success" value={f.endTime} onChange={(e) => set('endTime', e.target.value)} /></div>
+          <div className="col-12 col-md-6"><label className="form-label small text-white-50">วันที่เวลาเริ่มภารกิจ (ตั้งแต่)</label><ThaiDateInput type="datetime-local" className="form-control border-success" value={f.startTime} onChange={(v) => set('startTime', v)} /></div>
+          <div className="col-12 col-md-6"><label className="form-label small text-white-50">วันที่เวลาสิ้นสุดภารกิจ (ถึง)</label><ThaiDateInput type="datetime-local" className="form-control border-success" value={f.endTime} onChange={(v) => set('endTime', v)} /></div>
           <div className="col-12"><hr className="border-secondary" /></div>
           <div className="col-12">
             <label className="form-label small text-success fw-bold mb-2">หน่วยบริการที่เกี่ยวข้อง (เลือกได้มากกว่า 1 หน่วย)</label>

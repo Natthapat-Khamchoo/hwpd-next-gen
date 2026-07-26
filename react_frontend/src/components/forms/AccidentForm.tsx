@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { useStationData } from '../../hooks/useStationData';
 import { FormShell } from './FormShell';
+import { ThaiDateInput } from './ThaiDateInput';
 import {
   getNowDateTimeLocal,
   formatPreviewDate,
@@ -100,7 +101,7 @@ export const AccidentForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <div className="col-12 col-md-6">
             <label className="form-label small text-white-50">วันที่เวลาที่เกิดเหตุ</label>
             <div className="d-flex gap-2 align-items-stretch">
-              <input type="datetime-local" className="form-control" value={f.reportDateTime} onChange={(e) => set('reportDateTime', e.target.value)} />
+              <ThaiDateInput type="datetime-local" value={f.reportDateTime} onChange={(v) => set('reportDateTime', v)} />
               <NowBtn />
             </div>
           </div>

@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { useStationData } from '../../hooks/useStationData';
 import { FormShell } from './FormShell';
+import { ThaiDateInput } from './ThaiDateInput';
 import {
   getNowDateTimeLocal,
   getNowDateLocal,
@@ -57,7 +58,7 @@ export const MissionViewForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
     <FormShell title="เรียกดูภารกิจหน่วย" onBack={onBack} backLabel="กลับหน้าหลัก">
       <div className="glass-card w-100">
         <div className="row g-3">
-          <div className="col-12"><label className="form-label small text-white-50">วันที่เวลาที่เรียกดูข้อมูล</label><input type="datetime-local" className="form-control" value={reportDateTime} onChange={(e) => setReportDateTime(e.target.value)} /></div>
+          <div className="col-12"><label className="form-label small text-white-50">วันที่เวลาที่เรียกดูข้อมูล</label><ThaiDateInput type="datetime-local" value={reportDateTime} onChange={(v) => setReportDateTime(v)} /></div>
           <div className="col-12"><hr className="border-secondary" /></div>
           <div className="col-12 col-md-4"><label className="form-label small text-white-50">ภารกิจของหน่วยบริการ</label>
             <select className="form-select border-info" value={unit} onChange={(e) => setUnit(e.target.value)} disabled={!isAdmin}>
@@ -72,8 +73,8 @@ export const MissionViewForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
               )}
             </select>
           </div>
-          <div className="col-12 col-md-4"><label className="form-label small text-white-50">เรียกข้อมูลตั้งแต่</label><input type="date" className="form-control" value={start} onChange={(e) => setStart(e.target.value)} /></div>
-          <div className="col-12 col-md-4"><label className="form-label small text-white-50">ถึงวันที่</label><input type="date" className="form-control" value={end} onChange={(e) => setEnd(e.target.value)} /></div>
+          <div className="col-12 col-md-4"><label className="form-label small text-white-50">เรียกข้อมูลตั้งแต่</label><ThaiDateInput type="date" value={start} onChange={(v) => setStart(v)} /></div>
+          <div className="col-12 col-md-4"><label className="form-label small text-white-50">ถึงวันที่</label><ThaiDateInput type="date" value={end} onChange={(v) => setEnd(v)} /></div>
           <div className="col-12 mt-4"><button type="button" className="btn btn-info w-100 fw-bold" onClick={search}><i className="fa-solid fa-magnifying-glass"></i> ค้นหาภารกิจ</button></div>
 
           {missions && (

@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { useStationData } from '../../hooks/useStationData';
 import { FormShell } from './FormShell';
+import { ThaiDateInput } from './ThaiDateInput';
 import {
   getNowDateTimeLocal,
   getFrontendStationData,
@@ -107,7 +108,7 @@ export const ArrestForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       <div className="glass-card w-100" style={{ borderTop: '4px solid #dc3545' }}>
         <div className="row g-3">
           <div className="col-12 col-md-6"><label className="form-label small text-white-50">วันที่เวลาที่รายงาน</label>
-            <div className="d-flex gap-2"><input type="datetime-local" className="form-control" value={f.reportDateTime} onChange={(e) => set('reportDateTime', e.target.value)} /><button type="button" className="btn btn-outline-danger" onClick={() => set('reportDateTime', getNowDateTimeLocal())}><i className="fa-solid fa-clock-rotate-left"></i></button></div>
+            <div className="d-flex gap-2"><ThaiDateInput type="datetime-local" value={f.reportDateTime} onChange={(v) => set('reportDateTime', v)} /><button type="button" className="btn btn-outline-danger" onClick={() => set('reportDateTime', getNowDateTimeLocal())}><i className="fa-solid fa-clock-rotate-left"></i></button></div>
           </div>
           <div className="col-12 col-md-6"><label className="form-label small text-white-50">หัวข้อการจับกุม</label>
             <select className="form-select border-danger" value={f.category} onChange={(e) => set('category', e.target.value)}><option value="">-- เลือกหัวข้อ --</option>{CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}</select>
@@ -118,7 +119,7 @@ export const ArrestForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <div className="col-12 col-md-3"><label className="form-label small text-white-50">ประเภทหมายจับ</label><select className="form-select border-warning" value={f.warrantType} onChange={(e) => set('warrantType', e.target.value)}><option value="ไม่ใช่หมายจับ">ไม่ใช่หมายจับ</option><option value="หมายศาล">หมายศาล</option><option value="หมายทั่วไป">หมายทั่วไป</option></select></div>
           <div className="col-12 col-md-3"><label className="form-label small text-white-50">ขอบเขตหมาย (กรณีจับตามหมาย)</label><select className="form-select border-warning" value={f.warrantScope} onChange={(e) => set('warrantScope', e.target.value)}><option value="ไม่ใช่หมายจับ">ไม่ใช่หมายจับ</option><option value="หมายใน (บช.ก.)">หมายใน (บช.ก.)</option><option value="หมายนอก">หมายนอก</option></select></div>
 
-          <div className="col-12 col-md-3"><label className="form-label small text-white-50">เวลาเกิดเหตุ</label><input type="datetime-local" className="form-control" value={f.actionDateTime} onChange={(e) => set('actionDateTime', e.target.value)} /></div>
+          <div className="col-12 col-md-3"><label className="form-label small text-white-50">เวลาเกิดเหตุ</label><ThaiDateInput type="datetime-local" value={f.actionDateTime} onChange={(v) => set('actionDateTime', v)} /></div>
           <div className="col-12 col-md-4"><label className="form-label small text-white-50">การตรวจค้น/แจ้งข้อกล่าวหา (ถ้ามี)</label><select className="form-select" value={f.caseMethod} onChange={(e) => set('caseMethod', e.target.value)}><option value="">— ไม่มี —</option><option value="ตรวจค้น">ตรวจค้น</option><option value="แจ้งข้อกล่าวหา">แจ้งข้อกล่าวหา</option></select></div>
           <div className="col-12 col-md-5"><label className="form-label small text-white-50">เลขคดี (ถ้ามี)</label><input type="text" className="form-control" placeholder="เช่น 123/2569 (เว้นว่างได้)" value={f.caseNumber} onChange={(e) => set('caseNumber', e.target.value)} /></div>
 

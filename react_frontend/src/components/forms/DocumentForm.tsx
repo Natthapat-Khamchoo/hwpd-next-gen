@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { useStationData } from '../../hooks/useStationData';
 import { FormShell } from './FormShell';
+import { ThaiDateInput } from './ThaiDateInput';
 import { getNowDateTimeLocal, filesToBase64, loadingModal } from '../../utils/formHelpers';
 import Swal from 'sweetalert2';
 
@@ -42,7 +43,7 @@ export const DocumentForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <div className="col-12">
             <label className="form-label small text-white-50">วันที่เวลาที่ส่งเอกสาร</label>
             <div className="d-flex gap-2 align-items-stretch">
-              <input type="datetime-local" className="form-control" value={f.reportDateTime} onChange={(e) => set('reportDateTime', e.target.value)} />
+              <ThaiDateInput type="datetime-local" value={f.reportDateTime} onChange={(v) => set('reportDateTime', v)} />
               <button type="button" className="btn btn-outline-info" onClick={() => set('reportDateTime', getNowDateTimeLocal())}><i className="fa-solid fa-clock-rotate-left"></i></button>
             </div>
           </div>
