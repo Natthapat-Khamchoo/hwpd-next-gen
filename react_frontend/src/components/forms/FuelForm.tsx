@@ -47,7 +47,7 @@ export const FuelForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     if (type === 'oil') payload.distanceUsed = distanceUsed;
     const res = await api.submitReport('fuel', payload, user?.token);
     if (res.status === 'success') {
-      await Swal.fire('สำเร็จ!', 'บันทึกข้อมูลลงระบบเรียบร้อย', 'success');
+      await Swal.fire('สำเร็จ!', res.message || 'บันทึกข้อมูลลงระบบเรียบร้อย', 'success');
       onBack();
     } else {
       Swal.fire('ผิดพลาด', res.message || 'บันทึกไม่สำเร็จ', 'error');

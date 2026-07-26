@@ -5,13 +5,17 @@ Ported from JS (hashPassword_, verifyPassword_, createSessionToken_, requireSess
 
 import hmac
 import hashlib
+import os
 import time
 import json
 import base64
 from typing import Dict, Any, List, Optional
-from app.core.config import SESSION_SECRET
+from app.core.config import get_session_secret
 
-DEFAULT_PEPPER = "HWPD5_SECURE_PEPPER_2026_V1"
+# The pepper has to stay byte-identical to the one the Apps Script side used, or
+# every `sha256$...` password already stored in tb_Users stops verifying. Rotating
+# it means re-hashing the sheet, so it is overridable but not defaulted to empty.
+DEFAULT_PEPPER = os.getenv("PASSWORD_PEPPER", "HWPD5_SECURE_PEPPER_2026_V1")
 SESSION_TTL_SECONDS = 24 * 3600  # 24 hours
 
 
@@ -46,11 +50,12 @@ def verify_password(username: str, password_input: str, stored_password: str, pe
     return stored_str == str(password_input)
 
 
-def create_session_token(user_data: Dict[str, Any], secret: str = SESSION_SECRET, ttl: int = SESSION_TTL_SECONDS) -> str:
+def create_session_token(user_data: Dict[str, Any], secret: Optional[str] = None, ttl: int = SESSION_TTL_SECONDS) -> str:
     """
     สร้าง Signed Session Token (HMAC SHA-256)
     เทียบเท่า createSessionToken_ ใน JS
     """
+    secret = secret or get_session_secret()
     now = int(time.time())
     payload = {
         "u": user_data.get("username", ""),
@@ -67,7 +72,7 @@ def create_session_token(user_data: Dict[str, Any], secret: str = SESSION_SECRET
     return f"{payload_b64}.{signature}"
 
 
-def verify_session_token(token: str, secret: str = SESSION_SECRET) -> Optional[Dict[str, Any]]:
+def verify_session_token(token: str, secret: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
     ถอดรหัสและตรวจสอบลายเซ็น HMAC ของ Session Token
     เทียบเท่า verifySessionToken_ ใน JS
@@ -78,6 +83,8 @@ def verify_session_token(token: str, secret: str = SESSION_SECRET) -> Optional[D
     parts = token.split(".")
     if len(parts) != 2:
         return None
+
+    secret = secret or get_session_secret()
 
     payload_b64, signature = parts[0], parts[1]
 
@@ -101,7 +108,7 @@ def verify_session_token(token: str, secret: str = SESSION_SECRET) -> Optional[D
         return None
 
 
-def require_session(token: str, allowed_roles: Optional[List[str]] = None, secret: str = SESSION_SECRET) -> Dict[str, Any]:
+def require_session(token: str, allowed_roles: Optional[List[str]] = None, secret: Optional[str] = None) -> Dict[str, Any]:
     """
     ตรวจสอบ Session Token และสิทธิ์การใช้งาน (RBAC)
     เทียบเท่า requireSession_ ใน JS

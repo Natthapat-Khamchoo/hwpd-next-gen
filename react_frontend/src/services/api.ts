@@ -6,14 +6,33 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || 'http://lo
 
 // Local user directory — mirrors the tb_Users Google Sheet exactly (password: 1234).
 // Used as the offline fallback when the backend is unreachable (e.g. the Vercel site).
-const DEMO_USERS: Record<string, { password: string; user: User }> = {
-  test: { password: '1234', user: { username: 'test', fullName: 'ปลื้ม', station: '50', unit: 'กองกำกับ', role: 'Super_Commander', phone: '0853565356', code: '50', token: 'demo-test' } },
-  test2: { password: '1234', user: { username: 'test2', fullName: 'พี่ไอซ์', station: '10', unit: 'กองกำกับ', role: 'HQ_Admin', phone: '0947632187', code: '503', token: 'demo-test2' } },
-  test3: { password: '1234', user: { username: 'test3', fullName: 'พี่ท้อป', station: '70', unit: 'บก.', role: 'Division_Commander', phone: '0812882823', code: '50005', token: 'demo-test3' } },
-  test4: { password: '1234', user: { username: 'test4', fullName: 'พี่โอม', station: '40', unit: 'บก.', role: 'Division_Admin', phone: '0824195636', code: '510', token: 'demo-test4' } },
-  test5: { password: '1234', user: { username: 'test5', fullName: 'พี่เท็น', station: '23', unit: 'บก.', role: 'Station_Admin', phone: '0824195636', code: '510', token: 'demo-test5' } },
-  test6: { password: '1234', user: { username: 'test6', fullName: 'พี่บุช', station: '51', unit: 'บก.', role: 'Unit_Staff', phone: '0824195636', code: '510', token: 'demo-test6' } },
+// The backend now rejects writes without a valid session token. AuthContext
+// registers a handler here so a 401 sends the officer back to the login screen
+// instead of leaving them staring at a generic "บันทึกไม่สำเร็จ".
+let onSessionExpired: () => void = () => {};
+export const setSessionExpiredHandler = (handler: () => void) => {
+  onSessionExpired = handler;
 };
+
+export const SESSION_EXPIRED_MESSAGE = 'Session หมดอายุ กรุณาเข้าสู่ระบบใหม่';
+
+/** Pull a human-readable reason out of a FastAPI error body. */
+const errorMessage = (body: any, fallback: string): string => {
+  const detail = body?.detail ?? body?.message;
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  // 422 from Pydantic arrives as a list of {loc, msg, type}.
+  if (Array.isArray(detail) && detail.length) {
+    return detail.map((d: any) => `${(d?.loc || []).slice(1).join('.')}: ${d?.msg}`).join(', ');
+  }
+  return fallback;
+};
+
+// โหมดสาธิตต้องเปิดด้วย VITE_DEMO_MODE=true ตอน build เท่านั้น ไม่ใช่เปิดเองเมื่อ
+// ต่อ backend ไม่ได้ ไม่งั้นเจ้าหน้าที่จะเห็นข้อความว่าบันทึกสำเร็จทั้งที่ข้อมูลหาย
+// และตัวเว็บที่ deploy จริงจะกลายเป็นระบบที่ใครก็เข้าได้
+export const DEMO_MODE = String(import.meta.env.VITE_DEMO_MODE ?? '').toLowerCase() === 'true';
+
+const OFFLINE_MESSAGE = 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่';
 
 export const api = {
   login: async (username: string, password: string): Promise<{ status: string; user?: User; message?: string }> => {
@@ -23,7 +42,9 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
       });
-      return await res.json();
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) return body;
+      return { status: 'error', message: errorMessage(body, `เข้าสู่ระบบไม่สำเร็จ (HTTP ${res.status})`) };
     } catch (error) {
       if (typeof window !== 'undefined' && (window as any).google?.script?.run) {
         return new Promise((resolve) => {
@@ -33,11 +54,7 @@ export const api = {
             .checkLogin(username, password);
         });
       }
-      const entry = DEMO_USERS[username.trim().toLowerCase()];
-      if (entry && entry.password === password) {
-        return { status: 'success', user: entry.user };
-      }
-      return { status: 'error', message: 'Username หรือ Password ไม่ถูกต้อง' };
+      return { status: 'error', message: OFFLINE_MESSAGE };
     }
   },
 
@@ -63,7 +80,8 @@ export const api = {
             .changeUserPassword(username, oldPassword, newPassword);
         });
       }
-      return { status: 'success', message: 'เปลี่ยนรหัสผ่านสำเร็จ (Demo Mode)' };
+      if (DEMO_MODE) return { status: 'success', message: 'เปลี่ยนรหัสผ่านสำเร็จ (โหมดสาธิต)' };
+      return { status: 'error', message: OFFLINE_MESSAGE };
     }
   },
 
@@ -77,13 +95,28 @@ export const api = {
         },
         body: JSON.stringify({ formData, ...extra }),
       });
-      return await res.json();
+      const body = await res.json().catch(() => ({}));
+
+      if (res.ok) return body;
+
+      if (res.status === 401) {
+        onSessionExpired();
+        return { status: 'error', message: SESSION_EXPIRED_MESSAGE };
+      }
+      if (res.status === 404) {
+        return {
+          status: 'error',
+          message: `ระบบยังไม่รองรับการบันทึกรายงานประเภทนี้ (${endpoint}) กรุณาแจ้งผู้ดูแลระบบ`,
+        };
+      }
+      return { status: 'error', message: errorMessage(body, `บันทึกไม่สำเร็จ (HTTP ${res.status})`) };
     } catch (e) {
-      return { status: 'success', message: 'บันทึกรายงานสำเร็จ (Demo Mode)' };
+      if (DEMO_MODE) return { status: 'success', message: 'บันทึกรายงานสำเร็จ (โหมดสาธิต ข้อมูลไม่ถูกบันทึกจริง)' };
+      return { status: 'error', message: OFFLINE_MESSAGE };
     }
   },
 
-  // ---- Dropdown / reference data (with offline demo fallbacks) ----
+  // ---- Dropdown / reference data (demo fallbacks only when VITE_DEMO_MODE=true) ----
   getUnitDropdown: async (stationId: string): Promise<string[]> => {
     try {
       const res = await fetch(`${API_BASE_URL}/dropdowns/units?station=${encodeURIComponent(stationId)}`);
@@ -92,7 +125,7 @@ export const api = {
       if (Array.isArray(data?.units)) return data.units;
       throw new Error('bad shape');
     } catch {
-      return ['หน่วยฯดอนจาน', 'หน่วยฯจอมทอง', 'หน่วยฯสามเงา', 'หน่วยฯคลองขลุง'];
+      return DEMO_MODE ? ['หน่วยฯดอนจาน', 'หน่วยฯจอมทอง', 'หน่วยฯสามเงา', 'หน่วยฯคลองขลุง'] : [];
     }
   },
 
@@ -104,7 +137,7 @@ export const api = {
       if (Array.isArray(data?.users)) return data.users;
       throw new Error('bad shape');
     } catch {
-      return ['ด.ต. สมชาย สายตรวจ', 'ส.ต.อ. รักชาติ มั่นคง', 'ร.ต.อ. วีระ ยุติธรรม', 'จ.ส.ต. ประยุทธ อดทน'];
+      return DEMO_MODE ? ['ด.ต. สมชาย สายตรวจ', 'ส.ต.อ. รักชาติ มั่นคง', 'ร.ต.อ. วีระ ยุติธรรม', 'จ.ส.ต. ประยุทธ อดทน'] : [];
     }
   },
 
@@ -116,6 +149,7 @@ export const api = {
       if (Array.isArray(data?.charges)) return data.charges;
       throw new Error('bad shape');
     } catch {
+      if (!DEMO_MODE) return [];
       return [
         'ขับรถเร็วเกินกำหนด',
         'ไม่สวมหมวกนิรภัย',
@@ -145,7 +179,7 @@ export const api = {
       const res = await fetch(`${API_BASE_URL}/missions?${q}`);
       return await res.json();
     } catch {
-      return { status: 'success', data: [] };
+      return { status: 'error', data: [], message: OFFLINE_MESSAGE };
     }
   },
 
@@ -154,7 +188,7 @@ export const api = {
       const res = await fetch(`${API_BASE_URL}/my-pending?username=${encodeURIComponent(username)}`);
       return await res.json();
     } catch {
-      return { status: 'success', data: [] };
+      return { status: 'error', data: [], message: OFFLINE_MESSAGE };
     }
   },
 
@@ -164,7 +198,8 @@ export const api = {
       const res = await fetch(`${API_BASE_URL}/daily-summary?${q}`);
       return await res.json();
     } catch {
-      return { status: 'success', data: { v43: 0, service: 0, v42: 0, v20: 0, chargesText: 'ไม่มีข้อมูลข้อหา' } };
+      if (DEMO_MODE) return { status: 'success', data: { v43: 0, service: 0, v42: 0, v20: 0, chargesText: 'ไม่มีข้อมูลข้อหา' } };
+      return { status: 'error', message: OFFLINE_MESSAGE };
     }
   },
 
@@ -174,6 +209,7 @@ export const api = {
       const res = await fetch(`${API_BASE_URL}/division-summary?${q}`, { headers: { 'x-token': token || '' } });
       return await res.json();
     } catch {
+      if (!DEMO_MODE) return { status: 'error', message: OFFLINE_MESSAGE };
       const div = String(station || '5').charAt(0) || '5';
       const byStation = [1, 2, 3, 4, 5, 6].map((s) => ({
         station: `${div}${s}`, name: `ส.ทล.${s}`,
@@ -201,6 +237,7 @@ export const api = {
       const res = await fetch(`${API_BASE_URL}/station-pending?station=${encodeURIComponent(station)}`, { headers: { 'x-token': token || '' } });
       return await res.json();
     } catch {
+      if (!DEMO_MODE) return { status: 'error', message: OFFLINE_MESSAGE };
       return {
         status: 'success',
         data: {
@@ -223,7 +260,8 @@ export const api = {
       const res = await fetch(`${API_BASE_URL}/records/approve`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-token': token || '' }, body: JSON.stringify({ sheetName, recordId }) });
       return await res.json();
     } catch {
-      return { status: 'success', message: 'อนุมัติรายการเรียบร้อย (Demo Mode)' };
+      if (DEMO_MODE) return { status: 'success', message: 'อนุมัติรายการเรียบร้อย (โหมดสาธิต)' };
+      return { status: 'error', message: OFFLINE_MESSAGE };
     }
   },
 
@@ -233,6 +271,7 @@ export const api = {
       const res = await fetch(`${API_BASE_URL}/national-summary?${q}`, { headers: { 'x-token': token || '' } });
       return await res.json();
     } catch {
+      if (!DEMO_MODE) return { status: 'error', message: OFFLINE_MESSAGE };
       // Offline demo dataset so the charts render.
       const divs = [1, 2, 3, 4, 5, 6, 7, 8].map((d) => ({
         div: String(d), divName: `กก.${d}`,
@@ -271,7 +310,8 @@ export const api = {
       });
       return await res.json();
     } catch {
-      return { status: 'success', message: 'ยกเลิกรายการเรียบร้อย (Demo Mode)' };
+      if (DEMO_MODE) return { status: 'success', message: 'ยกเลิกรายการเรียบร้อย (โหมดสาธิต)' };
+      return { status: 'error', message: OFFLINE_MESSAGE };
     }
   },
 };

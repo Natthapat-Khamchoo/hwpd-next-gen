@@ -12,6 +12,11 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.9"
+      # Required — the API refuses to boot without it. Render generates a strong
+      # value on first deploy; an existing service needs this added by hand under
+      # Environment before the next deploy will start.
+      - key: SESSION_SECRET
+        generateValue: true
       # Optional overrides (defaults already point at the tb_Users sheet):
       # - key: MASTER_SHEET_ID
       #   value: "186cb2LBLhfFD_6i-Z-kycPK_vGD4NZxkxCNI2MJop9A"

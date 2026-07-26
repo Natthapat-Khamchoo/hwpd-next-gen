@@ -23,6 +23,13 @@ env/
 *.key
 .clasp.json
 
+# Google credentials — never commit these
+service-account*.json
+*-service-account.json
+gcp-credentials*.json
+client_secret*.json
+token.json
+
 # IDE & OS System Files
 .vscode/
 .idea/

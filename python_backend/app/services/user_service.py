@@ -1,77 +1,119 @@
 """
 HWPD Next Gen - User directory service.
 
-Reads the `tb_Users` tab from the Master Spreadsheet (public "anyone with the
-link" share) via the CSV export endpoint — no Google API credentials required.
-Results are cached in-process for a short TTL so login stays fast.
+อ่านแท็บ `tb_Users` จาก Master Spreadsheet ผ่าน credentials ชุดเดียวกับที่ใช้เขียน
+รายงาน (ดู sheets_service) จึงไม่ต้องพึ่งการแชร์ไฟล์แบบสาธารณะอีกต่อไป
 
-Sheet columns: Username, Password, FullName, Station_ID, Unit_ID, Role,
+ผลลัพธ์ถูกแคชไว้ระยะสั้นเพื่อให้การล็อกอินไม่ต้องยิง Google ทุกครั้ง
+
+คอลัมน์ในชีต: Username, Password, FullName, Station_ID, Unit_ID, Role,
 สถานะไปช่วยราชการ, สถานะมาช่วยราชการ, หมายเหตุ, เบอร์โทร, รหัส, ...
 """
 
-import csv
-import io
+import logging
+import threading
 import time
-from typing import Dict, Any, Optional
-
-import requests
+from typing import Any, Dict, Optional
 
 from app.core.config import MASTER_SHEET_ID
+from app.services import sheets_service
 
-_CACHE: Dict[str, Any] = {"users": None, "ts": 0.0}
-_CACHE_TTL_SECONDS = 300  # 5 minutes
+logger = logging.getLogger(__name__)
+
+USERS_TABLE = "tb_Users"
+CACHE_TTL_SECONDS = 300  # 5 นาที
+
+_cache: Dict[str, Any] = {"users": None, "ts": 0.0}
+_lock = threading.Lock()
+
+# ชื่อคอลัมน์ในชีต -> ชื่อฟิลด์ที่ระบบใช้
+FIELD_MAP = {
+    "Username": "username",
+    "Password": "password",
+    "FullName": "fullName",
+    "Station_ID": "station",
+    "Unit_ID": "unit",
+    "Role": "role",
+    "เบอร์โทร": "phone",
+    "รหัส": "code",
+    "สถานะไปช่วยราชการ": "secondedOut",
+    "สถานะมาช่วยราชการ": "secondedIn",
+    "หมายเหตุ": "note",
+}
 
 
-def _sheet_csv_url(sheet_name: str = "tb_Users") -> str:
-    return (
-        f"https://docs.google.com/spreadsheets/d/{MASTER_SHEET_ID}"
-        f"/gviz/tq?tqx=out:csv&sheet={sheet_name}"
-    )
+class UserDirectoryUnavailable(RuntimeError):
+    """อ่านรายชื่อผู้ใช้จาก Google Sheet ไม่ได้"""
 
 
-def _fetch_users() -> Dict[str, Dict[str, Any]]:
-    """Fetch + parse tb_Users into a dict keyed by lowercase username."""
-    resp = requests.get(_sheet_csv_url("tb_Users"), timeout=15)
-    resp.raise_for_status()
-    resp.encoding = "utf-8"
+def _parse_rows(rows) -> Dict[str, Dict[str, Any]]:
+    if not rows:
+        raise UserDirectoryUnavailable(f"ตาราง {USERS_TABLE} ว่างเปล่า")
 
-    reader = csv.DictReader(io.StringIO(resp.text))
+    header = [str(h).strip() for h in rows[0]]
+    positions = {column: header.index(column) for column in FIELD_MAP if column in header}
+
+    missing = [c for c in ("Username", "Password", "Role", "Station_ID") if c not in positions]
+    if missing:
+        raise UserDirectoryUnavailable(f"ตาราง {USERS_TABLE} ไม่มีคอลัมน์ {', '.join(missing)}")
+
     users: Dict[str, Dict[str, Any]] = {}
-    for row in reader:
-        username = (row.get("Username") or "").strip()
+    for row in rows[1:]:
+        def cell(column: str) -> str:
+            index = positions.get(column)
+            if index is None or index >= len(row):
+                return ""
+            return str(row[index]).strip()
+
+        username = cell("Username")
         if not username:
             continue
-        users[username.lower()] = {
-            "username": username,
-            "password": (row.get("Password") or "").strip(),
-            "fullName": (row.get("FullName") or "").strip(),
-            "station": (row.get("Station_ID") or "").strip(),
-            "unit": (row.get("Unit_ID") or "").strip(),
-            "role": (row.get("Role") or "").strip(),
-            "phone": (row.get("เบอร์โทร") or "").strip(),
-            "code": (row.get("รหัส") or "").strip(),
-        }
+        users[username.lower()] = {field: cell(column) for column, field in FIELD_MAP.items()}
+        users[username.lower()]["username"] = username
+
     return users
 
 
 def get_all_users(force: bool = False) -> Dict[str, Dict[str, Any]]:
-    """Return the cached user directory, refreshing when the TTL expires."""
+    """
+    คืนรายชื่อผู้ใช้ทั้งหมด (คีย์เป็น username ตัวพิมพ์เล็ก)
+    ขว้าง UserDirectoryUnavailable ถ้าอ่านชีตไม่ได้ เพื่อให้ผู้เรียกแยกได้ว่า
+    "รหัสผ่านผิด" กับ "ระบบเข้าถึงรายชื่อผู้ใช้ไม่ได้" คนละเรื่องกัน
+    """
     now = time.time()
-    if not force and _CACHE["users"] is not None and (now - _CACHE["ts"]) < _CACHE_TTL_SECONDS:
-        return _CACHE["users"]
-    users = _fetch_users()
-    _CACHE["users"] = users
-    _CACHE["ts"] = now
-    return users
+    cached = _cache.get("users")
+    if not force and cached is not None and (now - _cache["ts"]) < CACHE_TTL_SECONDS:
+        return cached
+
+    with _lock:
+        cached = _cache.get("users")
+        if not force and cached is not None and (time.time() - _cache["ts"]) < CACHE_TTL_SECONDS:
+            return cached
+
+        try:
+            rows = sheets_service.read_table(MASTER_SHEET_ID, USERS_TABLE)
+        except sheets_service.SheetNotConfigured as exc:
+            raise UserDirectoryUnavailable(str(exc)) from exc
+        except sheets_service.SheetWriteError as exc:
+            raise UserDirectoryUnavailable(f"อ่านรายชื่อผู้ใช้ไม่สำเร็จ: {exc}") from exc
+
+        users = _parse_rows(rows)
+        _cache["users"] = users
+        _cache["ts"] = time.time()
+        logger.info("โหลดรายชื่อผู้ใช้จาก %s แล้ว %d บัญชี", USERS_TABLE, len(users))
+        return users
 
 
 def get_user(username: str) -> Optional[Dict[str, Any]]:
-    """Look up one user by username (case-insensitive). None if not found or on fetch error."""
+    """หาผู้ใช้หนึ่งคนตาม username (ไม่สนตัวพิมพ์เล็กใหญ่)"""
     key = (username or "").strip().lower()
     if not key:
         return None
-    try:
-        return get_all_users().get(key)
-    except Exception:
-        # On any fetch/parse failure, let the caller fall back to its own list.
-        return None
+    return get_all_users().get(key)
+
+
+def reset_cache() -> None:
+    """ล้างแคช (ใช้ในเทสและตอนแก้ข้อมูลผู้ใช้ในชีต)"""
+    with _lock:
+        _cache["users"] = None
+        _cache["ts"] = 0.0

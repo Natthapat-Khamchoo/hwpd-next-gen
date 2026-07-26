@@ -1,8 +1,14 @@
 """
 Tests for Config and Station Routing (unittest runner compatible)
+
+เทสชุดนี้กำหนด environment ของตัวเองทุกครั้ง ไม่พึ่ง .env ของเครื่องที่รัน
+เพราะ app.core.config โหลด .env ให้อัตโนมัติ ถ้าปล่อยให้เทสอ่านค่าจริง
+ผลเทสจะเปลี่ยนไปตามเครื่องของแต่ละคน
 """
 
 import unittest
+from unittest import mock
+
 from app.core.config import (
     get_station_data,
     get_target_db_id,
@@ -10,8 +16,23 @@ from app.core.config import (
     check_station_match,
 )
 
+TEST_ROUTER = (
+    '{"1":{"OPS":"sheet-id-for-division-1"},'
+    '"5":{"OPS":"sheet-id-for-division-5"}}'
+)
+
+CONTROLLED_ENV = {
+    "DB_ROUTER_JSON": TEST_ROUTER,
+    "STATION_SECRETS_JSON": "",
+}
+
 
 class TestConfig(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch.dict("os.environ", CONTROLLED_ENV, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_get_station_data(self):
         st51 = get_station_data("51")
         self.assertEqual(st51["province"], "เชียงใหม่")
@@ -21,12 +42,10 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(st11["province"], "อยุธยา")
 
     def test_get_target_db_id(self):
-        db5 = get_target_db_id("51")
-        self.assertEqual(db5, "1R0x-rH8hfH9OXhtwVgxc9KKXv_d4xPYK1-0Sn13jkgA")
+        self.assertEqual(get_target_db_id("51"), "sheet-id-for-division-5")
+        self.assertEqual(get_target_db_id("11"), "sheet-id-for-division-1")
 
-        db1 = get_target_db_id("11")
-        self.assertEqual(db1, "1Sgji6GHkgY1dlFei9jTiaW67-VFIu7zAf13PfwumQBc")
-
+    def test_unconfigured_division_raises_with_its_number(self):
         with self.assertRaises(ValueError) as ctx:
             get_target_db_id("21")
         self.assertIn("กองกำกับการ 2", str(ctx.exception))

@@ -14,18 +14,122 @@ python_backend/
 │   │   ├── security.py       # ระบบ Password Hashing (SHA-256), HMAC Session Token, RBAC
 │   │   └── sanitization.py   # ป้องกัน Formula Injection & HTML Escaping (XSS)
 │   ├── services/
-│   │   ├── line_service.py   # สตรีมข้อความ Push Notification ไปยัง LINE Messaging API
-│   │   ├── report_service.py # ประมวลผลและสร้าง Payload รายงาน (OP, CHK, ARR, ACC, MIS, RG, FUEL)
-│   │   └── drive_service.py  # ระบบจัดการไฟล์อัปโหลด
-│   └── main.py               # FastAPI App และ REST API Endpoints
+│   │   ├── line_service.py    # สตรีมข้อความ Push Notification ไปยัง LINE Messaging API
+│   │   ├── report_service.py  # ประมวลผลและสร้าง Payload รายงาน (OP, CHK, ARR)
+│   │   ├── storage_service.py # ตรวจสอบและถอดรหัสไฟล์แนบ (ตัวอัปโหลด Drive ยังไม่ได้ implement)
+│   │   └── user_service.py    # อ่าน tb_Users จาก Master Sheet ผ่าน CSV export
+│   └── main.py                # FastAPI App และ REST API Endpoints
 ├── tests/
-│   ├── test_config.py        # Unit Tests การสืบค้น Routing ฐานข้อมูลตาม กก.
-│   ├── test_security.py      # Unit Tests ความปลอดภัย Auth, HMAC, และ RBAC
-│   └── test_sanitization.py # Unit Tests ป้องกัน Formula Injection
+│   ├── test_config.py         # Unit Tests การสืบค้น Routing ฐานข้อมูลตาม กก.
+│   ├── test_security.py       # Unit Tests ความปลอดภัย Auth, HMAC, และ RBAC
+│   ├── test_session_secret.py # Unit Tests ว่า SESSION_SECRET ต้องมาจาก environment
+│   ├── test_storage.py        # Unit Tests การตรวจไฟล์แนบ
+│   └── test_sanitization.py   # Unit Tests ป้องกัน Formula Injection
 ├── requirements.txt
 ├── .env.example
 └── README.md
 ```
+
+---
+
+## 🔑 ตั้งค่าก่อนรัน (บังคับ)
+
+`SESSION_SECRET` ไม่มีค่า default ระบบจะไม่ยอมบูตถ้าไม่ได้ตั้งค่า เพราะ secret ที่ commit ลง git
+ใครก็ปลอม Session Token เป็นสิทธิ์ระดับ ผบก. ได้
+
+```bash
+cd python_backend
+cp .env.example .env
+python -c "import secrets; print(secrets.token_urlsafe(48))"   # เอาค่าที่ได้ไปใส่ SESSION_SECRET ใน .env
+```
+
+บน Render ให้ตั้ง Environment Variable ชื่อ `SESSION_SECRET` (blueprint `render.yaml` สั่ง generate
+ให้อัตโนมัติสำหรับ service ที่สร้างใหม่ ส่วน service เดิมต้องเพิ่มเองก่อน deploy รอบถัดไป)
+
+ค่าเดิม `hwpd-sec-key-2026-secret` และ `hwpd-sec-key-2026-custom-secret` ถูกขึ้นบัญชีดำไว้แล้ว
+ระบบจะปฏิเสธไม่ให้ใช้
+
+---
+
+## 🗄️ เชื่อมฐานข้อมูล Google Sheets
+
+รายงานทุกใบถูกเขียนลงสเปรดชีตของ กก. นั้น ๆ ผ่าน Service Account ถ้ายังไม่ได้ตั้งค่า
+API จะตอบ `503` พร้อมข้อความบอกสาเหตุ ไม่ใช่รับรายงานแล้วปล่อยข้อมูลหาย
+
+### 1. สร้าง OAuth Client ID
+
+องค์กรบล็อกการสร้าง service account key (`iam.disableServiceAccountKeyCreation`)
+จึงใช้ OAuth แทน ระบบจะทำงานเสมือนเป็นบัญชีที่กดอนุญาต **บัญชีนั้นต้องมีสิทธิ์แก้ไข
+โฟลเดอร์ฐานข้อมูล** (เป็นเจ้าของ หรือถูกแชร์เป็น Editor ก็ได้)
+
+1. เปิด [Google Cloud Console](https://console.cloud.google.com/) สร้างโปรเจกต์ (หรือใช้ของเดิม)
+2. APIs & Services → Library → เปิดใช้งาน **Google Sheets API** และ **Google Drive API**
+3. OAuth consent screen → **External** → กรอกชื่อแอปกับอีเมลติดต่อ
+   → หัวข้อ **Test users** เพิ่มอีเมลบัญชีที่จะใช้กดอนุญาตเข้าไปด้วย
+4. Credentials → Create credentials → **OAuth client ID** → Application type: **Desktop app**
+5. ดาวน์โหลด JSON มาวางที่ `python_backend/client_secret.json` (`.gitignore` กันไว้แล้ว)
+
+### 2. แลกเป็น refresh token
+
+```bash
+cd python_backend
+pip install -r requirements.txt
+python scripts/get_oauth_token.py
+```
+
+เบราว์เซอร์จะเปิดให้ล็อกอินด้วยบัญชีเจ้าของโฟลเดอร์แล้วกดอนุญาต เสร็จแล้วสคริปต์จะพิมพ์
+`GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REFRESH_TOKEN`
+ให้เอาไปใส่ `.env` refresh token มีค่าเท่ากับรหัสผ่านของบัญชีสำหรับ Sheets/Drive ห้าม commit
+
+### 3. สร้างตาราง
+
+```bash
+# ดูก่อนว่าจะสร้างอะไรบ้าง
+python scripts/setup_database.py --divisions 5 --dry-run
+
+# สร้างจริง
+python scripts/setup_database.py --divisions 5
+```
+
+สคริปต์จะสร้างสองอย่างต่อหนึ่ง กก.
+
+1. สเปรดชีต `DB_TEST_กก.{หมายเลข}` พร้อมแท็บ `tb_DailyReport`, `tb_Checkpoints`,
+   `tb_Arrests` หัวคอลัมน์ชุดเดียวกับที่ Apps Script สร้างไว้ใน `DB_TEST_กก.1`
+2. โฟลเดอร์ `กองกำกับ {หมายเลข}` สำหรับเก็บไฟล์แนบ (ข้ามได้ด้วย `--skip-folders`)
+
+รันซ้ำได้ปลอดภัย ของที่มีอยู่แล้วจะถูกข้าม เมื่อเสร็จมันจะพิมพ์ค่า `DB_ROUTER_JSON`
+และ `DIVISION_FOLDERS_JSON` ให้เอาไปใส่ `.env` หรือ Environment ของ Render
+
+### ไฟล์แนบ
+
+รายงานที่มีไฟล์แนบจะถูกอัปโหลดเข้าโฟลเดอร์ย่อยชื่อ `{รหัสรายงาน}_{ชื่อหน่วย}` ใต้โฟลเดอร์
+ของ กก. นั้น แล้วเก็บลิงก์โฟลเดอร์ลงคอลัมน์ `Attachment_Folder` และข้อความ LINE
+ตรงตามที่ Apps Script เคยทำ
+
+ถ้า กก. ใดยังไม่ได้ตั้งค่าโฟลเดอร์ หรืออัปโหลดไม่สำเร็จ ระบบจะยังบันทึกรายงานลงชีต
+แต่ตอบกลับพร้อมคำเตือนให้เจ้าหน้าที่เก็บไฟล์ต้นฉบับไว้ ไม่แจ้งว่าสำเร็จเฉย ๆ
+
+ถ้าจะเติมแท็บที่ขาดลงสเปรดชีตที่มีอยู่แล้ว ใช้ `--spreadsheet-id`:
+
+```bash
+python scripts/setup_database.py --divisions 1 --spreadsheet-id 1Sgji6GHkgY1dlFei9jTiaW67-VFIu7zAf13PfwumQBc
+```
+
+### 4. ตรวจว่าต่อติดจริง
+
+```bash
+uvicorn app.main:app --reload --port 8000
+```
+
+ล็อกอินเอา token แล้วเรียก `GET /api/health/database` พร้อม header `x-token`
+จะได้สถานะรายกองกำกับ ชื่อไฟล์ รายชื่อแท็บที่มีจริง และตารางที่ยังขาด
+
+### หมายเหตุเรื่อง schema
+
+`app/core/schema.py` เก็บหัวคอลัมน์ของทุกตาราง และต้องเรียงตรงกับ `row_data` ที่
+`prepare_*` ใน `report_service.py` สร้างขึ้น ถ้าไม่ตรง ข้อมูลจะลงผิดคอลัมน์โดยไม่มี error
+`tests/test_schema.py` ตรวจข้อนี้ให้ทุกครั้งที่รันเทส เพิ่มรายงานประเภทใหม่เมื่อไหร่
+ต้องเพิ่ม schema พร้อมกันเสมอ
 
 ---
 
