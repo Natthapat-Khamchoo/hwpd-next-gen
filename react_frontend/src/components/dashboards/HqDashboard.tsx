@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { getNowDateLocal } from '../../utils/formHelpers';
 import { ReactApexChart, vBarOptions, donutOptions } from './chartHelpers';
+import { DashboardLayout, SideItem } from './DashboardLayout';
 
 const firstOfMonth = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]; };
 
@@ -33,9 +34,7 @@ export const HqDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const t = data?.totals || {};
   const bs = data?.byStation || [];
 
-  const Item = ({ id, icon, label, cls = '' }: { id: string; icon: string; label: string; cls?: string }) => (
-    <div className={`sidebar-item ${cls} ${view === id ? 'active' : ''}`} onClick={() => setView(id)}><i className={`fa-solid ${icon}`}></i> {label}</div>
-  );
+  const nav = (id: string, close: () => void) => { setView(id); close(); };
 
   const kpis = [
     { c: 'text-primary', i: 'fa-road', v: t.v43, l: 'รวม ว.43' },
@@ -47,25 +46,27 @@ export const HqDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   ];
 
   return (
-    <div className="dashboard-wrapper hq-bg animate-fade-in">
-      <div className="dash-sidebar">
-        <div className="sidebar-header"><h4 className="text-white m-0" style={{ textShadow: '0 0 10px #38bdf8' }}>กองกำกับการ {div}</h4><small className="text-white-50">ฝอ.กก.{div}</small></div>
-        <div className="sidebar-menu">
-          <Item id="overview" icon="fa-chart-line" label="ภาพรวมผลการปฏิบัติ" />
-          <Item id="search" icon="fa-magnifying-glass" label="ระบบสืบค้นฐานข้อมูล" />
-          <Item id="fuel" icon="fa-gas-pump" label="ระบบจัดการน้ำมัน" />
-          <Item id="daily_detail" icon="fa-folder-open" label="แฟ้มข้อมูล / ส่งออก Excel" cls="text-success" />
-          <Item id="manpower" icon="fa-users" label="ระบบจัดการกำลังพล" cls="text-primary" />
-          <Item id="evidence" icon="fa-boxes-packing" label="จัดหมวดหมู่ของกลาง" cls="text-warning" />
-          <Item id="escort" icon="fa-motorcycle" label="ระบบจัดการการนำขบวน" cls="text-info" />
-        </div>
-        <div className="mt-auto border-top border-secondary p-3">
-          <div className="sidebar-item text-warning" onClick={onBack}><i className="fa-solid fa-rotate"></i> กลับเมนูหลัก</div>
-          <div className="sidebar-item text-danger" onClick={logout}><i className="fa-solid fa-power-off"></i> ออกจากระบบ</div>
-        </div>
-      </div>
-
-      <div className="main-content">
+    <DashboardLayout
+      bg="hq-bg"
+      sidebar={(close) => (
+        <>
+          <div className="sidebar-header"><h4 className="text-white m-0" style={{ textShadow: '0 0 10px #38bdf8' }}>กองกำกับการ {div}</h4><small className="text-white-50">ฝอ.กก.{div}</small></div>
+          <div className="sidebar-menu">
+            <SideItem icon="fa-chart-line" active={view === 'overview'} onClick={() => nav('overview', close)}>ภาพรวมผลการปฏิบัติ</SideItem>
+            <SideItem icon="fa-magnifying-glass" active={view === 'search'} onClick={() => nav('search', close)}>ระบบสืบค้นฐานข้อมูล</SideItem>
+            <SideItem icon="fa-gas-pump" active={view === 'fuel'} onClick={() => nav('fuel', close)}>ระบบจัดการน้ำมัน</SideItem>
+            <SideItem icon="fa-folder-open" cls="text-success" active={view === 'daily_detail'} onClick={() => nav('daily_detail', close)}>แฟ้มข้อมูล / ส่งออก Excel</SideItem>
+            <SideItem icon="fa-users" cls="text-primary" active={view === 'manpower'} onClick={() => nav('manpower', close)}>ระบบจัดการกำลังพล</SideItem>
+            <SideItem icon="fa-boxes-packing" cls="text-warning" active={view === 'evidence'} onClick={() => nav('evidence', close)}>จัดหมวดหมู่ของกลาง</SideItem>
+            <SideItem icon="fa-motorcycle" cls="text-info" active={view === 'escort'} onClick={() => nav('escort', close)}>ระบบจัดการการนำขบวน</SideItem>
+          </div>
+          <div className="mt-auto border-top border-secondary p-3">
+            <div className="sidebar-item text-warning" onClick={onBack}><i className="fa-solid fa-rotate"></i> กลับเมนูหลัก</div>
+            <div className="sidebar-item text-danger" onClick={logout}><i className="fa-solid fa-power-off"></i> ออกจากระบบ</div>
+          </div>
+        </>
+      )}
+    >
         <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 gap-3">
           <div><h3 className="text-white m-0">{VIEW_TITLES[view]} กก.{div}</h3><p className="text-white-50 small m-0">ยินดีต้อนรับ, <span className="text-info">{user?.fullName}</span></p></div>
           {view === 'overview' && (
@@ -112,7 +113,6 @@ export const HqDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <p className="text-white-50 mb-0">โครงหน้าตรงตามต้นฉบับแล้ว — ส่วนนี้พร้อมแสดงผลเมื่อเชื่อมต่อกับ Backend (FastAPI)</p>
           </div>
         )}
-      </div>
-    </div>
+    </DashboardLayout>
   );
 };

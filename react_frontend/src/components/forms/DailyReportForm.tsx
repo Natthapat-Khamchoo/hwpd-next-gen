@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { useStationData } from '../../hooks/useStationData';
@@ -83,6 +83,44 @@ const TABS = [
   { id: 4, icon: 'fa-chart-line', label: '4. สรุปผล' },
   { id: 5, icon: 'fa-car-side', label: '5. ว.4 อื่นๆ' },
 ];
+
+// Module-scope field components (stable identity → inputs keep focus while typing).
+// Shared state comes through context so call sites stay simple.
+interface DailyCtxType {
+  units: string[];
+  users: string[];
+  t2: Record<string, string>;
+  s2: (k: string, v: string) => void;
+}
+const DailyCtx = createContext<DailyCtxType>({ units: [], users: [], t2: {}, s2: () => {} });
+
+const UnitSelect: React.FC<{ value: string; onChange: (v: string) => void; border?: string }> = ({ value, onChange, border = 'border-info' }) => {
+  const { units } = useContext(DailyCtx);
+  return (
+    <select className={`form-select ${border}`} value={value} onChange={(e) => onChange(e.target.value)} required>
+      <option value="">-- เลือกหน่วยบริการ --</option>
+      {units.map((u) => <option key={u} value={u}>{u}</option>)}
+    </select>
+  );
+};
+const UserSelect: React.FC<{ value: string; onChange: (v: string) => void }> = ({ value, onChange }) => {
+  const { users } = useContext(DailyCtx);
+  return (
+    <select className="form-select" value={value} onChange={(e) => onChange(e.target.value)} required>
+      <option value="">-- เลือกรายชื่อ --</option>
+      {users.map((u) => <option key={u} value={u}>{u}</option>)}
+    </select>
+  );
+};
+const Num2: React.FC<{ k: string; label: string; cls?: string }> = ({ k, label, cls = '' }) => {
+  const { t2, s2 } = useContext(DailyCtx);
+  return (
+    <>
+      <label className="form-label small text-white-50">{label}</label>
+      <input type="number" className={`form-control text-center ${cls}`} value={t2[k]} onChange={(e) => s2(k, e.target.value)} min="0" />
+    </>
+  );
+};
 
 export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { user } = useAuth();
@@ -220,26 +258,8 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
     else Swal.fire('เกิดข้อผิดพลาด!', res.message || 'บันทึกไม่สำเร็จ', 'error');
   };
 
-  const UnitSelect = ({ value, onChange, border = 'border-info' }: { value: string; onChange: (v: string) => void; border?: string }) => (
-    <select className={`form-select ${border}`} value={value} onChange={(e) => onChange(e.target.value)} required>
-      <option value="">-- เลือกหน่วยบริการ --</option>
-      {units.map((u) => <option key={u} value={u}>{u}</option>)}
-    </select>
-  );
-  const UserSelect = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
-    <select className="form-select" value={value} onChange={(e) => onChange(e.target.value)} required>
-      <option value="">-- เลือกรายชื่อ --</option>
-      {users.map((u) => <option key={u} value={u}>{u}</option>)}
-    </select>
-  );
-  const Num2 = ({ k, label, cls = '' }: { k: string; label: string; cls?: string }) => (
-    <>
-      <label className="form-label small text-white-50">{label}</label>
-      <input type="number" className={`form-control text-center ${cls}`} value={t2[k]} onChange={(e) => s2(k, e.target.value)} min="0" />
-    </>
-  );
-
   return (
+    <DailyCtx.Provider value={{ units, users, t2, s2 }}>
     <FormShell title="หมวดรายงานประจำวัน HWPD" onBack={onBack} maxWidth={900}>
       <ul className="nav nav-pills mb-4 justify-content-center flex-wrap gap-1">
         {TABS.map((t) => (
@@ -456,5 +476,6 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
         </div>
       )}
     </FormShell>
+    </DailyCtx.Provider>
   );
 };

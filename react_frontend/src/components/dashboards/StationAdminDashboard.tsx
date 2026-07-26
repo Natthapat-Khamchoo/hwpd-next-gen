@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
+import { DashboardLayout, SideItem } from './DashboardLayout';
 import Swal from 'sweetalert2';
 
 const VIEW_TITLES: Record<string, string> = {
@@ -60,41 +61,36 @@ export const StationAdminDashboard: React.FC<{ onBack: () => void }> = ({ onBack
     Swal.fire('ส่งคืนแล้ว', `ตีกลับรายการ ${recordId} เรียบร้อยแล้ว`, 'info');
   };
 
-  const SidebarItem = ({ id, icon, label, cls = '', badge }: { id: string; icon: string; label: React.ReactNode; cls?: string; badge?: number }) => (
-    <div className={`sidebar-item ${cls} ${view === id ? 'active' : ''}`} onClick={() => setView(id)}>
-      <i className={`fa-solid ${icon}`}></i> {label}
-      {badge ? <span className="badge bg-danger ms-auto rounded-pill">{badge}</span> : null}
-    </div>
-  );
+  const nav = (id: string, close: () => void) => { setView(id); close(); };
 
   return (
-    <div className="dashboard-wrapper hq-bg animate-fade-in">
-      {/* Sidebar */}
-      <div className="dash-sidebar">
-        <div className="sidebar-header">
-          <h4 className="text-info m-0">Admin Dashboard</h4>
-          <small className="text-white-50">{stationName(user?.station)}</small>
-        </div>
-        <div className="sidebar-menu">
-          <SidebarItem id="overview" icon="fa-chart-line" label="ภาพรวมประจำวัน" />
-          <h6 className="text-white-50 px-4 mt-3 mb-2 small"><i className="fa-solid fa-bell"></i> รายการรอตรวจสอบ</h6>
-          <SidebarItem id="pending" icon="fa-list-check" label="ผลปฏิบัติ / รายงาน" badge={pending.length} />
-          <SidebarItem id="fuel_approve" icon="fa-gas-pump" label="บันทึกเติมน้ำมัน" badge={fuel.length} />
-          <h6 className="text-white-50 px-4 mt-4 mb-2 small"><i className="fa-solid fa-folder-tree"></i> ข้อมูลส่วนสถานี</h6>
-          <SidebarItem id="mission_view" icon="fa-list-check" label="เรียกดูภารกิจหน่วย" />
-          <SidebarItem id="fuel_stats" icon="fa-oil-can" label="โควตาและการใช้น้ำมัน" cls="text-warning" />
-          <SidebarItem id="daily_detail" icon="fa-folder-open" label="แฟ้มข้อมูล / ส่งออก Excel" cls="text-success" />
-          <SidebarItem id="summary" icon="fa-paper-plane" label={<>สรุปยอดส่ง {stationName(user?.station)}</>} cls="text-info" />
-          <SidebarItem id="manpower" icon="fa-sitemap" label="ทำเนียบกำลังพลสถานี" cls="text-primary" />
-        </div>
-        <div className="mt-auto border-top border-secondary p-3">
-          <div className="sidebar-item text-warning" onClick={onBack}><i className="fa-solid fa-rotate"></i> กลับโหมดผู้ปฏิบัติ</div>
-          <div className="sidebar-item text-danger" onClick={logout}><i className="fa-solid fa-power-off"></i> ออกจากระบบ</div>
-        </div>
-      </div>
-
-      {/* Main */}
-      <div className="main-content">
+    <DashboardLayout
+      bg="hq-bg"
+      sidebar={(close) => (
+        <>
+          <div className="sidebar-header">
+            <h4 className="text-info m-0">Admin Dashboard</h4>
+            <small className="text-white-50">{stationName(user?.station)}</small>
+          </div>
+          <div className="sidebar-menu">
+            <SideItem icon="fa-chart-line" active={view === 'overview'} onClick={() => nav('overview', close)}>ภาพรวมประจำวัน</SideItem>
+            <h6 className="text-white-50 px-4 mt-3 mb-2 small"><i className="fa-solid fa-bell"></i> รายการรอตรวจสอบ</h6>
+            <SideItem icon="fa-list-check" active={view === 'pending'} badge={pending.length} onClick={() => nav('pending', close)}>ผลปฏิบัติ / รายงาน</SideItem>
+            <SideItem icon="fa-gas-pump" active={view === 'fuel_approve'} badge={fuel.length} onClick={() => nav('fuel_approve', close)}>บันทึกเติมน้ำมัน</SideItem>
+            <h6 className="text-white-50 px-4 mt-4 mb-2 small"><i className="fa-solid fa-folder-tree"></i> ข้อมูลส่วนสถานี</h6>
+            <SideItem icon="fa-list-check" active={view === 'mission_view'} onClick={() => nav('mission_view', close)}>เรียกดูภารกิจหน่วย</SideItem>
+            <SideItem icon="fa-oil-can" cls="text-warning" active={view === 'fuel_stats'} onClick={() => nav('fuel_stats', close)}>โควตาและการใช้น้ำมัน</SideItem>
+            <SideItem icon="fa-folder-open" cls="text-success" active={view === 'daily_detail'} onClick={() => nav('daily_detail', close)}>แฟ้มข้อมูล / ส่งออก Excel</SideItem>
+            <SideItem icon="fa-paper-plane" cls="text-info" active={view === 'summary'} onClick={() => nav('summary', close)}>สรุปยอดส่ง {stationName(user?.station)}</SideItem>
+            <SideItem icon="fa-sitemap" cls="text-primary" active={view === 'manpower'} onClick={() => nav('manpower', close)}>ทำเนียบกำลังพลสถานี</SideItem>
+          </div>
+          <div className="mt-auto border-top border-secondary p-3">
+            <div className="sidebar-item text-warning" onClick={onBack}><i className="fa-solid fa-rotate"></i> กลับโหมดผู้ปฏิบัติ</div>
+            <div className="sidebar-item text-danger" onClick={logout}><i className="fa-solid fa-power-off"></i> ออกจากระบบ</div>
+          </div>
+        </>
+      )}
+    >
         <div className="d-flex justify-content-between align-items-center mb-4">
           <div>
             <h3 className="m-0 text-white">{VIEW_TITLES[view]}</h3>
@@ -205,7 +201,6 @@ export const StationAdminDashboard: React.FC<{ onBack: () => void }> = ({ onBack
             <p className="text-white-50 mb-0">ส่วนนี้พร้อมแสดงผลเมื่อเชื่อมต่อกับ Backend (FastAPI) — โครงหน้าตรงตามต้นฉบับแล้ว</p>
           </div>
         )}
-      </div>
-    </div>
+    </DashboardLayout>
   );
 };

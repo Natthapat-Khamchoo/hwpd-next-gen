@@ -6,6 +6,7 @@ const ReactApexChart = ((ReactApexChartImport as any).default ?? ReactApexChartI
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { getNowDateLocal } from '../../utils/formHelpers';
+import { DashboardLayout } from './DashboardLayout';
 import Swal from 'sweetalert2';
 
 const firstOfMonth = () => {
@@ -66,29 +67,30 @@ export const SuperCommanderDashboard: React.FC<{ onBack: () => void }> = ({ onBa
   };
 
   return (
-    <div className="dashboard-wrapper sc-bg animate-fade-in">
-      {/* Sidebar */}
-      <div className="dash-sidebar sc">
-        <div className="sidebar-header d-flex justify-content-between align-items-center">
-          <div>
-            <h4 className="text-warning m-0" style={{ textShadow: '0 0 10px rgba(250,204,21,0.5)' }}><i className="fa-solid fa-crown"></i> ผู้บังคับการ</h4>
-            <small className="text-white-50">National Executive Command</small>
+    <DashboardLayout
+      variant="sc"
+      bg="sc-bg"
+      sidebar={(close) => (
+        <>
+          <div className="sidebar-header d-flex justify-content-between align-items-center">
+            <div>
+              <h4 className="text-warning m-0" style={{ textShadow: '0 0 10px rgba(250,204,21,0.5)' }}><i className="fa-solid fa-crown"></i> ผู้บังคับการ</h4>
+              <small className="text-white-50">National Executive Command</small>
+            </div>
           </div>
-        </div>
-        <div className="sidebar-menu">
-          <div className="sidebar-item active"><i className="fa-solid fa-earth-asia"></i> ภาพรวมระดับประเทศ (บก.ทล.)</div>
-          <div className="px-4 mt-3 mb-2 small text-warning">เจาะลึกรายกองกำกับ:</div>
-          {[1, 2, 3, 4, 5, 6, 7, 8].map((d) => (
-            <div className="sidebar-item text-secondary py-1" key={d} onClick={() => Swal.fire('เจาะลึก กก.' + d, 'เปิดหน้าผู้กำกับการของ กก.' + d + ' (พอร์ตหน้า commander ต่อไป)', 'info')}> กก.{d}</div>
-          ))}
-        </div>
-        <div className="mt-auto border-top border-secondary p-3">
-          <div className="sidebar-item text-danger" onClick={logout}><i className="fa-solid fa-power-off"></i> ออกจากระบบ</div>
-        </div>
-      </div>
-
-      {/* Main */}
-      <div className="main-content">
+          <div className="sidebar-menu">
+            <div className="sidebar-item active"><i className="fa-solid fa-earth-asia"></i> ภาพรวมระดับประเทศ (บก.ทล.)</div>
+            <div className="px-4 mt-3 mb-2 small text-warning">เจาะลึกรายกองกำกับ:</div>
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((d) => (
+              <div className="sidebar-item text-secondary py-1" key={d} onClick={() => { close(); Swal.fire('เจาะลึก กก.' + d, 'เปิดหน้าผู้กำกับการของ กก.' + d + ' (พอร์ตหน้า commander ต่อไป)', 'info'); }}> กก.{d}</div>
+            ))}
+          </div>
+          <div className="mt-auto border-top border-secondary p-3">
+            <div className="sidebar-item text-danger" onClick={logout}><i className="fa-solid fa-power-off"></i> ออกจากระบบ</div>
+          </div>
+        </>
+      )}
+    >
         <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 gap-3">
           <div className="d-flex align-items-center gap-3">
             <button className="btn btn-outline-warning btn-sm" onClick={onBack}><i className="fa-solid fa-arrow-left"></i></button>
@@ -171,7 +173,6 @@ export const SuperCommanderDashboard: React.FC<{ onBack: () => void }> = ({ onBa
             </div>
           </div>
         )}
-      </div>
-    </div>
+    </DashboardLayout>
   );
 };

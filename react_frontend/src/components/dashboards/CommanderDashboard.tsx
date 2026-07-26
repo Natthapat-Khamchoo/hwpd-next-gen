@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { getNowDateLocal } from '../../utils/formHelpers';
 import { ReactApexChart, hBarOptions, vBarOptions, donutOptions } from './chartHelpers';
+import { DashboardLayout } from './DashboardLayout';
 import Swal from 'sweetalert2';
 
 const firstOfMonth = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]; };
@@ -43,25 +44,28 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ }) => {
   ];
 
   return (
-    <div className="dashboard-wrapper sc-bg animate-fade-in">
-      <div className="dash-sidebar sc">
-        <div className="sidebar-header">
-          <h4 className="text-warning m-0" style={{ textShadow: '0 0 10px rgba(250,204,21,0.5)' }}><i className="fa-solid fa-star"></i> ผู้กำกับการ</h4>
-          <small className="text-white-50">Executive Command · กก.{div}</small>
-        </div>
-        <div className="sidebar-menu">
-          <div className="sidebar-item active"><i className="fa-solid fa-chart-line"></i> ภาพรวมระดับบริหาร (Executive)</div>
-          <h6 className="text-white-50 px-4 mt-4 mb-2 small"><i className="fa-solid fa-sitemap"></i> ทางลัดการเข้าถึงระบบ</h6>
-          {onSwitchHQ && <div className="sidebar-item text-info" onClick={onSwitchHQ}><i className="fa-solid fa-building-shield"></i> เข้าสู่หน้า ฝอ. (HQ Dashboard)</div>}
-          <div className="px-4 mt-3 mb-2 small text-warning">เจาะลึกรายสถานี:</div>
-          {bs.map((s: any) => <div className="sidebar-item text-secondary py-1" key={s.station} onClick={() => Swal.fire('เจาะลึก ' + s.name, 'ดูรายละเอียดสถานี ' + s.name, 'info')}> {s.name}</div>)}
-        </div>
-        <div className="mt-auto border-top border-secondary p-3">
-          <div className="sidebar-item text-danger" onClick={logout}><i className="fa-solid fa-power-off"></i> ออกจากระบบ</div>
-        </div>
-      </div>
-
-      <div className="main-content">
+    <DashboardLayout
+      variant="sc"
+      bg="sc-bg"
+      sidebar={(close) => (
+        <>
+          <div className="sidebar-header">
+            <h4 className="text-warning m-0" style={{ textShadow: '0 0 10px rgba(250,204,21,0.5)' }}><i className="fa-solid fa-star"></i> ผู้กำกับการ</h4>
+            <small className="text-white-50">Executive Command · กก.{div}</small>
+          </div>
+          <div className="sidebar-menu">
+            <div className="sidebar-item active"><i className="fa-solid fa-chart-line"></i> ภาพรวมระดับบริหาร (Executive)</div>
+            <h6 className="text-white-50 px-4 mt-4 mb-2 small"><i className="fa-solid fa-sitemap"></i> ทางลัดการเข้าถึงระบบ</h6>
+            {onSwitchHQ && <div className="sidebar-item text-info" onClick={() => { close(); onSwitchHQ(); }}><i className="fa-solid fa-building-shield"></i> เข้าสู่หน้า ฝอ. (HQ Dashboard)</div>}
+            <div className="px-4 mt-3 mb-2 small text-warning">เจาะลึกรายสถานี:</div>
+            {bs.map((s: any) => <div className="sidebar-item text-secondary py-1" key={s.station} onClick={() => { close(); Swal.fire('เจาะลึก ' + s.name, 'ดูรายละเอียดสถานี ' + s.name, 'info'); }}> {s.name}</div>)}
+          </div>
+          <div className="mt-auto border-top border-secondary p-3">
+            <div className="sidebar-item text-danger" onClick={logout}><i className="fa-solid fa-power-off"></i> ออกจากระบบ</div>
+          </div>
+        </>
+      )}
+    >
         <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 gap-3">
           <div className="d-flex align-items-center gap-3">
             <button className="btn btn-outline-warning btn-sm" onClick={onBack}><i className="fa-solid fa-arrow-left"></i></button>
@@ -117,7 +121,6 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ }) => {
             </div>
           </>
         )}
-      </div>
-    </div>
+    </DashboardLayout>
   );
 };
