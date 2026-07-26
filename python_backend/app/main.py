@@ -28,7 +28,17 @@ from app.services.report_service import (
     prepare_arrest_report,
 )
 from app.services.line_service import push_line_message
-from app.services.user_service import get_user
+
+# Local user directory — mirrors the tb_Users Google Sheet (password: 1234).
+# (Sheet-based lookup lives in app/services/user_service.py; not used yet by request.)
+LOCAL_USERS = {
+    "test": {"fullName": "ปลื้ม", "station": "50", "unit": "กองกำกับ", "role": "Super_Commander", "password": "1234", "phone": "0853565356", "code": "50"},
+    "test2": {"fullName": "พี่ไอซ์", "station": "10", "unit": "กองกำกับ", "role": "HQ_Admin", "password": "1234", "phone": "0947632187", "code": "503"},
+    "test3": {"fullName": "พี่ท้อป", "station": "70", "unit": "บก.", "role": "Division_Commander", "password": "1234", "phone": "0812882823", "code": "50005"},
+    "test4": {"fullName": "พี่โอม", "station": "40", "unit": "บก.", "role": "Division_Admin", "password": "1234", "phone": "0824195636", "code": "510"},
+    "test5": {"fullName": "พี่เท็น", "station": "23", "unit": "บก.", "role": "Station_Admin", "password": "1234", "phone": "0824195636", "code": "510"},
+    "test6": {"fullName": "พี่บุช", "station": "51", "unit": "บก.", "role": "Unit_Staff", "password": "1234", "phone": "0824195636", "code": "510"},
+}
 
 app = FastAPI(
     title="HWPD Next Gen API",
@@ -76,21 +86,8 @@ def login(req: LoginRequest):
     if not username:
         raise HTTPException(status_code=400, detail="กรุณาระบุ Username")
 
-    # 1) แหล่งข้อมูลหลัก: อ่าน tb_Users จาก Master Spreadsheet (แชร์แบบ public link)
-    user = get_user(username)
-
-    # 2) สำรอง: บัญชีทดสอบในโค้ด (ใช้เมื่ออ่านชีตไม่ได้) — รหัสผ่าน password123
-    if not user:
-        dummy_users = {
-            "officer51": {"fullName": "ด.ต. สมชาย สายตรวจ", "station": "51", "unit": "หน่วยฯดอนจาน", "role": "Unit_Staff", "password": "password123"},
-            "sib51": {"fullName": "ร.ต.อ. หัวหน้า สิบเวร", "station": "51", "unit": "ส.ทล.1 กก.5", "role": "Station_Admin", "password": "password123"},
-            "admin50": {"fullName": "พ.ต.ท. ฝอ.กก.5", "station": "50", "unit": "ฝอ.กก.5", "role": "Division_Admin", "password": "password123"},
-            "commander50": {"fullName": "พ.ต.อ. ผกก.5", "station": "50", "unit": "กก.5", "role": "Division_Commander", "password": "password123"},
-            "super1": {"fullName": "พล.ต.ต. ผู้บังคับการตำรวจทางหลวง", "station": "00", "unit": "บก.ทล.", "role": "Super_Commander", "password": "password123"},
-            "hqadmin1": {"fullName": "พ.ต.อ. ฝอ.บก.ทล.", "station": "00", "unit": "บก.ทล.", "role": "HQ_Admin", "password": "password123"},
-        }
-        user = dummy_users.get(username)
-
+    # ตรวจสอบกับข้อมูลผู้ใช้ local (ตรงกับ tb_Users ในชีต) — ยังไม่ดึงจาก Google Sheet
+    user = LOCAL_USERS.get(username.lower())
     if not user or not verify_password(username, req.password, user["password"]):
         return {"status": "error", "message": "Username หรือ Password ไม่ถูกต้อง"}
 

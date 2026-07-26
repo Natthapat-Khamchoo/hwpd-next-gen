@@ -4,6 +4,17 @@ import type { User } from '../types';
 // Falls back to localhost for dev; if unreachable, api.* methods use offline demo data.
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:8000/api';
 
+// Local user directory — mirrors the tb_Users Google Sheet exactly (password: 1234).
+// Used as the offline fallback when the backend is unreachable (e.g. the Vercel site).
+const DEMO_USERS: Record<string, { password: string; user: User }> = {
+  test: { password: '1234', user: { username: 'test', fullName: 'ปลื้ม', station: '50', unit: 'กองกำกับ', role: 'Super_Commander', phone: '0853565356', code: '50', token: 'demo-test' } },
+  test2: { password: '1234', user: { username: 'test2', fullName: 'พี่ไอซ์', station: '10', unit: 'กองกำกับ', role: 'HQ_Admin', phone: '0947632187', code: '503', token: 'demo-test2' } },
+  test3: { password: '1234', user: { username: 'test3', fullName: 'พี่ท้อป', station: '70', unit: 'บก.', role: 'Division_Commander', phone: '0812882823', code: '50005', token: 'demo-test3' } },
+  test4: { password: '1234', user: { username: 'test4', fullName: 'พี่โอม', station: '40', unit: 'บก.', role: 'Division_Admin', phone: '0824195636', code: '510', token: 'demo-test4' } },
+  test5: { password: '1234', user: { username: 'test5', fullName: 'พี่เท็น', station: '23', unit: 'บก.', role: 'Station_Admin', phone: '0824195636', code: '510', token: 'demo-test5' } },
+  test6: { password: '1234', user: { username: 'test6', fullName: 'พี่บุช', station: '51', unit: 'บก.', role: 'Unit_Staff', phone: '0824195636', code: '510', token: 'demo-test6' } },
+};
+
 export const api = {
   login: async (username: string, password: string): Promise<{ status: string; user?: User; message?: string }> => {
     try {
@@ -22,82 +33,11 @@ export const api = {
             .checkLogin(username, password);
         });
       }
-      if (username === 'sib51' && password === 'password123') {
-        return {
-          status: 'success',
-          user: {
-            username: 'sib51',
-            fullName: 'ร.ต.อ. หัวหน้า สิบเวร',
-            station: '51',
-            unit: 'ส.ทล.1 กก.5',
-            role: 'Station_Admin',
-            token: 'demo-token-station-admin',
-          },
-        };
+      const entry = DEMO_USERS[username.trim().toLowerCase()];
+      if (entry && entry.password === password) {
+        return { status: 'success', user: entry.user };
       }
-      if (username === 'admin50' && password === 'password123') {
-        return {
-          status: 'success',
-          user: {
-            username: 'admin50',
-            fullName: 'พ.ต.ท. ฝอ.กก.5',
-            station: '50',
-            unit: 'ฝอ.กก.5',
-            role: 'Division_Admin',
-            token: 'demo-token-division-admin',
-          },
-        };
-      }
-      if (username === 'commander50' && password === 'password123') {
-        return {
-          status: 'success',
-          user: {
-            username: 'commander50',
-            fullName: 'พ.ต.อ. ผกก.5',
-            station: '50',
-            unit: 'กก.5',
-            role: 'Division_Commander',
-            token: 'demo-token-division-commander',
-          },
-        };
-      }
-      if (username === 'super1' && password === 'password123') {
-        return {
-          status: 'success',
-          user: {
-            username: 'super1',
-            fullName: 'พล.ต.ต. ผู้บังคับการตำรวจทางหลวง',
-            station: '00',
-            unit: 'บก.ทล.',
-            role: 'Super_Commander',
-            token: 'demo-token-super-commander',
-          },
-        };
-      }
-      if (username === 'hqadmin1' && password === 'password123') {
-        return {
-          status: 'success',
-          user: {
-            username: 'hqadmin1',
-            fullName: 'ฝอ.บก.ทล. (ส่วนกลาง)',
-            station: '00',
-            unit: 'บก.ทล.',
-            role: 'HQ_Admin',
-            token: 'demo-token-hq-admin',
-          },
-        };
-      }
-      return {
-        status: 'success',
-        user: {
-          username: username || 'officer51',
-          fullName: 'ด.ต. สมชาย สายตรวจ',
-          station: '51',
-          unit: 'หน่วยฯดอนจาน',
-          role: 'Unit_Staff',
-          token: 'demo-token-unit-staff',
-        },
-      };
+      return { status: 'error', message: 'Username หรือ Password ไม่ถูกต้อง' };
     }
   },
 
