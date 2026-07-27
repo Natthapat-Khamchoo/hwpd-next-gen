@@ -7,7 +7,10 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Header, HTTPException, Depends, Request
+import hmac
+import threading
+
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
@@ -127,6 +130,9 @@ DIVISION_VIEW_ROLES = {"Division_Admin", "Division_Commander", "HQ_Admin", "Supe
 
 # ภาพรวมทั้งประเทศเป็นของระดับ บก. เท่านั้น ฝอ.กก. ใช้ /api/division-summary
 NATIONAL_VIEW_ROLES = {"HQ_Admin", "Super_Commander"}
+
+# กันไม่ให้รอบรวมยอดสองรอบเขียนทับกันเองเมื่อถูก trigger ซ้อน
+_aggregate_lock = threading.Lock()
 
 
 class ReportSubmissionRequest(BaseModel):
@@ -521,6 +527,56 @@ def national_summary(
     except SheetWriteError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {"status": "success", "data": data}
+
+
+def _cron_authorized(secret: Optional[str]) -> bool:
+    """
+    ให้ตัวตั้งเวลาภายนอกเรียกได้ด้วย shared secret แทน session
+
+    Session token หมดอายุใน 24 ชั่วโมง ตัวตั้งเวลาจึงถือ token ไว้ไม่ได้ และ Render
+    Cron Jobs เป็นบริการที่ต้องเสียเงิน ทางนี้เลยใช้ได้กับแผนฟรีด้วย
+    """
+    expected = os.getenv("CRON_SECRET", "").strip()
+    return bool(expected) and hmac.compare_digest(expected, str(secret or "").strip())
+
+
+def _run_aggregate(start: str, end: str) -> None:
+    """รวมยอดในเบื้องหลัง — งานนี้ใช้เวลาเป็นนาทีเมื่อครบ 8 กก. จึงไม่ควรให้ผู้เรียกรอ"""
+    if not _aggregate_lock.acquire(blocking=False):
+        logger.warning("มีรอบรวมยอดทำงานอยู่แล้ว ข้ามรอบนี้ไป")
+        return
+    try:
+        result = national_service.aggregate_national(start, end)
+        logger.info("รวมยอดระดับประเทศเสร็จแล้ว: %s", result)
+    except Exception:
+        logger.exception("รวมยอดระดับประเทศไม่สำเร็จ")
+    finally:
+        _aggregate_lock.release()
+
+
+@app.post("/api/admin/aggregate-national", status_code=202)
+def trigger_aggregate_national(
+    background: BackgroundTasks,
+    days: int = 7,
+    x_cron_secret: Optional[str] = Header(None),
+    x_token: Optional[str] = Header(None),
+):
+    """
+    สั่งรวมยอดระดับประเทศ ตอบกลับทันทีแล้วทำงานต่อเบื้องหลัง
+
+    เรียกได้สองทาง: ผู้ใช้ระดับ บก. ที่ล็อกอินอยู่ หรือตัวตั้งเวลาภายนอกที่ส่ง
+    header `x-cron-secret` ตรงกับ CRON_SECRET
+    """
+    if not _cron_authorized(x_cron_secret):
+        session = verify_session_token(x_token or "")
+        if not session:
+            raise HTTPException(status_code=401, detail="ต้องเข้าสู่ระบบหรือส่ง x-cron-secret ที่ถูกต้อง")
+        if str(session.get("r") or "") not in NATIONAL_VIEW_ROLES:
+            raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์สั่งรวมยอดระดับประเทศ")
+
+    start, end = national_service.default_range(max(1, min(days, 90)))
+    background.add_task(_run_aggregate, start, end)
+    return {"status": "accepted", "message": f"เริ่มรวมยอด {start} ถึง {end} แล้ว", "start": start, "end": end}
 
 
 @app.post("/api/records/approve")

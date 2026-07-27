@@ -26,6 +26,9 @@ env/
 # Account passwords produced by scripts/create_station_users.py
 credentials_*.csv
 
+# Environment values exported for Render by scripts/export_render_env.py
+render-env-*.txt
+
 # Google credentials — never commit these
 service-account*.json
 *-service-account.json

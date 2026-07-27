@@ -1,5 +1,9 @@
 # Render Blueprint — deploys the FastAPI backend in python_backend/
 # In Render: New + → Blueprint → connect this repo → it reads this file.
+#
+# ค่าที่ตั้ง sync: false จะไม่ถูกเก็บในไฟล์นี้ Render จะถามตอน deploy ครั้งแรก
+# และเก็บไว้ในหน้า Environment ของ service เอง — ห้าม commit ค่าจริงลงไฟล์นี้
+# ดูขั้นตอนทั้งหมดใน docs/deploy-render.md
 services:
   - type: web
     name: hwpd-backend
@@ -10,15 +14,71 @@ services:
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /
     envVars:
+      # ต้องตรงกับที่ CI ทดสอบไว้ (ดู .github/workflows/ci.yml)
       - key: PYTHON_VERSION
         value: "3.11.9"
-      # Required — the API refuses to boot without it. Render generates a strong
-      # value on first deploy; an existing service needs this added by hand under
-      # Environment before the next deploy will start.
+
+      # --- บังคับ ---
+      # API ไม่ยอมบูตถ้าไม่มีค่านี้ Render สุ่มให้เองตอน deploy ครั้งแรก
+      # service ที่มีอยู่แล้วต้องเพิ่มเองในหน้า Environment ก่อน deploy รอบถัดไป
       - key: SESSION_SECRET
         generateValue: true
-      # Optional overrides (defaults already point at the tb_Users sheet):
-      # - key: MASTER_SHEET_ID
-      #   value: "186cb2LBLhfFD_6i-Z-kycPK_vGD4NZxkxCNI2MJop9A"
-      # - key: CORS_ORIGINS
-      #   value: "https://your-app.vercel.app"
+
+      # --- เข้าถึง Google Sheets/Drive ---
+      # องค์กรบล็อกการสร้าง service account key จึงใช้ OAuth ในนามบัญชีเจ้าของไฟล์
+      # รับค่าสามตัวนี้ด้วย: python scripts/get_oauth_token.py
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_OAUTH_REFRESH_TOKEN
+        sync: false
+
+      # --- เส้นทางฐานข้อมูลรายกองกำกับ ---
+      # ไม่มีค่านี้ = ทุก กก. ตอบ 400 ตอนส่งรายงาน (DEFAULT_DB_ROUTER มีแค่ กก.1 กับ 5)
+      - key: DB_ROUTER_JSON
+        sync: false
+      # โฟลเดอร์ Drive สำหรับไฟล์แนบรายกองกำกับ ไม่มีค่านี้ = ไฟล์แนบถูกข้าม
+      # (รายงานยังบันทึกได้ แต่ตอบกลับพร้อมคำเตือน)
+      - key: DIVISION_FOLDERS_JSON
+        sync: false
+
+      # --- ตัวเลือก ---
+      # ชีตกลางที่เก็บ tb_Users / tb_Charges / tb_National_Summary
+      # มีค่าเริ่มต้นในโค้ดแล้ว ตั้งตรงนี้เมื่อจะย้ายไปชีตอื่น
+      - key: MASTER_SHEET_ID
+        sync: false
+      # โดเมนของหน้าเว็บ เช่น https://hwpd.vercel.app — ไม่ตั้ง = อนุญาตทุกโดเมน
+      - key: CORS_ORIGINS
+        sync: false
+      # LINE Messaging API — ไม่ตั้ง = ข้ามการแจ้งเตือน รายงานยังบันทึกตามปกติ
+      - key: LINE_TOKEN
+        sync: false
+      # โฟลเดอร์/กลุ่ม LINE รายสถานี ทับค่าใน STATION_CONFIG เฉพาะคีย์ที่ระบุ
+      - key: STATION_SECRETS_JSON
+        sync: false
+      # ให้ตัวตั้งเวลาภายนอกเรียก POST /api/admin/aggregate-national ได้
+      # โดยส่ง header x-cron-secret ให้ตรงกับค่านี้
+      - key: CRON_SECRET
+        generateValue: true
+
+      # PASSWORD_PEPPER ห้ามตั้งใหม่ — รหัสผ่านทุกบัญชีถูก hash ด้วยค่าเริ่มต้นในโค้ด
+      # ตั้งค่าอื่นทับเมื่อไหร่ ทุกคนจะล็อกอินไม่ได้ทันที
+
+# Render Cron Jobs เป็นบริการที่ต้องเสียเงิน แผนฟรีจึงใช้ไม่ได้
+# ให้ตั้งตัวตั้งเวลาภายนอก (เช่น cron-job.org) ยิงทุกชั่วโมงแทน:
+#
+#   POST https://<service>.onrender.com/api/admin/aggregate-national?days=7
+#   Header: x-cron-secret: <ค่า CRON_SECRET>
+#
+# ถ้าอัปเกรดเป็นแผนที่รองรับ cron แล้ว เปลี่ยนมาใช้บล็อกนี้แทนได้:
+#
+# - type: cron
+#   name: hwpd-national-rollup
+#   runtime: python
+#   rootDir: python_backend
+#   schedule: "0 * * * *"
+#   buildCommand: pip install -r requirements.txt
+#   startCommand: python scripts/aggregate_national.py --days 7 --verbose
+#   envVars:
+#     - fromGroup: hwpd-shared

@@ -64,6 +64,7 @@ jobs:
               "/api/daily-summary",
               "/api/division-summary",
               "/api/national-summary",
+              "/api/admin/aggregate-national",
               "/api/records/approve",
               "/api/records/cancel",
               "/api/health/database",
