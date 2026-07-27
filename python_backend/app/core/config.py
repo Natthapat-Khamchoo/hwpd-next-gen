@@ -145,11 +145,21 @@ def get_station_data(station_id: str) -> Dict[str, Any]:
     """
     st_id = str(station_id or "").strip()
     division_num = st_id[0] if st_id else "5"
+    station_num = st_id[1:] if len(st_id) > 1 else ""
+
+    # เลขสถานีคือหลักที่สอง ไม่ใช่ทั้ง Station_ID — "51" คือ ส.ทล.1 กก.5 ไม่ใช่ ส.ทล.51
+    # และหลักที่สองเป็น 0 หมายถึงฝ่ายอำนวยการของ กก. นั้น ไม่ใช่สถานี
+    if station_num == "0":
+        default_name = f"ฝอ.กก.{division_num} บก.ทล."
+        default_units = [f"ฝอ.กก.{division_num}"]
+    else:
+        default_name = f"ส.ทล.{station_num} กก.{division_num} บก.ทล."
+        default_units = [f"หน่วยฯส.ทล.{station_num} กก.{division_num}"]
 
     data: Dict[str, Any] = {
         "province": f"กองกำกับการ {division_num}",
-        "fullName": f"ส.ทล.{st_id} กก.{division_num} บก.ทล.",
-        "units": [f"หน่วยฯส.ทล.{st_id}"],
+        "fullName": default_name,
+        "units": default_units,
         "folderId": "",
         "lineGroupId": "",
     }

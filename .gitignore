@@ -23,6 +23,9 @@ env/
 *.key
 .clasp.json
 
+# Account passwords produced by scripts/create_station_users.py
+credentials_*.csv
+
 # Google credentials — never commit these
 service-account*.json
 *-service-account.json

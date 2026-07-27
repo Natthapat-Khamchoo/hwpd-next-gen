@@ -124,6 +124,30 @@ uvicorn app.main:app --reload --port 8000
 ล็อกอินเอา token แล้วเรียก `GET /api/health/database` พร้อม header `x-token`
 จะได้สถานะรายกองกำกับ ชื่อไฟล์ รายชื่อแท็บที่มีจริง และตารางที่ยังขาด
 
+### 5. สร้างบัญชีประจำสถานี
+
+```bash
+# ดูรายการที่จะสร้าง ยังไม่เขียนอะไร
+python scripts/create_station_users.py
+
+# เขียนลง tb_Users จริง
+python scripts/create_station_users.py --apply
+```
+
+สร้าง 1 บัญชีต่อ 1 หน่วย รวม 57 บัญชี
+
+| Station_ID | Username | Role |
+|---|---|---|
+| `00` | `hq` | `Super_Commander` |
+| `{กก.}0` | `fo{กก.}` | `Division_Admin` |
+| `{กก.}1`–`{กก.}6` | `st{Station_ID}` | `Station_Admin` |
+
+รหัสผ่านสุ่มความยาว 8 ตัวไม่ซ้ำกัน เก็บลงชีตเป็น `sha256$` ส่วนรหัสตัวจริงเขียนลง
+`credentials_<วันเวลา>.csv` บนเครื่อง (gitignore ไว้แล้ว) เอาไว้แจกให้แต่ละหน่วย
+แล้วลบทิ้ง สคริปต์ข้าม Username ที่มีอยู่แล้ว จึงรันซ้ำได้โดยไม่แตะบัญชีเดิม
+
+รหัสที่ hash แล้วผูกกับ `PASSWORD_PEPPER` ถ้าเปลี่ยนค่านี้ทีหลัง บัญชีทั้งหมดจะล็อกอินไม่ได้
+
 ### หมายเหตุเรื่อง schema
 
 `app/core/schema.py` เก็บหัวคอลัมน์ของทุกตาราง และต้องเรียงตรงกับ `row_data` ที่
