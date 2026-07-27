@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+# กด push ซ้ำระหว่างที่รอบเก่ายังรันอยู่ ให้ยกเลิกรอบเก่าทิ้ง
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11.9 คือรุ่นที่ Render ใช้ (ดู render.yaml) ส่วน 3.13 คือรุ่นบนเครื่องพัฒนา
+        # ต้องผ่านทั้งคู่ ไม่งั้นโค้ดที่รันได้ตอน dev จะไปพังบนเซิร์ฟเวอร์จริง
+        python-version: ['3.11', '3.13']
+
+    defaults:
+      run:
+        working-directory: python_backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: python_backend/requirements.txt
+
+      - name: ติดตั้ง dependencies
+        run: pip install -r requirements.txt
+
+      - name: รันชุดทดสอบ
+        # ไม่ตั้ง SESSION_SECRET หรือ credential ใด ๆ ให้เลย ชุดทดสอบต้องไม่พึ่งค่าจริง
+        # และต้องไม่ยิงเน็ต ถ้าเทสไหนเริ่มต้องใช้ค่าจากเครื่องผู้พัฒนา จะพังตรงนี้ทันที
+        run: python -m unittest discover -s tests -p "test_*.py" --verbose
+
+      - name: ตรวจว่า API ประกอบร่างได้และ endpoint ครบ
+        env:
+          SESSION_SECRET: ci-only-not-a-real-secret-${{ github.run_id }}
+        run: |
+          python - <<'PY'
+          from app.main import app
+
+          routes = {r.path for r in app.routes}
+          required = {
+              "/api/login",
+              "/api/change-password",
+              "/api/dropdowns/units",
+              "/api/dropdowns/users",
+              "/api/dropdowns/user-phones",
+              "/api/dropdowns/charges",
+              "/api/my-pending",
+              "/api/station-pending",
+              "/api/missions",
+              "/api/records/approve",
+              "/api/records/cancel",
+              "/api/health/database",
+          }
+          missing = sorted(required - routes)
+          if missing:
+              raise SystemExit(f"endpoint หายไป: {missing}")
+          print(f"endpoint ครบ {len(required)} เส้นทาง จากทั้งหมด {len(routes)}")
+          PY
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: react_frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: react_frontend/package-lock.json
+
+      - name: ติดตั้ง dependencies
+        run: npm ci
+
+      - name: ตรวจชนิดข้อมูล
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
