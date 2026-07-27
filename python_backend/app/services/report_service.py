@@ -316,6 +316,34 @@ VOLUNTEER_TEXT_KEYS = ["volType", "volSubType", "volSpecial", "volHost", "volHos
 VOLUNTEER_COUNT_KEYS = ["volPolice", "volPoliceOther", "volGov", "volCivil", "volBloodCc", "volPlateletUnit"]
 
 
+THAI_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."]
+
+
+def format_thai_datetime(value: str) -> str:
+    """
+    "2026-07-27T14:30" -> "27 ก.ค. 69 เวลา 14.30 น." (เทียบเท่า formatThaiDate ใน JS)
+    ค่าที่ไม่มีเวลาคืนเป็นวันที่อย่างเดียว
+    """
+    text = str(value or "").strip()
+    if not text:
+        return "-"
+    date_part, _, time_part = text.partition("T")
+    pieces = date_part.split("-")
+    if len(pieces) != 3:
+        return text
+    try:
+        year, month, day = int(pieces[0]), int(pieces[1]), int(pieces[2])
+    except ValueError:
+        return text
+    if not 1 <= month <= 12:
+        return text
+
+    thai = f"{day} {THAI_MONTHS[month - 1]} {str(year + 543)[-2:]}"
+    if time_part:
+        return f"{thai} เวลา {time_part[:5].replace(':', '.')} น."
+    return thai
+
+
 def _date_part(value: Any) -> str:
     """ตัดเอาเฉพาะส่วนวันที่ (YYYY-MM-DD) ออกจากค่า datetime-local"""
     return str(value or "").split("T")[0]
@@ -755,5 +783,92 @@ def prepare_document_record(
         # ของเดิมไม่ได้ส่ง LINE สำหรับงานสารบรรณ
         "lineMessage": "",
         "lineGroupId": "",
+        "stationName": st_data.get("fullName", ""),
+    }
+
+
+def prepare_hq_summary(form_data: Dict[str, Any], record_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    สรุปยอดส่ง กก. (HQ-SUM) เทียบเท่า saveHQSummary ใน JS
+
+    ตารางเดียวที่ไม่ได้ขึ้นต้นด้วย 9 คอลัมน์มาตรฐาน เพราะเป็นยอดรวมที่สถานีส่งให้ กก.
+    ไม่ใช่รายงานรายใบ จึงไม่มี Sys_Status / Sys_IsActive ให้อนุมัติหรือยกเลิก
+    """
+    form = sanitize_form_data(form_data)
+    station_id = str(form.get("stationId", "51"))
+    st_data = get_station_data(station_id)
+    record_id = record_id or f"HQ-SUM-{station_id}-{datetime.now():%y%m%d-%H%M%S}"
+
+    charges_text = str(form.get("chargesText", "")).strip() or "-"
+    row_data = [
+        record_id,
+        datetime.now().isoformat(),
+        station_id,
+        _date_part(form.get("reportDateTime")),
+        _int_or_zero(form.get("v43")),
+        _int_or_zero(form.get("service")),
+        _int_or_zero(form.get("v42")),
+        _int_or_zero(form.get("v20")),
+        charges_text,
+        form.get("actionBy", ""),
+    ]
+
+    charge_section = f"แบ่งเป็น\n{charges_text}\n" if charges_text != "-" else ""
+    line_message = (
+        f"{st_data.get('fullName', '')} สรุปผลการปฏิบัติประจำวัน\n"
+        f"วันที่ {format_thai_datetime(form.get('reportDateTime', ''))}\n"
+        f"การดำเนินการ\n"
+        f"ว.43 = {_int_or_zero(form.get('v43'))}\n"
+        f"บริการ = {_int_or_zero(form.get('service'))}\n"
+        f"ว.42 = {_int_or_zero(form.get('v42'))}\n"
+        f"ว.20 = {_int_or_zero(form.get('v20'))}\n"
+        f"{charge_section}"
+    )
+
+    return {
+        "status": "success",
+        "recordId": record_id,
+        "targetDbId": get_target_db_id(station_id),
+        "tableName": "tb_HQ_Summary",
+        "rowData": row_data,
+        "lineMessage": line_message,
+        "lineGroupId": st_data.get("lineGroupId", ""),
+        "stationName": st_data.get("fullName", ""),
+    }
+
+
+def build_mission_summary(form_data: Dict[str, Any], missions: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    สรุปภารกิจส่งเข้า LINE (เทียบเท่า sendMissionSummaryLine ใน JS)
+
+    ไม่มีการเขียนลงตาราง เพราะเป็นการรวมภารกิจที่บันทึกไว้แล้วมาแจ้งซ้ำ ไม่ใช่รายการใหม่
+    """
+    form = sanitize_form_data(form_data)
+    station_id = str(form.get("stationId", "51"))
+    st_data = get_station_data(station_id)
+    unit_name = str(form.get("unitName", "")).strip()
+    show_all = unit_name in ("", "ทุกหน่วย")
+
+    lines = []
+    for mission in missions or []:
+        if not isinstance(mission, dict):
+            continue
+        prefix = f"[{mission.get('targetUnits', '')}] " if show_all else ""
+        lines.append(f"วันที่ {mission.get('startTime', '')} น. {prefix}ภารกิจ {mission.get('details', '')}")
+
+    mission_text = "\n".join(lines) or "- ไม่มีภารกิจในช่วงเวลาดังกล่าว -"
+    header = "ทุกหน่วย" if show_all else f"หน่วย {unit_name}"
+    message = (
+        f"{st_data.get('fullName', '')} สรุปภารกิจ{header}\n"
+        f"ตั้งแต่วันที่ {format_thai_date(form.get('startDate', ''))} "
+        f"ถึงวันที่ {format_thai_date(form.get('endDate', ''))}\n"
+        f"ภารกิจ\n{mission_text}"
+    )
+
+    return {
+        "status": "success",
+        "lineMessage": message,
+        "lineGroupId": st_data.get("lineGroupId", ""),
+        "missionCount": len(lines),
         "stationName": st_data.get("fullName", ""),
     }

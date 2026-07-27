@@ -57,6 +57,13 @@ services:
       # โฟลเดอร์/กลุ่ม LINE รายสถานี ทับค่าใน STATION_CONFIG เฉพาะคีย์ที่ระบุ
       - key: STATION_SECRETS_JSON
         sync: false
+      # แม่แบบเอกสารจับกุมอัตโนมัติ ไม่ตั้ง = เมนูนั้นตอบ 503 พร้อมบอกว่าต้องตั้งอะไร
+      - key: AUTO_ARREST_DOC_ID
+        sync: false
+      - key: AUTO_ARREST_M22_ID
+        sync: false
+      - key: AUTO_ARREST_FOLDER_ID
+        sync: false
       # ให้ตัวตั้งเวลาภายนอกเรียก POST /api/admin/aggregate-national ได้
       # โดยส่ง header x-cron-secret ให้ตรงกับค่านี้
       - key: CRON_SECRET

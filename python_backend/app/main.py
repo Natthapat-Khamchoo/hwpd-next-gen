@@ -32,7 +32,9 @@ from app.core.security import (
     verify_session_token,
 )
 from app.services.report_service import (
+    build_mission_summary,
     generate_record_id,
+    prepare_hq_summary,
     prepare_accident_report,
     prepare_arrest_report,
     prepare_checkpoint_report,
@@ -45,7 +47,15 @@ from app.services.report_service import (
     prepare_royal_guard_report,
     prepare_station_duty,
 )
-from app.services import national_service, query_service, reference_service, sheets_service, user_service
+from app.services import (
+    docs_service,
+    national_service,
+    query_service,
+    reference_service,
+    sheets_service,
+    user_service,
+)
+from app.services.docs_service import DocumentError, TemplateNotConfigured
 from app.services.query_service import RecordNotFound
 from app.services.reference_service import ReferenceDataUnavailable
 from app.services.sheets_service import SheetNotConfigured, SheetWriteError, append_report_row
@@ -666,6 +676,65 @@ def submit_arrest_report(req: ReportSubmissionRequest, session: Dict[str, Any] =
         record_id=record_id,
     )
     return submit(prepared, attachments, "บันทึกรายงานการจับกุมเรียบร้อยแล้ว")
+
+
+@app.post("/api/reports/daily-summary")
+def submit_daily_summary(req: ReportSubmissionRequest, session: Dict[str, Any] = Depends(current_session)):
+    """
+    สรุปยอดส่ง กก. (HQ-SUM) เขียนลง tb_HQ_Summary
+
+    ยอดในนี้มาจาก /api/daily-summary ที่ฟอร์มเรียกไปคำนวณให้ก่อนแล้ว ตรงนี้เป็นการ
+    ยืนยันส่งเท่านั้น จึงไม่คำนวณซ้ำ — เจ้าหน้าที่แก้ตัวเลขก่อนส่งได้ตามระบบเดิม
+    """
+    authorized_station(req.formData, session)
+    prepared = prepare_hq_summary(req.formData)
+    return submit(prepared, {"stored": True, "count": 0}, "บันทึกยอดสรุปส่ง กก. เรียบร้อยแล้ว")
+
+
+@app.post("/api/reports/mission-summary")
+def submit_mission_summary(req: ReportSubmissionRequest, session: Dict[str, Any] = Depends(current_session)):
+    """
+    สรุปภารกิจส่งเข้า LINE — ไม่เขียนลงตาราง เพราะเป็นการรวมภารกิจที่บันทึกไว้แล้ว
+    มาแจ้งซ้ำ ไม่ใช่รายการใหม่ (ตรงตามที่ sendMissionSummaryLine ใน JS ทำ)
+    """
+    authorized_station(req.formData, session)
+    prepared = build_mission_summary(req.formData, req.missions or [])
+
+    if prepared["lineGroupId"]:
+        line_result = push_line_message(prepared["lineMessage"], prepared["lineGroupId"])
+        if line_result.get("status") == "error":
+            logger.warning("ส่งสรุปภารกิจเข้า LINE ไม่สำเร็จ: %s", line_result.get("message"))
+
+    return {
+        "status": "success",
+        "message": f"สรุปภารกิจ {prepared['missionCount']} รายการเรียบร้อยแล้ว",
+        "lineText": prepared["lineMessage"],
+    }
+
+
+@app.post("/api/reports/auto-arrest")
+def submit_auto_arrest(req: ReportSubmissionRequest, session: Dict[str, Any] = Depends(current_session)):
+    """
+    สร้างเอกสารจับกุมจากแม่แบบ Google Docs — ไม่เขียนลงตาราง คืนลิงก์ดาวน์โหลด
+
+    รายการนี้ไม่ผูกกับสถานีในชีต จึงตรวจแค่ว่ามี session ที่ใช้ได้ ไม่ต้องมี stationId
+    """
+    if not req.suspectArray:
+        raise HTTPException(status_code=400, detail="กรุณาระบุผู้ต้องหาอย่างน้อยหนึ่งคน")
+
+    try:
+        links = docs_service.generate_arrest_documents(req.formData, req.suspectArray)
+    except TemplateNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except DocumentError as exc:
+        logger.error("สร้างเอกสารจับกุมไม่สำเร็จ: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return {
+        "status": "success",
+        "message": f"สร้างเอกสารเรียบร้อยแล้ว {len(links)} ฉบับ",
+        "links": links,
+    }
 
 
 def handle_submission(

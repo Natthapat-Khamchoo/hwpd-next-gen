@@ -29,6 +29,9 @@ VARIABLES = [
     ("MASTER_SHEET_ID", False, "ใช้ค่าเริ่มต้นในโค้ด"),
     ("STATION_SECRETS_JSON", False, "ใช้ค่าเริ่มต้นใน STATION_CONFIG"),
     ("LINE_TOKEN", False, "ข้ามการแจ้งเตือน LINE"),
+    ("AUTO_ARREST_DOC_ID", False, "ออกเอกสารจับกุมอัตโนมัติไม่ได้ (ตอบ 503)"),
+    ("AUTO_ARREST_M22_ID", False, "ออกเอกสารจับกุมอัตโนมัติไม่ได้ (ตอบ 503)"),
+    ("AUTO_ARREST_FOLDER_ID", False, "ออกเอกสารจับกุมอัตโนมัติไม่ได้ (ตอบ 503)"),
 ]
 
 # ค่าที่ Render สุ่มเองตาม render.yaml — ห้ามยกค่าจากเครื่องพัฒนาไปใช้
