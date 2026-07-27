@@ -13,9 +13,17 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 from typing import Dict, Any, List, Optional
 
-from app.core.config import check_station_match, get_db_router, get_session_secret, get_target_db_id
+from app.core.config import (
+    check_station_match,
+    get_db_router,
+    get_session_secret,
+    get_station_config,
+    get_station_data,
+    get_target_db_id,
+)
 from app.core.schema import TABLE_COLUMNS
 from app.core.security import (
+    hash_password,
     verify_password,
     create_session_token,
     verify_session_token,
@@ -34,7 +42,8 @@ from app.services.report_service import (
     prepare_royal_guard_report,
     prepare_station_duty,
 )
-from app.services import sheets_service, user_service
+from app.services import reference_service, sheets_service, user_service
+from app.services.reference_service import ReferenceDataUnavailable
 from app.services.sheets_service import SheetNotConfigured, SheetWriteError, append_report_row
 from app.services.user_service import UserDirectoryUnavailable
 from app.services.storage_service import AttachmentError, store_attachments
@@ -87,6 +96,19 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class ChangePasswordRequest(BaseModel):
+    """ชื่อฟิลด์ต้องตรงกับที่ api.ts ส่งมา (oldPassword / newPassword ไม่ใช่ snake_case)"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    username: str
+    oldPassword: str
+    newPassword: str
+
+
+MIN_PASSWORD_LENGTH = 8
+
+
 class ReportSubmissionRequest(BaseModel):
     """
     สัญญาข้อมูลระหว่างฟอร์มกับ API — ชื่อฟิลด์ต้องตรงกับที่ api.ts ส่งมาเป๊ะ ๆ
@@ -131,6 +153,23 @@ def authorized_station(form_data: Dict[str, Any], session: Dict[str, Any]) -> st
         raise HTTPException(status_code=403, detail=f"ไม่มีสิทธิ์บันทึกข้อมูลของสถานี {station_id}")
 
     return station_id
+
+
+def authorized_station_id(station_id: Optional[str], session: Dict[str, Any]) -> str:
+    """
+    เหมือน authorized_station แต่รับรหัสสถานีจาก query string ของ endpoint ฝั่งอ่าน
+    ไม่ระบุมา = ใช้สถานีของ session นั้นเอง ซึ่งเป็นกรณีปกติของทุกฟอร์ม
+    """
+    own_station = str(session.get("s") or "").strip()
+    requested = str(station_id or "").strip() or own_station
+
+    if not requested:
+        raise HTTPException(status_code=400, detail="ไม่พบรหัสสถานี (station)")
+
+    if not check_station_match(own_station, requested):
+        raise HTTPException(status_code=403, detail=f"ไม่มีสิทธิ์ดูข้อมูลของสถานี {requested}")
+
+    return requested
 
 
 def prepare_attachments(
@@ -248,6 +287,86 @@ def login(req: LoginRequest):
             "token": token,
         },
     }
+
+
+@app.post("/api/change-password")
+def change_password(req: ChangePasswordRequest, session: Dict[str, Any] = Depends(current_session)):
+    """
+    เปลี่ยนรหัสผ่านของบัญชีตัวเอง เก็บลงชีตเป็น sha256$ เสมอ ไม่ว่าของเดิมจะเป็นแบบไหน
+    จึงเป็นทางที่บัญชีรหัส Plaintext เดิมย้ายมาเป็นแบบเข้ารหัสได้ด้วย
+    """
+    username = req.username.strip()
+
+    # เปลี่ยนได้เฉพาะบัญชีตัวเอง ต่อให้ถือ token ของ ผบก. ก็ตั้งรหัสให้คนอื่นไม่ได้
+    if username.lower() != str(session.get("u") or "").strip().lower():
+        raise HTTPException(status_code=403, detail="เปลี่ยนรหัสผ่านได้เฉพาะบัญชีของตัวเองเท่านั้น")
+
+    if len(req.newPassword) < MIN_PASSWORD_LENGTH:
+        return {"status": "error", "message": f"รหัสผ่านใหม่ต้องยาวอย่างน้อย {MIN_PASSWORD_LENGTH} ตัวอักษร"}
+
+    if req.newPassword == req.oldPassword:
+        return {"status": "error", "message": "รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านเดิม"}
+
+    try:
+        user = user_service.get_user(username)
+        if not user or not verify_password(username, req.oldPassword, user.get("password", "")):
+            return {"status": "error", "message": "รหัสผ่านปัจจุบันไม่ถูกต้อง หรือไม่พบข้อมูลบัญชีผู้ใช้"}
+
+        if not user_service.update_password(username, hash_password(username, req.newPassword)):
+            return {"status": "error", "message": "ไม่พบข้อมูลบัญชีผู้ใช้"}
+    except UserDirectoryUnavailable as exc:
+        logger.error("เปลี่ยนรหัสผ่านไม่ได้: %s", exc)
+        raise HTTPException(status_code=503, detail="ระบบเข้าถึงรายชื่อผู้ใช้ไม่ได้ในขณะนี้") from exc
+    except SheetWriteError as exc:
+        logger.error("เขียนรหัสผ่านใหม่ไม่สำเร็จ: %s", exc)
+        raise HTTPException(status_code=502, detail=f"บันทึกรหัสผ่านใหม่ไม่สำเร็จ: {exc}") from exc
+
+    return {
+        "status": "success",
+        "message": "เปลี่ยนรหัสผ่านเป็นรหัสใหม่เรียบร้อยแล้ว กรุณาเข้าสู่ระบบใหม่อีกครั้ง",
+    }
+
+
+@app.get("/api/dropdowns/units")
+def units_dropdown(station: Optional[str] = None, session: Dict[str, Any] = Depends(current_session)):
+    """หน่วยบริการของสถานีนั้น อ่านจาก STATION_CONFIG (เทียบเท่า getUnitDropdown ใน JS)"""
+    station_id = authorized_station_id(station, session)
+
+    # get_station_data สร้างชื่อให้เองเมื่อไม่รู้จักสถานี ซึ่งดีตอนเขียนรายงาน แต่ตรงนี้
+    # จะกลายเป็น dropdown ที่มีหน่วยสมมติอยู่หนึ่งรายการ บอกไปตรง ๆ ว่าไม่รู้จักดีกว่า
+    if station_id not in get_station_config():
+        raise HTTPException(status_code=404, detail=f"ไม่รู้จักสถานี {station_id} กรุณาแจ้งผู้ดูแลระบบ")
+
+    return get_station_data(station_id).get("units") or []
+
+
+@app.get("/api/dropdowns/users")
+def users_dropdown(station: Optional[str] = None, session: Dict[str, Any] = Depends(current_session)):
+    """ชื่อเจ้าหน้าที่ในขอบเขตที่สถานีนั้นมองเห็นได้"""
+    station_id = authorized_station_id(station, session)
+    try:
+        return user_service.list_names_for_station(station_id)
+    except UserDirectoryUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get("/api/dropdowns/user-phones")
+def user_phones_dropdown(station: Optional[str] = None, session: Dict[str, Any] = Depends(current_session)):
+    """ชื่อเจ้าหน้าที่ -> เบอร์โทร ใช้เติมเบอร์อัตโนมัติเมื่อเลือกผู้รายงาน"""
+    station_id = authorized_station_id(station, session)
+    try:
+        return user_service.phone_map_for_station(station_id)
+    except UserDirectoryUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get("/api/dropdowns/charges")
+def charges_dropdown(_: Dict[str, Any] = Depends(current_session)):
+    """รายการข้อหาที่ยังใช้งานอยู่ ใช้ร่วมกันทุกสถานีจึงไม่ต้องกรองตามสถานี"""
+    try:
+        return reference_service.get_charges()
+    except ReferenceDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.post("/api/reports/daily")

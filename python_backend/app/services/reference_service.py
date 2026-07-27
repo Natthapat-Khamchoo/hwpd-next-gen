@@ -1,0 +1,78 @@
+"""
+HWPD Next Gen - Reference data service.
+
+ข้อมูลอ้างอิงที่ใช้ร่วมกันทุกสถานี อ่านจาก Master Spreadsheet ด้วย credentials
+ชุดเดียวกับที่ใช้เขียนรายงาน ตอนนี้มีแค่รายการข้อหา (`tb_Charges`)
+
+แคชไว้ระยะสั้นเหมือน user_service เพราะทุกฟอร์มจับกุมเรียกใช้ตอนเปิดหน้า
+"""
+
+import logging
+import threading
+import time
+from typing import Any, Dict, List
+
+from app.core.config import MASTER_SHEET_ID
+from app.services import sheets_service
+
+logger = logging.getLogger(__name__)
+
+CHARGES_TABLE = "tb_Charges"
+CACHE_TTL_SECONDS = 300  # 5 นาที
+
+_cache: Dict[str, Any] = {"charges": None, "ts": 0.0}
+_lock = threading.Lock()
+
+
+class ReferenceDataUnavailable(RuntimeError):
+    """อ่านข้อมูลอ้างอิงจาก Google Sheet ไม่ได้"""
+
+
+def _parse_charges(rows: List[List[str]]) -> List[str]:
+    """
+    คอลัมน์ A คือชื่อข้อหา คอลัมน์ E (isActive) ว่างไว้ = ยังใช้งานอยู่
+    ซ่อนเฉพาะแถวที่เขียน FALSE ไว้ชัดเจน ตรงตามที่ getChargeDropdown ใน JS ทำ
+    """
+    charges: List[str] = []
+    for row in rows[1:]:
+        name = str(row[0]).strip() if row else ""
+        if not name:
+            continue
+        is_active = str(row[4]).strip().upper() if len(row) > 4 else ""
+        if is_active == "FALSE":
+            continue
+        charges.append(name)
+    return charges
+
+
+def get_charges(force: bool = False) -> List[str]:
+    """รายการข้อหาที่ยังใช้งานอยู่ ขว้าง ReferenceDataUnavailable ถ้าอ่านชีตไม่ได้"""
+    now = time.time()
+    cached = _cache.get("charges")
+    if not force and cached is not None and (now - _cache["ts"]) < CACHE_TTL_SECONDS:
+        return cached
+
+    with _lock:
+        cached = _cache.get("charges")
+        if not force and cached is not None and (time.time() - _cache["ts"]) < CACHE_TTL_SECONDS:
+            return cached
+
+        try:
+            rows = sheets_service.read_table(MASTER_SHEET_ID, CHARGES_TABLE)
+        except sheets_service.SheetNotConfigured as exc:
+            raise ReferenceDataUnavailable(str(exc)) from exc
+        except sheets_service.SheetWriteError as exc:
+            raise ReferenceDataUnavailable(f"อ่านรายการข้อหาไม่สำเร็จ: {exc}") from exc
+
+        charges = _parse_charges(rows)
+        _cache["charges"] = charges
+        _cache["ts"] = time.time()
+        logger.info("โหลดรายการข้อหาจาก %s แล้ว %d รายการ", CHARGES_TABLE, len(charges))
+        return charges
+
+
+def reset_cache() -> None:
+    """ล้างแคช (ใช้ในเทสและตอนแก้ข้อมูลอ้างอิงในชีต)"""
+    with _lock:
+        _cache["charges"] = None
+        _cache["ts"] = 0.0

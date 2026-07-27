@@ -34,6 +34,40 @@ export const DEMO_MODE = String(import.meta.env.VITE_DEMO_MODE ?? '').toLowerCas
 
 const OFFLINE_MESSAGE = 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่';
 
+/**
+ * ดึงข้อมูลอ้างอิงที่ต้องมี session (dropdown ทุกตัว) คืน null เมื่อเรียกไม่สำเร็จ
+ * ให้ผู้เรียกตัดสินใจเองว่าจะใช้ค่าสำรองหรือรายการว่าง
+ *
+ * 401 หมายถึง session หมดอายุ ต้องพากลับไปหน้าล็อกอิน ไม่ใช่ปล่อยให้เจ้าหน้าที่
+ * เห็น dropdown ว่างแล้วเดาเองว่าระบบพัง
+ */
+const fetchReference = async (path: string, token?: string): Promise<unknown | null> => {
+  try {
+    const res = await fetch(`${API_BASE_URL}${path}`, { headers: { 'x-token': token || '' } });
+    if (res.status === 401) {
+      onSessionExpired();
+      return null;
+    }
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+};
+
+/** ตัวช่วยสำหรับ dropdown ที่คืนเป็นรายการ รองรับทั้ง [...] และ {key: [...]} */
+const fetchList = async (
+  path: string,
+  key: string,
+  token: string | undefined,
+  demoFallback: string[],
+): Promise<string[]> => {
+  const data = await fetchReference(path, token);
+  if (Array.isArray(data)) return data;
+  if (Array.isArray((data as any)?.[key])) return (data as any)[key];
+  return DEMO_MODE ? demoFallback : [];
+};
+
 export const api = {
   login: async (username: string, password: string): Promise<{ status: string; user?: User; message?: string }> => {
     try {
@@ -117,59 +151,38 @@ export const api = {
   },
 
   // ---- Dropdown / reference data (demo fallbacks only when VITE_DEMO_MODE=true) ----
-  getUnitDropdown: async (stationId: string): Promise<string[]> => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/dropdowns/units?station=${encodeURIComponent(stationId)}`);
-      const data = await res.json();
-      if (Array.isArray(data)) return data;
-      if (Array.isArray(data?.units)) return data.units;
-      throw new Error('bad shape');
-    } catch {
-      return DEMO_MODE ? ['หน่วยฯดอนจาน', 'หน่วยฯจอมทอง', 'หน่วยฯสามเงา', 'หน่วยฯคลองขลุง'] : [];
-    }
-  },
+  getUnitDropdown: async (stationId: string, token?: string): Promise<string[]> =>
+    fetchList(`/dropdowns/units?station=${encodeURIComponent(stationId)}`, 'units', token, [
+      'คลองขลุง',
+      'นครชุม',
+      'สามเงา',
+      'แม่สอด',
+    ]),
 
-  getUserDropdown: async (stationId: string): Promise<string[]> => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/dropdowns/users?station=${encodeURIComponent(stationId)}`);
-      const data = await res.json();
-      if (Array.isArray(data)) return data;
-      if (Array.isArray(data?.users)) return data.users;
-      throw new Error('bad shape');
-    } catch {
-      return DEMO_MODE ? ['ด.ต. สมชาย สายตรวจ', 'ส.ต.อ. รักชาติ มั่นคง', 'ร.ต.อ. วีระ ยุติธรรม', 'จ.ส.ต. ประยุทธ อดทน'] : [];
-    }
-  },
+  getUserDropdown: async (stationId: string, token?: string): Promise<string[]> =>
+    fetchList(`/dropdowns/users?station=${encodeURIComponent(stationId)}`, 'users', token, [
+      'ด.ต. สมชาย สายตรวจ',
+      'ส.ต.อ. รักชาติ มั่นคง',
+      'ร.ต.อ. วีระ ยุติธรรม',
+      'จ.ส.ต. ประยุทธ อดทน',
+    ]),
 
-  getChargeDropdown: async (): Promise<string[]> => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/dropdowns/charges`);
-      const data = await res.json();
-      if (Array.isArray(data)) return data;
-      if (Array.isArray(data?.charges)) return data.charges;
-      throw new Error('bad shape');
-    } catch {
-      if (!DEMO_MODE) return [];
-      return [
-        'ขับรถเร็วเกินกำหนด',
-        'ไม่สวมหมวกนิรภัย',
-        'ไม่คาดเข็มขัดนิรภัย',
-        'ขับขี่ในขณะเมาสุรา',
-        'ไม่มีใบอนุญาตขับขี่',
-        'บรรทุกน้ำหนักเกิน',
-      ];
-    }
-  },
+  getChargeDropdown: async (token?: string): Promise<string[]> =>
+    fetchList('/dropdowns/charges', 'charges', token, [
+      'ขับรถเร็วเกินกำหนด',
+      'ไม่สวมหมวกนิรภัย',
+      'ไม่คาดเข็มขัดนิรภัย',
+      'ขับขี่ในขณะเมาสุรา',
+      'ไม่มีใบอนุญาตขับขี่',
+      'บรรทุกน้ำหนักเกิน',
+    ]),
 
-  getUserPhoneMapping: async (stationId: string): Promise<Record<string, string>> => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/dropdowns/user-phones?station=${encodeURIComponent(stationId)}`);
-      const data = await res.json();
-      if (data && typeof data === 'object') return data;
-      throw new Error('bad shape');
-    } catch {
-      return {};
-    }
+  getUserPhoneMapping: async (stationId: string, token?: string): Promise<Record<string, string>> => {
+    const data = await fetchReference(
+      `/dropdowns/user-phones?station=${encodeURIComponent(stationId)}`,
+      token,
+    );
+    return data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, string>) : {};
   },
 
   // ---- Mission view / history queries ----

@@ -13,9 +13,9 @@ HWPD Next Gen - User directory service.
 import logging
 import threading
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
-from app.core.config import MASTER_SHEET_ID
+from app.core.config import MASTER_SHEET_ID, check_station_match
 from app.services import sheets_service
 
 logger = logging.getLogger(__name__)
@@ -110,6 +110,69 @@ def get_user(username: str) -> Optional[Dict[str, Any]]:
     if not key:
         return None
     return get_all_users().get(key)
+
+
+def _visible_users(station_id: str) -> List[Dict[str, Any]]:
+    """
+    ผู้ใช้ที่สถานีนั้นมองเห็นได้ตามลำดับชั้นเดิม (สถานีตรงกัน / ฝอ.กก. เห็นทั้ง กก. /
+    ส่วนกลางเห็นทั้งประเทศ) เรียงตามชื่อเพื่อให้ dropdown ไม่สลับตำแหน่งทุกครั้งที่โหลด
+    """
+    requested = str(station_id or "").strip()
+    matched = [
+        user
+        for user in get_all_users().values()
+        if user.get("fullName") and check_station_match(requested, str(user.get("station") or ""))
+    ]
+    return sorted(matched, key=lambda user: user["fullName"])
+
+
+def list_names_for_station(station_id: str) -> List[str]:
+    """ชื่อเจ้าหน้าที่สำหรับ dropdown (เทียบเท่า getUserDropdown ใน JS)"""
+    return [user["fullName"] for user in _visible_users(station_id)]
+
+
+def phone_map_for_station(station_id: str) -> Dict[str, str]:
+    """ชื่อเจ้าหน้าที่ -> เบอร์โทร (เทียบเท่า getUserPhoneMapping ใน JS)"""
+    return {user["fullName"]: user.get("phone", "") for user in _visible_users(station_id)}
+
+
+def update_password(username: str, stored_password: str) -> bool:
+    """
+    เขียนรหัสผ่านใหม่ทับคอลัมน์ Password ของบัญชีนั้น คืน False ถ้าไม่พบ username
+
+    อ่านชีตสดทุกครั้งแทนการใช้แคช เพราะเลขแถวที่แคชไว้อาจเลื่อนไปแล้วถ้ามีคนลบแถว
+    ระหว่างนั้น แล้วจะกลายเป็นเขียนทับรหัสผ่านของคนอื่น
+    """
+    key = (username or "").strip().lower()
+    if not key:
+        return False
+
+    rows = sheets_service.read_table(MASTER_SHEET_ID, USERS_TABLE)
+    if not rows:
+        raise UserDirectoryUnavailable(f"ตาราง {USERS_TABLE} ว่างเปล่า")
+
+    header = [str(h).strip() for h in rows[0]]
+    for column in ("Username", "Password"):
+        if column not in header:
+            raise UserDirectoryUnavailable(f"ตาราง {USERS_TABLE} ไม่มีคอลัมน์ {column}")
+
+    name_index = header.index("Username")
+    password_column = chr(ord("A") + header.index("Password"))
+
+    for line, row in enumerate(rows[1:], start=2):
+        if name_index < len(row) and str(row[name_index]).strip().lower() == key:
+            worksheet = sheets_service.get_worksheet(MASTER_SHEET_ID, USERS_TABLE, ensure=False)
+            sheets_service.with_backoff(
+                worksheet.update,
+                range_name=f"{password_column}{line}",
+                values=[[stored_password]],
+                value_input_option="RAW",
+            )
+            reset_cache()
+            logger.info("เปลี่ยนรหัสผ่านของบัญชี %s แล้ว", username)
+            return True
+
+    return False
 
 
 def reset_cache() -> None:

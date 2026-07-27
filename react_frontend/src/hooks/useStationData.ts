@@ -14,6 +14,7 @@ export interface StationData {
 export const useStationData = (opts: { charges?: boolean } = {}): StationData => {
   const { user } = useAuth();
   const station = user?.station || '51';
+  const token = user?.token;
   const [units, setUnits] = useState<string[]>([]);
   const [users, setUsers] = useState<string[]>([]);
   const [charges, setCharges] = useState<string[]>([]);
@@ -24,17 +25,17 @@ export const useStationData = (opts: { charges?: boolean } = {}): StationData =>
     let alive = true;
     setLoading(true);
     const jobs: Promise<void>[] = [
-      api.getUnitDropdown(station).then((u) => { if (alive) setUnits(u); }),
-      api.getUserDropdown(station).then((u) => { if (alive) setUsers(u); }),
-      api.getUserPhoneMapping(station).then((m) => { if (alive) setPhoneMap(m); }),
+      api.getUnitDropdown(station, token).then((u) => { if (alive) setUnits(u); }),
+      api.getUserDropdown(station, token).then((u) => { if (alive) setUsers(u); }),
+      api.getUserPhoneMapping(station, token).then((m) => { if (alive) setPhoneMap(m); }),
     ];
-    if (opts.charges) jobs.push(api.getChargeDropdown().then((c) => { if (alive) setCharges(c); }));
+    if (opts.charges) jobs.push(api.getChargeDropdown(token).then((c) => { if (alive) setCharges(c); }));
     Promise.all(jobs).finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [station]);
+  }, [station, token]);
 
   return { units, users, charges, phoneMap, loading };
 };
