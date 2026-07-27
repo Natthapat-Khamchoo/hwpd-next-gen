@@ -35,11 +35,30 @@ class TestConfig(unittest.TestCase):
 
     def test_get_station_data(self):
         st51 = get_station_data("51")
-        self.assertEqual(st51["province"], "เชียงใหม่")
-        self.assertIn("กก.5", st51["fullName"])
+        self.assertEqual(st51["province"], "ตาก")
+        self.assertEqual(st51["fullName"], "ส.ทล.1 กก.5 บก.ทล.")
+        self.assertIn("แม่สอด", st51["units"])
 
         st11 = get_station_data("11")
         self.assertEqual(st11["province"], "อยุธยา")
+
+    def test_fullname_uses_second_digit_as_station_number(self):
+        # "86" คือ ส.ทล.6 กก.8 ไม่ใช่ ส.ทล.86 — เคยพลาดตรงนี้ตอนที่ยังไม่มีข้อมูล กก.2-4, 6-8
+        self.assertEqual(get_station_data("86")["fullName"], "ส.ทล.6 กก.8 บก.ทล.")
+
+    def test_division_hq_is_not_labelled_as_a_station(self):
+        self.assertEqual(get_station_data("70")["fullName"], "ฝอ.กก.7 บก.ทล.")
+        self.assertEqual(get_station_data("70")["units"], ["ฝอ.กก.7"])
+
+    def test_every_division_has_its_stations_configured(self):
+        expected = {"1": 6, "2": 6, "3": 5, "4": 5, "5": 6, "6": 6, "7": 5, "8": 4}
+        for division, count in expected.items():
+            stations = get_division_stations(f"{division}1", include_hq=False)
+            self.assertEqual(len(stations), count, f"กก.{division} ควรมี {count} สถานี")
+            for station_id in stations:
+                data = get_station_data(station_id)
+                self.assertTrue(data["units"], f"สถานี {station_id} ไม่มีหน่วยบริการ")
+                self.assertNotIn("กองกำกับการ", data["province"], f"สถานี {station_id} ยังไม่ได้ตั้งจังหวัด")
 
     def test_get_target_db_id(self):
         self.assertEqual(get_target_db_id("51"), "sheet-id-for-division-5")

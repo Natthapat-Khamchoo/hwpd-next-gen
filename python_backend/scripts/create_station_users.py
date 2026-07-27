@@ -1,40 +1,49 @@
 """
-สร้างบัญชีผู้ใช้ประจำสถานีและประจำกองกำกับการลงแท็บ `tb_Users` ในชีตกลาง
+สร้างและดูแลบัญชีผู้ใช้ประจำสถานีและประจำกองกำกับการในแท็บ `tb_Users` ของชีตกลาง
 
-โครงสร้างบัญชีที่สร้าง (1 บัญชีต่อ 1 หน่วย)
+โครงสร้างบัญชี (1 บัญชีต่อ 1 หน่วย) อ่านรายชื่อสถานีจาก STATION_CONFIG โดยตรง
 
-    00        บก.ทล. ส่วนกลาง      Super_Commander     username: hq
-    {d}0      ฝอ.กก.{d}            Division_Admin      username: fo{d}
-    {d}1-{d}6 ส.ทล.1-6 กก.{d}      Station_Admin       username: st{d}{n}
+    00       บก.ทล. ส่วนกลาง   Super_Commander   username: hq
+    {d}0     ฝอ.กก.{d}         Division_Admin    username: fo{d}
+    {d}{n}   ส.ทล.{n} กก.{d}   Station_Admin     username: st{d}{n}
 
 รหัสผ่านสุ่มไม่ซ้ำกันต่อบัญชี เก็บลงชีตเป็น `sha256$...` (ดู core/security.py)
-ส่วนรหัสตัวจริงถูกเขียนลงไฟล์ CSV บนเครื่องเท่านั้น เพื่อแจกให้แต่ละหน่วย
+ส่วนรหัสตัวจริงเขียนลงไฟล์ CSV บนเครื่องเท่านั้น เพื่อแจกให้แต่ละหน่วย
 
-    python scripts/create_station_users.py              # ดูรายการที่จะสร้าง ไม่เขียนอะไร
-    python scripts/create_station_users.py --apply      # เขียนลงชีตจริง
-    python scripts/create_station_users.py --apply --plaintext   # เก็บรหัสแบบไม่เข้ารหัส
+    python scripts/create_station_users.py            # ดูว่าจะทำอะไรบ้าง ไม่เขียนอะไร
+    python scripts/create_station_users.py --apply    # สร้างบัญชีที่ยังขาด
+    python scripts/create_station_users.py --sync     # อัปเดตชื่อหน่วย/สถานีของบัญชีเดิม
+    python scripts/create_station_users.py --prune    # ลบบัญชีของสถานีที่ไม่มีใน STATION_CONFIG
 
-บัญชีที่มี Username ซ้ำกับที่มีอยู่แล้วในชีตจะถูกข้าม สคริปต์นี้จึงรันซ้ำได้
-โดยไม่สร้างบัญชีซ้ำและไม่แตะบัญชีเดิม
+ทั้งสามโหมดใช้ร่วมกันได้และรันซ้ำได้ `--prune` แตะเฉพาะบัญชีที่ตั้งชื่อตามรูปแบบ
+ของสคริปต์นี้ (hq / fo{d} / st{dn}) จึงไม่ไปโดนบัญชีที่คนอื่นสร้างไว้
 """
 
 import argparse
 import csv
 import os
+import re
 import secrets
 import sys
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app.core.config import MASTER_SHEET_ID, get_station_config, get_station_data  # noqa: E402
+from app.core.config import (  # noqa: E402
+    MASTER_SHEET_ID,
+    get_division_stations,
+    get_station_config,
+    get_station_data,
+)
 from app.core.security import hash_password  # noqa: E402
 from app.services import sheets_service  # noqa: E402
 
 USERS_TABLE = "tb_Users"
 DIVISIONS = range(1, 9)
-STATIONS_PER_DIVISION = 6
+
+# ชื่อบัญชีที่สคริปต์นี้เป็นเจ้าของ ใช้กันไม่ให้ --prune ไปลบบัญชีของคนอื่น
+OWNED_USERNAME = re.compile(r"^(hq|fo[1-8]|st[1-8][1-9])$")
 
 # ตัดตัวที่อ่านสับสนออก (0/O, 1/l/I) เพราะรหัสนี้ต้องอ่านจากกระดาษแล้วพิมพ์ตาม
 PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghijkmnpqrstuvwxyz"
@@ -64,11 +73,10 @@ def generate_password() -> str:
 
 def build_accounts() -> List[Dict[str, Any]]:
     """
-    ประกอบรายการบัญชีจาก STATION_CONFIG
+    ประกอบรายการบัญชีจากสถานีที่มีจริงใน STATION_CONFIG
 
-    สถานีของ กก. ที่ยังไม่มีข้อมูลจริง (กก.2, 3, 4, 6, 7, 8) จะได้ชื่อที่
-    get_station_data สร้างขึ้นอัตโนมัติ การกำหนดเส้นทางฐานข้อมูลใช้ตัวเลขแรก
-    ของ Station_ID จึงทำงานถูกต้องอยู่แล้ว เหลือแค่ชื่อที่ต้องมาเติมทีหลัง
+    จำนวนสถานีไม่เท่ากันทุก กก. (กก.3, 4, 7 มี 5 สถานี กก.8 มี 4) จึงต้องอ่าน
+    จาก config ไม่ใช่สมมติว่า กก.ละ 6 สถานี
     """
     config = get_station_config()
     accounts: List[Dict[str, Any]] = []
@@ -85,36 +93,42 @@ def build_accounts() -> List[Dict[str, Any]]:
                 "unit": units[0] if units else "",
                 "role": role,
                 "province": data.get("province", ""),
-                "known": station_id in config,
+                "unitCount": len(units),
             }
         )
 
-    add("00", "hq", "Super_Commander")
+    if "00" in config:
+        add("00", "hq", "Super_Commander")
 
     for division in DIVISIONS:
-        add(f"{division}0", f"fo{division}", "Division_Admin")
-        for number in range(1, STATIONS_PER_DIVISION + 1):
-            station_id = f"{division}{number}"
+        hq_id = f"{division}0"
+        if hq_id in config:
+            add(hq_id, f"fo{division}", "Division_Admin")
+        for station_id in get_division_stations(hq_id, include_hq=False):
             add(station_id, f"st{station_id}", "Station_Admin")
 
     return accounts
 
 
-def existing_usernames(rows: List[List[str]]) -> Dict[str, int]:
-    """คืน username ที่มีอยู่แล้ว (ตัวพิมพ์เล็ก) -> เลขแถวในชีต"""
+def read_sheet_users(rows: List[List[str]]) -> Dict[str, Tuple[int, Dict[str, str]]]:
+    """คืน username (ตัวพิมพ์เล็ก) -> (เลขแถวในชีต, ค่าแต่ละคอลัมน์)"""
     if not rows:
         return {}
     header = [str(h).strip() for h in rows[0]]
     if "Username" not in header:
         raise SystemExit(f"ตาราง {USERS_TABLE} ไม่มีคอลัมน์ Username")
-    index = header.index("Username")
 
-    found: Dict[str, int] = {}
-    for offset, row in enumerate(rows[1:], start=2):
-        if index < len(row):
-            name = str(row[index]).strip().lower()
-            if name:
-                found[name] = offset
+    positions = {column: header.index(column) for column in COLUMNS if column in header}
+    found: Dict[str, Tuple[int, Dict[str, str]]] = {}
+
+    for line, row in enumerate(rows[1:], start=2):
+        def cell(column: str) -> str:
+            index = positions.get(column)
+            return str(row[index]).strip() if index is not None and index < len(row) else ""
+
+        name = cell("Username")
+        if name:
+            found[name.lower()] = (line, {column: cell(column) for column in positions})
     return found
 
 
@@ -127,9 +141,9 @@ def first_free_row(rows: List[List[str]]) -> int:
     กลางตารางทิ้งไว้ จึงต้องหาตำแหน่งจากคอลัมน์ A เอง
     """
     last = 1
-    for offset, row in enumerate(rows[1:], start=2):
+    for line, row in enumerate(rows[1:], start=2):
         if row and str(row[0]).strip():
-            last = offset
+            last = line
     return last + 1
 
 
@@ -159,7 +173,7 @@ def to_sheet_row(account: Dict[str, Any], plaintext: bool) -> List[str]:
 def write_credentials_file(accounts: List[Dict[str, Any]], path: str) -> None:
     with open(path, "w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["Username", "Password", "Station_ID", "หน่วย", "จังหวัด", "Role", "ข้อมูลสถานีจริง"])
+        writer.writerow(["Username", "Password", "Station_ID", "หน่วย", "จังหวัด", "Role", "จำนวนหน่วยบริการ"])
         for account in accounts:
             writer.writerow(
                 [
@@ -169,20 +183,23 @@ def write_credentials_file(accounts: List[Dict[str, Any]], path: str) -> None:
                     account["fullName"],
                     account["province"],
                     account["role"],
-                    "ใช่" if account["known"] else "ยังไม่มี",
+                    account["unitCount"],
                 ]
             )
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="สร้างบัญชีประจำสถานีและกองกำกับการลง tb_Users")
-    parser.add_argument("--apply", action="store_true", help="เขียนลงชีตจริง (ไม่ใส่ = แสดงผลอย่างเดียว)")
+    parser = argparse.ArgumentParser(description="สร้างและดูแลบัญชีประจำสถานีและกองกำกับการใน tb_Users")
+    parser.add_argument("--apply", action="store_true", help="สร้างบัญชีที่ยังไม่มีในชีต")
+    parser.add_argument("--sync", action="store_true", help="อัปเดต FullName/Unit_ID/Role ของบัญชีเดิมให้ตรง STATION_CONFIG")
+    parser.add_argument("--prune", action="store_true", help="ลบบัญชีของสถานีที่ไม่มีใน STATION_CONFIG แล้ว")
     parser.add_argument("--plaintext", action="store_true", help="เก็บรหัสผ่านแบบไม่เข้ารหัส")
     parser.add_argument("--out", default="", help="ไฟล์ CSV เก็บรหัสผ่าน (ค่าเริ่มต้นตั้งชื่อตามวันที่)")
     args = parser.parse_args()
 
     accounts = build_accounts()
-    print(f"เตรียมบัญชีไว้ {len(accounts)} รายการ จาก {len(DIVISIONS)} กองกำกับการ + ส่วนกลาง\n")
+    stations = sum(1 for a in accounts if a["role"] == "Station_Admin")
+    print(f"STATION_CONFIG มี {stations} สถานี รวมบัญชีที่ควรมีทั้งหมด {len(accounts)} รายการ\n")
 
     try:
         rows = sheets_service.read_table(MASTER_SHEET_ID, USERS_TABLE)
@@ -190,47 +207,82 @@ def main() -> int:
         print(f"อ่าน {USERS_TABLE} ไม่ได้: {exc}")
         return 1
 
-    taken = existing_usernames(rows)
-    new_accounts = [a for a in accounts if a["username"].lower() not in taken]
-    skipped = [a for a in accounts if a["username"].lower() in taken]
+    on_sheet = read_sheet_users(rows)
+    wanted = {a["username"].lower(): a for a in accounts}
 
-    for account in accounts:
-        mark = "ข้าม (มีอยู่แล้ว)" if account["username"].lower() in taken else ""
-        print(f"  {account['username']:<6} {account['station']:<3} {account['role']:<18} {account['fullName']} {mark}")
+    missing = [a for a in accounts if a["username"].lower() not in on_sheet]
 
-    print(f"\nสร้างใหม่ {len(new_accounts)} บัญชี, ข้าม {len(skipped)} บัญชี")
+    stale: List[Tuple[str, Dict[str, str], Dict[str, Any]]] = []
+    for key, account in wanted.items():
+        if key not in on_sheet:
+            continue
+        _, current = on_sheet[key]
+        if (
+            current.get("FullName") != account["fullName"]
+            or current.get("Unit_ID") != account["unit"]
+            or current.get("Station_ID") != account["station"]
+            or current.get("Role") != account["role"]
+        ):
+            stale.append((key, current, account))
 
-    if not new_accounts:
-        print("ไม่มีบัญชีใหม่ที่ต้องสร้าง")
+    orphans = [
+        (key, line, current)
+        for key, (line, current) in on_sheet.items()
+        if OWNED_USERNAME.match(key) and key not in wanted
+    ]
+
+    print(f"ยังไม่มีในชีต   {len(missing)}")
+    print(f"ข้อมูลไม่ตรง    {len(stale)}")
+    print(f"ไม่มีสถานีรองรับ {len(orphans)}")
+
+    for key, current, account in stale[:60]:
+        print(f"  แก้ {key:<6} หน่วย {current.get('Unit_ID','')!r} -> {account['unit']!r}")
+    for key, line, current in orphans:
+        print(f"  ลบ {key:<6} แถว {line} สถานี {current.get('Station_ID','')} {current.get('FullName','')}")
+
+    if not (args.apply or args.sync or args.prune):
+        print("\nโหมดแสดงผลอย่างเดียว — ใส่ --apply / --sync / --prune เพื่อเขียนจริง")
         return 0
-
-    if not args.apply:
-        print("\nโหมดแสดงผลอย่างเดียว ยังไม่ได้เขียนลงชีต — ใส่ --apply เพื่อเขียนจริง")
-        return 0
-
-    start_row = first_free_row(rows)
-    values = [to_sheet_row(a, args.plaintext) for a in new_accounts]
-    end_row = start_row + len(values) - 1
 
     worksheet = sheets_service.get_worksheet(MASTER_SHEET_ID, USERS_TABLE, ensure=False)
-    sheets_service.with_backoff(
-        worksheet.update,
-        range_name=f"A{start_row}:M{end_row}",
-        values=values,
-        value_input_option="RAW",
-    )
-    print(f"เขียนลง {USERS_TABLE} แถว {start_row}-{end_row} เรียบร้อย")
 
-    out_path = args.out or os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        f"credentials_{datetime.now():%Y%m%d_%H%M%S}.csv",
-    )
-    write_credentials_file(new_accounts, out_path)
-    print(f"รหัสผ่านตัวจริงอยู่ที่ {out_path}")
-    print("ไฟล์นี้ถูก gitignore ไว้ เก็บให้ปลอดภัยและลบทิ้งเมื่อแจกรหัสครบแล้ว")
+    if args.sync and stale:
+        for key, _, account in stale:
+            line = on_sheet[key][0]
+            sheets_service.with_backoff(
+                worksheet.update,
+                range_name=f"C{line}:F{line}",
+                values=[[account["fullName"], account["station"], account["unit"], account["role"]]],
+                value_input_option="RAW",
+            )
+        print(f"\nอัปเดตบัญชีเดิม {len(stale)} รายการ")
 
-    if not args.plaintext:
-        print(f"รหัสในชีตเก็บเป็น sha256$ ต้องตั้ง PASSWORD_PEPPER ให้ตรงกันทุกเครื่องที่รันระบบ")
+    if args.prune and orphans:
+        # ลบจากแถวล่างขึ้นบน ไม่งั้นเลขแถวที่เหลือจะเลื่อนหลังลบไปแล้วหนึ่งแถว
+        for key, line, _ in sorted(orphans, key=lambda item: item[1], reverse=True):
+            sheets_service.with_backoff(worksheet.delete_rows, line)
+        print(f"ลบบัญชีที่ไม่มีสถานีรองรับ {len(orphans)} รายการ")
+
+    if args.apply and missing:
+        rows = sheets_service.read_table(MASTER_SHEET_ID, USERS_TABLE)  # อ่านใหม่ เผื่อเพิ่งลบแถวไป
+        start_row = first_free_row(rows)
+        values = [to_sheet_row(a, args.plaintext) for a in missing]
+        end_row = start_row + len(values) - 1
+        sheets_service.with_backoff(
+            worksheet.update,
+            range_name=f"A{start_row}:M{end_row}",
+            values=values,
+            value_input_option="RAW",
+        )
+        print(f"สร้างบัญชีใหม่ {len(missing)} รายการ (แถว {start_row}-{end_row})")
+
+        out_path = args.out or os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            f"credentials_{datetime.now():%Y%m%d_%H%M%S}.csv",
+        )
+        write_credentials_file(missing, out_path)
+        print(f"รหัสผ่านตัวจริงอยู่ที่ {out_path}")
+        print("ไฟล์นี้ถูก gitignore ไว้ เก็บให้ปลอดภัยและลบทิ้งเมื่อแจกรหัสครบแล้ว")
 
     return 0
 
