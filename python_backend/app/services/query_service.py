@@ -10,11 +10,19 @@ report_service เตรียมแถวไปเขียน ส่วนโ�
 เขียนกลับด้วย `RAW` เหมือนตอนบันทึกรายงาน เพื่อไม่ให้ Sheets ตีความค่าใหม่
 """
 
+import json
 import logging
+import re
+from collections import Counter
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.core.config import check_station_match, get_target_db_id
+from app.core.config import (
+    check_station_match,
+    get_division_stations,
+    get_station_data,
+    get_target_db_id,
+)
 from app.core.schema import get_columns
 from app.services import sheets_service
 
@@ -247,6 +255,265 @@ def missions_for_unit(station_id: str, unit: str, start: str, end: str) -> List[
         )
 
     return sorted(missions, key=lambda mission: (mission["actualDate"], mission["startTime"]))
+
+
+# ---------------------------------------------------------------------------
+# สรุปยอด
+# ---------------------------------------------------------------------------
+
+# ตารางที่ยอดสรุปอ่าน (นอกเหนือจากที่เข้าคิวอนุมัติ ยังต้องนับอุบัติเหตุกับภารกิจด้วย)
+SUMMARY_TABLES = ["tb_DailyResult", "tb_Arrests", "tb_RoyalGuard", "tb_OtherDuties", "tb_Missions"]
+
+# นับเฉพาะแถวที่ตรวจแล้ว เหตุผลเดียวกับยอดบนหน้า Admin (ดู _accumulate_totals)
+COUNTED_STATUSES = {"Active", STATUS_APPROVED}
+
+CAUSE_KEYS = {"คน": "human", "รถ": "vehicle", "ถนน": "road", "แวดล้อม": "env"}
+
+
+def _in_range(record: Dict[str, Any], start: str, end: str) -> bool:
+    actual = record.get(COL_ACTUAL_DATE, "")
+    if start and actual < start:
+        return False
+    if end and actual > end:
+        return False
+    return True
+
+
+def _counted(record: Dict[str, Any]) -> bool:
+    return is_active(record.get(COL_IS_ACTIVE)) and record.get(COL_STATUS, "") in COUNTED_STATUSES
+
+
+def _blank_totals() -> Dict[str, int]:
+    return {
+        "v43": 0,
+        "v42": 0,
+        "v20": 0,
+        "service": 0,
+        "arrest": 0,
+        "volunteer": 0,
+        "royalGuard": 0,
+        "accident": 0,
+        "mission": 0,
+    }
+
+
+def _split_charges(text: str) -> List[str]:
+    """
+    ช่อง "ข้อหาทั้งหมด" ของใบจับกุม เขียนเป็น "1. ข้อหา ก\n2. ข้อหา ข" — หนึ่งบรรทัด
+    ต่อหนึ่งข้อหา ตัดเลขลำดับออกก่อนนับ ไม่งั้นข้อหาเดียวกันที่อยู่คนละลำดับจะกลาย
+    เป็นคนละรายการ
+    """
+    charges = []
+    for line in str(text or "").splitlines():
+        cleaned = re.sub(r"^\s*\d+[.)]\s*", "", line).strip()
+        if cleaned and cleaned != "-":
+            charges.append(cleaned)
+    return charges
+
+
+def _split_charge_counts(text: str) -> List[Tuple[str, int]]:
+    """
+    ช่อง "Charges_Detail" ของผลการปฏิบัติ เขียนคนละแบบกับใบจับกุม:
+    "ขับเร็ว (12) | ไม่สวมหมวก (5)" — คั่นด้วย | และตัวเลขในวงเล็บคือจำนวนใบสั่ง
+
+    ถ้าอ่านด้วยตัวแยกของใบจับกุม ทั้งก้อนจะกลายเป็นข้อหาเดียวชื่อ "ขับเร็ว (12) | ..."
+    แล้ว "ขับเร็ว" จากใบจับกุมจะถูกนับแยกอีกรายการทั้งที่เป็นข้อหาเดียวกัน
+    """
+    counts: List[Tuple[str, int]] = []
+    for part in str(text or "").split("|"):
+        cleaned = part.strip()
+        if not cleaned or cleaned == "-":
+            continue
+        match = re.match(r"^(.*?)\s*\((\d+)\)\s*$", cleaned)
+        if match:
+            counts.append((match.group(1).strip(), int(match.group(2))))
+        else:
+            counts.append((cleaned, 1))
+    return counts
+
+
+def _split_seized(raw: str) -> List[str]:
+    """ชื่อของกลางจากคอลัมน์ JSON — ข้อความอิสระข้าง ๆ เจ้าหน้าที่แก้เองได้ จึงนับไม่ได้"""
+    text = str(raw or "").strip()
+    if not text:
+        return []
+    try:
+        items = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    if not isinstance(items, list):
+        return []
+    return [str(item.get("name", "")).strip() for item in items if isinstance(item, dict) and item.get("name")]
+
+
+def _add_causes(text: str, causes: Counter) -> None:
+    """ช่อง "% สาเหตุ" ถูกเขียนเป็น "คน:60%, รถ:20%, ถนน:10%, แวดล้อม:10%\""""
+    for label, key in CAUSE_KEYS.items():
+        match = re.search(rf"{label}\s*:\s*(\d+(?:\.\d+)?)", str(text or ""))
+        if match:
+            causes[key] += int(float(match.group(1)))
+
+
+def _station_summary(spreadsheet_id: str, station_id: str, start: str, end: str) -> Dict[str, Any]:
+    """
+    ยอดของสถานีเดียวในช่วงวันที่ พร้อมรายละเอียดแยกหมวดสำหรับกราฟ
+
+    เทียบสถานีด้วยค่าตรง ๆ ไม่ใช่ check_station_match เพราะตรงนี้ต้องการยอดของสถานีนั้น
+    สถานีเดียว ไม่ใช่ทุกสถานีที่มันมองเห็นได้ ไม่งั้นแถวรายสถานีจะรวมกันเป็นค่าเดียวกันหมด
+    """
+    totals = _blank_totals()
+    charges: Counter = Counter()
+    seized: Counter = Counter()
+    causes: Counter = Counter()
+    trend: Dict[str, Dict[str, int]] = {}
+
+    def day(record: Dict[str, Any]) -> Dict[str, int]:
+        return trend.setdefault(record.get(COL_ACTUAL_DATE, ""), {"arrest": 0, "service": 0})
+
+    for table in SUMMARY_TABLES + ["tb_Accidents"]:
+        for record in read_rows(spreadsheet_id, table):
+            if record.get(COL_STATION_ID, "") != station_id:
+                continue
+            if not _counted(record) or not _in_range(record, start, end):
+                continue
+
+            if table == "tb_DailyResult":
+                totals["v43"] += _to_int(record.get("ยอด ว.43"))
+                totals["v42"] += _to_int(record.get("ยอด ว.42"))
+                totals["v20"] += _to_int(record.get("ยอด ว.20"))
+                service = _to_int(record.get("ยอด บริการ"))
+                totals["service"] += service
+                day(record)["service"] += service
+                for charge, count in _split_charge_counts(record.get("Charges_Detail", "")):
+                    charges[charge] += count
+            elif table == "tb_Arrests":
+                totals["arrest"] += 1
+                day(record)["arrest"] += 1
+                for charge in _split_charges(record.get("ข้อหาทั้งหมด", "")):
+                    charges[charge] += 1
+                for item in _split_seized(record.get("ของกลาง (JSON มีโครงสร้าง)", "")):
+                    seized[item] += 1
+            elif table == "tb_RoyalGuard":
+                totals["royalGuard"] += 1
+            elif table == "tb_OtherDuties":
+                if record.get("การปฏิบัติ", "") in VOLUNTEER_DUTY_TYPES:
+                    totals["volunteer"] += 1
+            elif table == "tb_Missions":
+                totals["mission"] += 1
+            elif table == "tb_Accidents":
+                totals["accident"] += 1
+                _add_causes(record.get("% สาเหตุ", ""), causes)
+
+    return {"totals": totals, "charges": charges, "seized": seized, "causes": causes, "trend": trend}
+
+
+def daily_summary(station_id: str, start: str, end: str) -> Dict[str, Any]:
+    """
+    ยอดของสถานีเดียวสำหรับแท็บ "สรุปยอดส่ง" ในฟอร์มรายงานประจำวัน
+
+    chargesText เรียงจากมากไปน้อยเพื่อให้ข้อหาที่พบบ่อยขึ้นก่อนในข้อความ LINE
+    """
+    summary = _station_summary(get_target_db_id(station_id), station_id, start, end)
+    totals = summary["totals"]
+    charges = summary["charges"].most_common()
+
+    return {
+        "v43": totals["v43"],
+        "service": totals["service"],
+        "v42": totals["v42"],
+        "v20": totals["v20"],
+        "chargesText": "\n".join(f"{name} = {count}" for name, count in charges),
+        "chargeBreakdown": dict(charges),
+    }
+
+
+def _station_label(station_id: str) -> str:
+    """ป้ายสั้น ๆ สำหรับแกนกราฟ — "ส.ทล.1" ไม่ใช่ชื่อเต็มที่ยาวจนแกนอ่านไม่ออก"""
+    number = station_id[1:] if len(station_id) > 1 else station_id
+    if number == "0":
+        return f"ฝอ.กก.{station_id[0]}"
+    return f"ส.ทล.{number}"
+
+
+def division_summary(station_id: str, start: str, end: str) -> Dict[str, Any]:
+    """
+    ยอดทั้ง กก. แยกรายสถานี สำหรับหน้า ฝอ.กก. และหน้าผู้กำกับการ
+
+    ทุกสถานีใน กก. เดียวกันใช้สเปรดชีตไฟล์เดียวกัน (Franchise Model) จึงอ่านแต่ละ
+    ตารางครั้งเดียวแล้วแยกตามสถานีทีหลัง ไม่ใช่วนเรียก _station_summary รายสถานี
+    ซึ่งจะอ่านไฟล์เดิมซ้ำหกรอบ
+    """
+    spreadsheet_id = get_target_db_id(station_id)
+    stations = get_division_stations(station_id, include_hq=False)
+
+    totals = _blank_totals()
+    charges: Counter = Counter()
+    seized: Counter = Counter()
+    causes: Counter = Counter()
+    trend: Dict[str, Dict[str, int]] = {}
+    per_station = {
+        sid: {
+            "station": sid,
+            "name": _station_label(sid),
+            "province": get_station_data(sid).get("province", ""),
+            **{key: 0 for key in ("v43", "v42", "v20", "service", "arrest", "volunteer", "royalGuard")},
+        }
+        for sid in stations
+    }
+
+    for table in SUMMARY_TABLES + ["tb_Accidents"]:
+        for record in read_rows(spreadsheet_id, table):
+            row_station = record.get(COL_STATION_ID, "")
+            if row_station not in per_station:
+                continue
+            if not _counted(record) or not _in_range(record, start, end):
+                continue
+
+            bucket = per_station[row_station]
+            date_key = record.get(COL_ACTUAL_DATE, "")
+            day = trend.setdefault(date_key, {"arrest": 0, "service": 0})
+
+            if table == "tb_DailyResult":
+                for key, column in (("v43", "ยอด ว.43"), ("v42", "ยอด ว.42"), ("v20", "ยอด ว.20"), ("service", "ยอด บริการ")):
+                    value = _to_int(record.get(column))
+                    bucket[key] += value
+                    totals[key] += value
+                day["service"] += _to_int(record.get("ยอด บริการ"))
+                for charge, count in _split_charge_counts(record.get("Charges_Detail", "")):
+                    charges[charge] += count
+            elif table == "tb_Arrests":
+                bucket["arrest"] += 1
+                totals["arrest"] += 1
+                day["arrest"] += 1
+                for charge in _split_charges(record.get("ข้อหาทั้งหมด", "")):
+                    charges[charge] += 1
+                for item in _split_seized(record.get("ของกลาง (JSON มีโครงสร้าง)", "")):
+                    seized[item] += 1
+            elif table == "tb_RoyalGuard":
+                bucket["royalGuard"] += 1
+                totals["royalGuard"] += 1
+            elif table == "tb_OtherDuties":
+                if record.get("การปฏิบัติ", "") in VOLUNTEER_DUTY_TYPES:
+                    bucket["volunteer"] += 1
+                    totals["volunteer"] += 1
+            elif table == "tb_Missions":
+                totals["mission"] += 1
+            elif table == "tb_Accidents":
+                totals["accident"] += 1
+                _add_causes(record.get("% สาเหตุ", ""), causes)
+
+    return {
+        "totals": totals,
+        "byStation": [per_station[sid] for sid in stations],
+        "seizedBreakdown": dict(seized.most_common(10)),
+        "chargeBreakdown": dict(charges.most_common(10)),
+        "accCauseBreakdown": {key: causes.get(key, 0) for key in CAUSE_KEYS.values()},
+        "trend": [
+            {"date": date, **values}
+            for date, values in sorted(trend.items())
+            if date
+        ],
+    }
 
 
 def find_record(station_id: str, table_name: str, record_id: str) -> Dict[str, Any]:

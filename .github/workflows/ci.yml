@@ -61,6 +61,8 @@ jobs:
               "/api/my-pending",
               "/api/station-pending",
               "/api/missions",
+              "/api/daily-summary",
+              "/api/division-summary",
               "/api/records/approve",
               "/api/records/cancel",
               "/api/health/database",

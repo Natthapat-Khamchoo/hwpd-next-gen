@@ -122,6 +122,9 @@ MIN_PASSWORD_LENGTH = 8
 # บทบาทที่อนุมัติ/ตีกลับรายงานของคนอื่นได้ ตรงกับ requireSession_ ใน approveItem ของ JS
 APPROVER_ROLES = {"สิบเวร", "Station_Admin", "Division_Admin", "Division_Commander", "HQ_Admin", "Super_Commander"}
 
+# บทบาทที่เห็นภาพรวมทั้ง กก. ได้ ตรงกับหน้าที่ index.html เดิมเปิดให้เข้า hq/commander dashboard
+DIVISION_VIEW_ROLES = {"Division_Admin", "Division_Commander", "HQ_Admin", "Super_Commander"}
+
 
 class ReportSubmissionRequest(BaseModel):
     """
@@ -460,6 +463,43 @@ def missions(
     return {"status": "success", "data": data}
 
 
+@app.get("/api/daily-summary")
+def daily_summary(
+    station: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    session: Dict[str, Any] = Depends(current_session),
+):
+    """ยอดสรุปของสถานีเดียวในช่วงวันที่ ใช้เติมแท็บสรุปยอดส่งของฟอร์มรายงานประจำวัน"""
+    station_id = authorized_station_id(station, session)
+    try:
+        data = query_service.daily_summary(station_id, start or "", end or "")
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"status": "success", "data": data}
+
+
+@app.get("/api/division-summary")
+def division_summary(
+    station: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    session: Dict[str, Any] = Depends(current_session),
+):
+    """ยอดทั้งกองกำกับการแยกรายสถานี สำหรับหน้า ฝอ.กก. และหน้าผู้กำกับการ"""
+    station_id = authorized_station_id(station, session)
+
+    # เห็นภาพรวมทั้ง กก. ได้เฉพาะระดับ ฝอ.กก. ขึ้นไป สถานีเดียวใช้ /api/daily-summary
+    if str(session.get("r") or "") not in DIVISION_VIEW_ROLES:
+        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์ดูภาพรวมระดับกองกำกับการ")
+
+    try:
+        data = query_service.division_summary(station_id, start or "", end or "")
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"status": "success", "data": data}
+
+
 @app.post("/api/records/approve")
 def approve_record(req: RecordActionRequest, session: Dict[str, Any] = Depends(current_session)):
     """อนุมัติรายการ เปลี่ยน Sys_Status เป็น Approved"""
@@ -542,6 +582,7 @@ def submit_arrest_report(req: ReportSubmissionRequest, session: Dict[str, Any] =
         team_array=req.teamArray or [],
         suspect_array=req.suspectArray or [],
         charge_array=req.chargeArray or [],
+        seized_items=req.seizedItems or [],
         folder_url=attachments["folderUrl"],
         record_id=record_id,
     )

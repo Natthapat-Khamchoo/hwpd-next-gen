@@ -173,11 +173,31 @@ def prepare_checkpoint_report(
     }
 
 
+def _seized_json(seized_items: List[Dict[str, Any]]) -> str:
+    """
+    เก็บรายการของกลางเป็น JSON เพื่อให้ dashboard นับแยกหมวดได้
+
+    ช่อง "ของกลาง" ที่อยู่ข้าง ๆ เป็นข้อความที่ฟอร์มประกอบขึ้นเองและเจ้าหน้าที่แก้ได้
+    จึงใช้นับสถิติไม่ได้ ต้องเก็บโครงสร้างไว้ต่างหาก
+    """
+    items = [
+        {
+            "name": str(item.get("name", "")).strip(),
+            "qty": str(item.get("qty", "")).strip(),
+            "note": str(item.get("note", "")).strip(),
+        }
+        for item in seized_items
+        if isinstance(item, dict) and str(item.get("name", "")).strip()
+    ]
+    return json.dumps(items, ensure_ascii=False, separators=(",", ":")) if items else ""
+
+
 def prepare_arrest_report(
     form_data: Dict[str, Any],
     team_array: List[str],
     suspect_array: List[Dict[str, Any]],
     charge_array: List[str],
+    seized_items: Optional[List[Dict[str, Any]]] = None,
     folder_url: str = "ไม่มีไฟล์แนบ",
     record_id: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -189,6 +209,7 @@ def prepare_arrest_report(
     team = sanitize_form_data(team_array or [])
     suspects = sanitize_form_data(suspect_array or [])
     charges = sanitize_form_data(charge_array or [])
+    seized = sanitize_form_data(seized_items or [])
 
     record_id = record_id or generate_record_id("ARR")
     st_data = get_station_data(form.get("stationId", "51"))
@@ -232,7 +253,9 @@ def prepare_arrest_report(
         str(form.get("warrantScope", "")).strip(),
         str(form.get("caseNumber", "")).strip(),
         str(form.get("caseMethod", "")).strip(),
-        str(form.get("seizedItemsJson", "")).strip(),
+        # ฟอร์มส่ง seizedItems มาเป็นอาร์เรย์แยกจาก formData ไม่ใช่ค่าใน formData
+        # ตกลงมาทางนี้ก่อน แล้วค่อยถอยไปใช้ค่าใน formData เผื่อผู้เรียกรายอื่น
+        _seized_json(seized) or str(form.get("seizedItemsJson", "")).strip(),
         str(form.get("ecigType", "")).strip(),
         str(form.get("relatedUrl", "")).strip(),
         str(form.get("damageValue", "")).strip(),
