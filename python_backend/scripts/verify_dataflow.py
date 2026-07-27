@@ -10,8 +10,12 @@
     python scripts/verify_dataflow.py --divisions 1,5  # ตรวจเฉพาะบาง กก.
     python scripts/verify_dataflow.py --report-types daily,fuel   # ตรวจเฉพาะบางฟอร์ม
 
+รหัสผ่านใน `tb_Users` ถูก hash หมดแล้ว ส่วนที่ 1 จึงอ่านรหัสตัวจริงจากไฟล์
+`credentials_*.csv` ที่ scripts/create_station_users.py เขียนไว้ (ไฟล์นี้ gitignore
+อยู่ ไม่มีบนเซิร์ฟเวอร์) ระบุไฟล์เองได้ด้วย --credentials
+
 สิ่งที่ตรวจ:
-  ส่วนที่ 1  ระบบล็อกอินและการปฏิเสธที่ควรเกิด (ไม่เขียนข้อมูล)
+  ส่วนที่ 1  ระบบล็อกอิน การปฏิเสธที่ควรเกิด และฟอร์มสรุปยอดสามรายการ (ไม่เขียนข้อมูล)
   ส่วนที่ 2  ส่งรายงานทุกประเภทที่รองรับ จากทุก กก. ผ่าน API
   ส่วนที่ 3  อ่านกลับจากชีตแต่ละไฟล์ ยืนยันว่าลงถูกไฟล์ ถูกคอลัมน์ และไม่ปนข้าม กก.
   ส่วนที่ 4  ส่งรายงานพร้อมไฟล์แนบ ยืนยันว่าไฟล์ขึ้นโฟลเดอร์ Drive ของ กก. นั้นจริง
@@ -19,6 +23,8 @@
 
 import argparse
 import base64
+import csv
+import glob
 import os
 import sys
 import time
@@ -46,10 +52,37 @@ REPORT_TABLES = {
     "fuel": "tb_FuelOil",
     "document": "tb_Documents",
 }
-# ฟอร์มที่หน้าเว็บมีแต่ backend ยังไม่มี endpoint รองรับ
-UNIMPLEMENTED = ["daily-summary", "mission-summary", "auto-arrest"]
+# สามฟอร์มที่ไม่ได้บันทึกแถวเดียวจบ จึงไม่อยู่ใน REPORT_TABLES และตรวจแยกในส่วนที่ 1
+# daily-summary เขียน tb_HQ_Summary (คนละโครงสร้างกับตารางอื่น) mission-summary ส่ง
+# LINE อย่างเดียว auto-arrest สร้างเอกสาร Google Docs — ตรวจแค่ว่าต่อสายไว้จริงและ
+# บังคับสิทธิ์ ไม่ยิงของจริงเพราะจะสร้างเอกสารค้างใน Drive
+SUMMARY_ENDPOINTS = ["daily-summary", "mission-summary", "auto-arrest"]
 
 results: List[Dict[str, Any]] = []
+
+
+def load_credentials(path: str = "") -> List[Dict[str, str]]:
+    """
+    อ่านรหัสผ่านตัวจริงจาก CSV ที่ scripts/create_station_users.py เขียนไว้
+
+    รหัสผ่านใน `tb_Users` เป็น `sha256$` หมดแล้ว จึงอ่านจากชีตมาล็อกอินไม่ได้อีก
+    ไฟล์ CSV อยู่บนเครื่องเท่านั้น (gitignore ไว้) ไม่ระบุ --credentials จะหยิบไฟล์
+    ล่าสุดใน python_backend/ ให้เอง
+    """
+    if path:
+        chosen = path
+    else:
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        found = sorted(glob.glob(os.path.join(root, "credentials_*.csv")))
+        if not found:
+            return []
+        chosen = found[-1]
+
+    with open(chosen, encoding="utf-8-sig", newline="") as handle:
+        rows = [row for row in csv.DictReader(handle) if row.get("Username") and row.get("Password")]
+
+    print(f"  (อ่านรหัสผ่านทดสอบจาก {os.path.basename(chosen)} — {len(rows)} บัญชี)")
+    return rows
 
 
 def record(section: str, label: str, ok: bool, detail: str = "") -> bool:
@@ -250,7 +283,7 @@ def payload_for(kind: str, division: str, station: str) -> Dict[str, Any]:
     }
 
 
-def section_1_auth(client) -> None:
+def section_1_auth(client, credentials_path: str = "") -> None:
     print("\nส่วนที่ 1  ระบบล็อกอินและการปฏิเสธที่ควรเกิด")
 
     from app.services import user_service
@@ -258,29 +291,47 @@ def section_1_auth(client) -> None:
     users = user_service.get_all_users(force=True)
     record("auth", f"อ่านรายชื่อผู้ใช้จาก tb_Users ได้ ({len(users)} บัญชี)", bool(users))
 
-    # ล็อกอินจริงด้วยบัญชีที่ยังเก็บรหัสผ่านแบบ plaintext ในชีต (ยังไม่ได้ hash)
-    sample = [u for u in users.values() if u.get("password") and not u["password"].startswith("sha256$")][:6]
-    for user in sample:
+    hashed = sum(1 for u in users.values() if str(u.get("password", "")).startswith("sha256$"))
+    record("auth", f"รหัสผ่านในชีตถูก hash ครบทุกบัญชี ({hashed}/{len(users)})",
+           bool(users) and hashed == len(users),
+           f"ยังเป็น plaintext {len(users) - hashed} บัญชี")
+
+    credentials = load_credentials(credentials_path)
+    if not credentials:
+        record("auth", "มีไฟล์ credentials_*.csv ไว้ล็อกอินทดสอบ", False,
+               "ไม่พบใน python_backend/ — รัน scripts/create_station_users.py หรือใส่ --credentials")
+        return
+
+    # ล็อกอินจริงให้ครบทุก role ที่มีในไฟล์ อย่างละหนึ่งบัญชี
+    by_role: Dict[str, Dict[str, str]] = {}
+    for account in credentials:
+        by_role.setdefault(account.get("Role") or "ไม่ระบุ role", account)
+
+    for role, account in by_role.items():
         res = client.post(
-            "/api/login", json={"username": user["username"], "password": user["password"]}
+            "/api/login", json={"username": account["Username"], "password": account["Password"]}
         ).json()
-        record("auth", f"ล็อกอิน {user['username']} ({user.get('role') or 'ไม่ระบุ role'}) สำเร็จและได้ token",
+        record("auth", f"ล็อกอิน {account['Username']} ({role}) สำเร็จและได้ token",
                res.get("status") == "success" and bool(res.get("user", {}).get("token")), str(res)[:140])
 
-    probe = sample[0]["username"] if sample else "test6"
+    probe = credentials[0]["Username"]
     bad = client.post("/api/login", json={"username": probe, "password": "definitely-wrong"}).json()
     record("auth", "รหัสผ่านผิดถูกปฏิเสธ", bad.get("status") == "error", str(bad)[:120])
 
     unknown = client.post("/api/login", json={"username": "no-such-user", "password": "x"}).json()
     record("auth", "บัญชีที่ไม่มีอยู่ถูกปฏิเสธ", unknown.get("status") == "error", str(unknown)[:120])
 
-    station51 = next((u for u in users.values() if str(u.get("station")) == "51" and u.get("password")), None)
+    station51 = next((a for a in credentials if str(a.get("Station_ID")) == "51"), None)
     if not station51:
-        record("auth", "มีบัญชีสถานี 51 ไว้ทดสอบสิทธิ์", False, "ไม่พบใน tb_Users")
+        record("auth", "มีบัญชีสถานี 51 ไว้ทดสอบสิทธิ์", False, "ไม่พบในไฟล์ credentials")
         return
-    token = client.post(
-        "/api/login", json={"username": station51["username"], "password": station51["password"]}
-    ).json()["user"]["token"]
+    login = client.post(
+        "/api/login", json={"username": station51["Username"], "password": station51["Password"]}
+    ).json()
+    if login.get("status") != "success":
+        record("auth", "ล็อกอินบัญชีสถานี 51 เพื่อทดสอบสิทธิ์", False, str(login)[:140])
+        return
+    token = login["user"]["token"]
     body = payload_for("daily", "5", "51")
 
     record("auth", "ไม่ส่ง token ตอบ 401",
@@ -305,10 +356,22 @@ def section_1_auth(client) -> None:
     record("auth", "ชื่อฟิลด์ที่ไม่รู้จักตอบ 422 แทนที่จะถูกทิ้งเงียบ",
            client.post("/api/reports/daily", json=legacy, headers={"x-token": token}).status_code == 422)
 
-    missing = [e for e in UNIMPLEMENTED
-               if client.post(f"/api/reports/{e}", json=body, headers={"x-token": token}).status_code != 404]
-    record("scope", f"ฟอร์มที่ยังไม่รองรับตอบ 404 ครบทั้ง {len(UNIMPLEMENTED)} รายการ",
-           not missing, f"ไม่ใช่ 404: {missing}")
+    # สามฟอร์มสรุปยอด ตรวจว่าต่อสายไว้จริงโดยไม่ยิงของจริง: ไม่มี token ต้องได้ 401
+    # ไม่ใช่ 404 — 404 แปลว่า endpoint หายไป ซึ่งเป็นอาการเดิมก่อนทำสามฟอร์มนี้
+    unwired = [e for e in SUMMARY_ENDPOINTS
+               if client.post(f"/api/reports/{e}", json=body).status_code != 401]
+    record("scope", f"ฟอร์มสรุปยอดมี endpoint จริงและบังคับ token ครบทั้ง {len(SUMMARY_ENDPOINTS)} รายการ",
+           not unwired, f"ไม่ใช่ 401: {unwired}")
+
+    cross_summary = [e for e in ("daily-summary", "mission-summary")
+                     if client.post(f"/api/reports/{e}", json=cross,
+                                    headers={"x-token": token}).status_code != 403]
+    record("scope", "ฟอร์มสรุปยอดปฏิเสธการส่งข้ามสถานี",
+           not cross_summary, f"ไม่ใช่ 403: {cross_summary}")
+
+    record("scope", "auto-arrest ไม่ระบุผู้ต้องหาตอบ 400",
+           client.post("/api/reports/auto-arrest", json=body,
+                       headers={"x-token": token}).status_code == 400)
 
 
 def section_2_submit(client, divisions: List[str], kinds: List[str]) -> List[Dict[str, Any]]:
@@ -505,6 +568,11 @@ def main() -> int:
         help="จำกัดประเภทรายงานที่ทดสอบ คั่นด้วยจุลภาค (ค่าว่าง = ทุกประเภท)",
     )
     parser.add_argument("--cleanup", action="store_true", help="ลบแถวทดสอบออกเมื่อตรวจเสร็จ")
+    parser.add_argument(
+        "--credentials",
+        default="",
+        help="ไฟล์ CSV รหัสผ่านทดสอบ (ค่าว่าง = หยิบ credentials_*.csv ล่าสุดใน python_backend/)",
+    )
     args = parser.parse_args()
 
     if not sheets_service.is_configured():
@@ -531,7 +599,7 @@ def main() -> int:
     print(f"ตรวจ กก. {', '.join(divisions)} x {len(kinds)} ประเภทรายงาน  (โหมด {sheets_service.auth_mode()})")
 
     with TestClient(app) as client:
-        section_1_auth(client)
+        section_1_auth(client, args.credentials)
         submissions = section_2_submit(client, divisions, kinds)
         sheet_contents = section_3_readback(submissions, divisions)
         attachment_runs = section_4_attachments(client, divisions)
@@ -547,7 +615,7 @@ def main() -> int:
         by_section.setdefault(item["section"], []).append(item)
 
     titles = {
-        "auth": "ล็อกอินและการปฏิเสธ", "scope": "ขอบเขตที่ยังไม่รองรับ",
+        "auth": "ล็อกอินและการปฏิเสธ", "scope": "ฟอร์มสรุปยอด",
         "submit": "การส่งรายงาน", "flow": "ข้อมูลลงชีตถูกต้อง", "isolation": "ไม่ปนข้าม กก.",
         "attach": "ไฟล์แนบขึ้น Drive",
     }
