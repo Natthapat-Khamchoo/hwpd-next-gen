@@ -11,7 +11,7 @@ export const MyHistoryForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const fetchHistory = async () => {
     setItems(null);
-    const res = await api.getMyPendingItems(user?.username || '');
+    const res = await api.getMyPendingItems(user?.username || '', user?.token);
     setItems(res.status === 'success' ? res.data : []);
   };
 

@@ -186,29 +186,43 @@ export const api = {
   },
 
   // ---- Mission view / history queries ----
-  fetchMissions: async (unit: string, start: string, end: string, station: string): Promise<{ status: string; data: any[]; message?: string }> => {
+  fetchMissions: async (unit: string, start: string, end: string, station: string, token?: string): Promise<{ status: string; data: any[]; message?: string }> => {
     try {
       const q = new URLSearchParams({ unit, start, end, station }).toString();
-      const res = await fetch(`${API_BASE_URL}/missions?${q}`);
+      const res = await fetch(`${API_BASE_URL}/missions?${q}`, { headers: { 'x-token': token || '' } });
+      if (res.status === 401) {
+        onSessionExpired();
+        return { status: 'error', data: [], message: SESSION_EXPIRED_MESSAGE };
+      }
       return await res.json();
     } catch {
       return { status: 'error', data: [], message: OFFLINE_MESSAGE };
     }
   },
 
-  getMyPendingItems: async (username: string): Promise<{ status: string; data: any[]; message?: string }> => {
+  getMyPendingItems: async (username: string, token?: string): Promise<{ status: string; data: any[]; message?: string }> => {
     try {
-      const res = await fetch(`${API_BASE_URL}/my-pending?username=${encodeURIComponent(username)}`);
+      const res = await fetch(`${API_BASE_URL}/my-pending?username=${encodeURIComponent(username)}`, {
+        headers: { 'x-token': token || '' },
+      });
+      if (res.status === 401) {
+        onSessionExpired();
+        return { status: 'error', data: [], message: SESSION_EXPIRED_MESSAGE };
+      }
       return await res.json();
     } catch {
       return { status: 'error', data: [], message: OFFLINE_MESSAGE };
     }
   },
 
-  getDailySummary: async (station: string, start: string, end: string): Promise<{ status: string; data?: any; message?: string }> => {
+  getDailySummary: async (station: string, start: string, end: string, token?: string): Promise<{ status: string; data?: any; message?: string }> => {
     try {
       const q = new URLSearchParams({ station, start, end }).toString();
-      const res = await fetch(`${API_BASE_URL}/daily-summary?${q}`);
+      const res = await fetch(`${API_BASE_URL}/daily-summary?${q}`, { headers: { 'x-token': token || '' } });
+      if (res.status === 401) {
+        onSessionExpired();
+        return { status: 'error', message: SESSION_EXPIRED_MESSAGE };
+      }
       return await res.json();
     } catch {
       if (DEMO_MODE) return { status: 'success', data: { v43: 0, service: 0, v42: 0, v20: 0, chargesText: 'ไม่มีข้อมูลข้อหา' } };

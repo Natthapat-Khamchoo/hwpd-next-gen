@@ -42,7 +42,8 @@ from app.services.report_service import (
     prepare_royal_guard_report,
     prepare_station_duty,
 )
-from app.services import reference_service, sheets_service, user_service
+from app.services import query_service, reference_service, sheets_service, user_service
+from app.services.query_service import RecordNotFound
 from app.services.reference_service import ReferenceDataUnavailable
 from app.services.sheets_service import SheetNotConfigured, SheetWriteError, append_report_row
 from app.services.user_service import UserDirectoryUnavailable
@@ -106,7 +107,20 @@ class ChangePasswordRequest(BaseModel):
     newPassword: str
 
 
+class RecordActionRequest(BaseModel):
+    """สำหรับอนุมัติ/ยกเลิก — stationId ไม่รับจากหน้าเว็บ ใช้ของ session เสมอ"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sheetName: str
+    recordId: str
+    username: Optional[str] = None
+
+
 MIN_PASSWORD_LENGTH = 8
+
+# บทบาทที่อนุมัติ/ตีกลับรายงานของคนอื่นได้ ตรงกับ requireSession_ ใน approveItem ของ JS
+APPROVER_ROLES = {"สิบเวร", "Station_Admin", "Division_Admin", "Division_Commander", "HQ_Admin", "Super_Commander"}
 
 
 class ReportSubmissionRequest(BaseModel):
@@ -367,6 +381,131 @@ def charges_dropdown(_: Dict[str, Any] = Depends(current_session)):
         return reference_service.get_charges()
     except ReferenceDataUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+def _name_lookup() -> Dict[str, str]:
+    """username -> ชื่อจริง ไว้แสดงชื่อผู้ส่งในคิวอนุมัติแทนชื่อบัญชี"""
+    try:
+        return {name: user.get("fullName", "") for name, user in user_service.get_all_users().items()}
+    except UserDirectoryUnavailable:
+        # ชื่อที่แสดงสวยขึ้นไม่คุ้มกับการทำให้คิวอนุมัติทั้งหน้าใช้ไม่ได้
+        logger.warning("อ่านรายชื่อผู้ใช้ไม่ได้ คิวอนุมัติจะแสดงเป็นชื่อบัญชีแทน")
+        return {}
+
+
+def _resolve_record(sheet_name: str, record_id: str, session: Dict[str, Any]) -> Dict[str, Any]:
+    """หาแถวและตรวจว่า session นี้แตะรายการของสถานีนั้นได้จริง"""
+    if sheet_name not in query_service.APPROVABLE_TABLES:
+        raise HTTPException(status_code=400, detail=f"ตาราง {sheet_name} ไม่ใช่รายการที่ต้องอนุมัติ")
+
+    station_id = str(session.get("s") or "").strip()
+    try:
+        record = query_service.find_record(station_id, sheet_name, record_id)
+    except RecordNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    if not check_station_match(station_id, record.get(query_service.COL_STATION_ID, "")):
+        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์จัดการรายการของสถานีอื่น")
+
+    return record
+
+
+@app.get("/api/my-pending")
+def my_pending(username: Optional[str] = None, session: Dict[str, Any] = Depends(current_session)):
+    """รายการของตัวเองที่ยังรออนุมัติ (เทียบเท่า getMyPendingItems ใน JS)"""
+    own = str(session.get("u") or "").strip()
+    requested = str(username or "").strip() or own
+
+    # ประวัติของตัวเองเท่านั้น ไม่งั้นใครก็ดูได้ว่าคนอื่นส่งอะไรค้างไว้บ้าง
+    if requested.lower() != own.lower():
+        raise HTTPException(status_code=403, detail="ดูได้เฉพาะประวัติการส่งของตัวเองเท่านั้น")
+
+    try:
+        data = query_service.pending_for_user(str(session.get("s") or ""), own)
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return {"status": "success", "data": data}
+
+
+@app.get("/api/station-pending")
+def station_pending(station: Optional[str] = None, session: Dict[str, Any] = Depends(current_session)):
+    """คิวอนุมัติของสถานี แยกรายงานทั่วไปกับน้ำมัน พร้อมยอดสรุปสำหรับการ์ด KPI"""
+    station_id = authorized_station_id(station, session)
+
+    try:
+        data = query_service.station_overview(station_id, _name_lookup())
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return {"status": "success", "data": data}
+
+
+@app.get("/api/missions")
+def missions(
+    unit: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    station: Optional[str] = None,
+    session: Dict[str, Any] = Depends(current_session),
+):
+    """ภารกิจของหน่วยในช่วงวันที่ (เทียบเท่า getMissionsForView ใน JS)"""
+    station_id = authorized_station_id(station, session)
+    try:
+        data = query_service.missions_for_unit(station_id, unit or "", start or "", end or "")
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"status": "success", "data": data}
+
+
+@app.post("/api/records/approve")
+def approve_record(req: RecordActionRequest, session: Dict[str, Any] = Depends(current_session)):
+    """อนุมัติรายการ เปลี่ยน Sys_Status เป็น Approved"""
+    if str(session.get("r") or "") not in APPROVER_ROLES:
+        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์อนุมัติรายงาน")
+
+    record = _resolve_record(req.sheetName, req.recordId, session)
+    if record.get(query_service.COL_STATUS) != query_service.STATUS_PENDING:
+        return {
+            "status": "error",
+            "message": f"รายการนี้ไม่ได้อยู่ในสถานะรออนุมัติแล้ว (ขณะนี้: {record.get(query_service.COL_STATUS)})",
+        }
+
+    try:
+        query_service.set_status(record, req.sheetName, query_service.STATUS_APPROVED, True)
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return {"status": "success", "message": "อนุมัติรายการเรียบร้อย"}
+
+
+@app.post("/api/records/cancel")
+def cancel_record(req: RecordActionRequest, session: Dict[str, Any] = Depends(current_session)):
+    """
+    ยกเลิกรายการ เปลี่ยน Sys_Status เป็น Canceled และปิด Sys_IsActive
+
+    เจ้าของรายการยกเลิกของตัวเองได้ก่อนถูกอนุมัติ ส่วนแอดมินตีกลับของคนอื่นในสถานีได้
+    """
+    record = _resolve_record(req.sheetName, req.recordId, session)
+
+    own = str(session.get("u") or "").strip()
+    is_owner = record.get(query_service.COL_ACTION_BY, "") == own
+    is_approver = str(session.get("r") or "") in APPROVER_ROLES
+
+    if not (is_owner or is_approver):
+        raise HTTPException(status_code=403, detail="ยกเลิกได้เฉพาะรายการที่ตัวเองส่งเท่านั้น")
+
+    if record.get(query_service.COL_STATUS) == query_service.STATUS_CANCELED:
+        return {"status": "error", "message": "รายการนี้ถูกยกเลิกไปแล้ว"}
+
+    try:
+        query_service.set_status(record, req.sheetName, query_service.STATUS_CANCELED, False)
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return {"status": "success", "message": "ยกเลิกรายการนี้เรียบร้อยแล้ว"}
 
 
 @app.post("/api/reports/daily")

@@ -217,7 +217,7 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
   const fetchSummary = async () => {
     if (!t4.startDate || !t4.endDate) return Swal.fire('แจ้งเตือน', 'เลือกวันที่ให้ครบ', 'warning');
     loadingModal('กำลังคำนวณ...');
-    const res = await api.getDailySummary(user?.station || '', t4.startDate, t4.endDate);
+    const res = await api.getDailySummary(user?.station || '', t4.startDate, t4.endDate, user?.token);
     Swal.close();
     if (res.status === 'success') setSummary(res.data);
     else Swal.fire('ผิดพลาด', res.message || 'ดึงข้อมูลไม่สำเร็จ', 'error');

@@ -30,7 +30,7 @@ export const MissionViewForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
   const search = async () => {
     if (!unit || !start || !end) return Swal.fire('แจ้งเตือน', 'กรุณากรอกข้อมูลการค้นหาให้ครบ', 'warning');
     loadingModal('กำลังดึงข้อมูลภารกิจ...');
-    const res = await api.fetchMissions(unit === 'ทุกหน่วย' ? '' : unit, start, end, user?.station || '');
+    const res = await api.fetchMissions(unit === 'ทุกหน่วย' ? '' : unit, start, end, user?.station || '', user?.token);
     Swal.close();
     if (res.status === 'success') setMissions(res.data);
     else Swal.fire('ผิดพลาด', res.message || 'ดึงข้อมูลไม่สำเร็จ', 'error');
