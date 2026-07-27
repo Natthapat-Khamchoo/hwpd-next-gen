@@ -63,6 +63,7 @@ jobs:
               "/api/missions",
               "/api/daily-summary",
               "/api/division-summary",
+              "/api/national-summary",
               "/api/records/approve",
               "/api/records/cancel",
               "/api/health/database",

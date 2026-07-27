@@ -42,7 +42,7 @@ from app.services.report_service import (
     prepare_royal_guard_report,
     prepare_station_duty,
 )
-from app.services import query_service, reference_service, sheets_service, user_service
+from app.services import national_service, query_service, reference_service, sheets_service, user_service
 from app.services.query_service import RecordNotFound
 from app.services.reference_service import ReferenceDataUnavailable
 from app.services.sheets_service import SheetNotConfigured, SheetWriteError, append_report_row
@@ -124,6 +124,9 @@ APPROVER_ROLES = {"สิบเวร", "Station_Admin", "Division_Admin", "Divi
 
 # บทบาทที่เห็นภาพรวมทั้ง กก. ได้ ตรงกับหน้าที่ index.html เดิมเปิดให้เข้า hq/commander dashboard
 DIVISION_VIEW_ROLES = {"Division_Admin", "Division_Commander", "HQ_Admin", "Super_Commander"}
+
+# ภาพรวมทั้งประเทศเป็นของระดับ บก. เท่านั้น ฝอ.กก. ใช้ /api/division-summary
+NATIONAL_VIEW_ROLES = {"HQ_Admin", "Super_Commander"}
 
 
 class ReportSubmissionRequest(BaseModel):
@@ -495,6 +498,26 @@ def division_summary(
 
     try:
         data = query_service.division_summary(station_id, start or "", end or "")
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"status": "success", "data": data}
+
+
+@app.get("/api/national-summary")
+def national_summary(
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    session: Dict[str, Any] = Depends(current_session),
+):
+    """
+    ภาพรวมทั้งประเทศ อ่านจาก tb_National_Summary ที่งาน cron รวมยอดไว้แล้ว
+    ไม่ได้อ่านชีตของ กก. สด ๆ เพราะ 8 กก. x 6 ตาราง ชนโควตาทันทีที่เปิดพร้อมกันสองคน
+    """
+    if str(session.get("r") or "") not in NATIONAL_VIEW_ROLES:
+        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์ดูภาพรวมระดับประเทศ")
+
+    try:
+        data = national_service.national_summary(start or "", end or "")
     except SheetWriteError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {"status": "success", "data": data}

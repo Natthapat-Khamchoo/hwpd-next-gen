@@ -192,6 +192,25 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
     ],
     # ตารางเดียวที่ไม่ได้ขึ้นต้นด้วย 9 คอลัมน์มาตรฐาน เป็นสรุปยอดที่สถานีส่งให้ กก.
     # ไม่ใช่รายงานรายใบ จึงยกเว้นไว้ตามที่ Apps Script ออกแบบมา
+    # อยู่ในชีตกลาง ไม่ใช่ชีตของ กก. — หนึ่งแถวคือยอดของหนึ่ง กก. ในหนึ่งวัน
+    # Data_StationID เก็บเลข กก. ("5") ไม่ใช่รหัสสถานี ส่วน Data_UnitID เก็บ "กก.5"
+    "tb_National_Summary": SYSTEM_COLUMNS
+    + [
+        "Sum_Arrests",
+        "Sum_V20",
+        "Sum_V43",
+        "Sum_V42",
+        "Sum_Service",
+        "Sum_Accidents",
+        "Sum_Dead",
+        "Sum_Injured",
+        "Sum_Volunteer",
+        "Sum_RoyalGuard",
+        "Sum_Missions",
+        "JSON_Arrests_Category",
+        "JSON_Charges_Detail",
+        "JSON_Accident_Causes",
+    ],
     "tb_HQ_Summary": [
         "Sys_RecordID",
         "Sys_Timestamp",
