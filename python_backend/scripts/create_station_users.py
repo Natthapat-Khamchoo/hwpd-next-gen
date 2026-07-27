@@ -37,7 +37,7 @@ from app.core.config import (  # noqa: E402
     get_station_data,
 )
 from app.core.security import hash_password  # noqa: E402
-from app.services import sheets_service  # noqa: E402
+from app.services import sheets_service, user_service  # noqa: E402
 
 USERS_TABLE = "tb_Users"
 DIVISIONS = range(1, 9)
@@ -49,7 +49,9 @@ OWNED_USERNAME = re.compile(r"^(hq|fo[1-8]|st[1-8][1-9])$")
 PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghijkmnpqrstuvwxyz"
 PASSWORD_LENGTH = 8
 
-# ลำดับคอลัมน์ A-M ของ tb_Users
+# ลำดับคอลัมน์ A-N ของ tb_Users
+# AccountType (คอลัมน์ N) เพิ่มขึ้นมาทีหลัง แยกบัญชีประจำหน่วยออกจากบัญชีเจ้าหน้าที่
+# ต่อท้ายตารางเท่านั้น เพราะ Apps Script อ่านคอลัมน์ A-M ด้วยตำแหน่ง
 COLUMNS = [
     "Username",
     "Password",
@@ -64,7 +66,11 @@ COLUMNS = [
     "รหัส",
     "วันที่เริ่มช่วยราชการ",
     "วันที่สิ้นสุดช่วยราชการ",
+    "AccountType",
 ]
+
+ACCOUNT_TYPE_COLUMN = "AccountType"
+LAST_COLUMN = chr(ord("A") + len(COLUMNS) - 1)
 
 
 def generate_password() -> str:
@@ -167,7 +173,29 @@ def to_sheet_row(account: Dict[str, Any], plaintext: bool) -> List[str]:
         "",  # รหัส
         "",  # วันที่เริ่มช่วยราชการ
         "",  # วันที่สิ้นสุดช่วยราชการ
+        user_service.UNIT_ACCOUNT_TYPE,
     ]
+
+
+def ensure_account_type_header(rows: List[List[str]]) -> bool:
+    """
+    เขียนหัวคอลัมน์ AccountType ถ้ายังไม่มี คืน True เมื่อเพิ่งเพิ่ม
+
+    ต่อท้ายตำแหน่งที่ 14 (คอลัมน์ N) ซึ่งว่างอยู่ ไม่แทรกกลางตาราง เพราะ Apps Script
+    อ้างอิงคอลัมน์ A-M ด้วยตำแหน่ง การแทรกจะทำให้ทุกฟังก์ชันฝั่งนั้นอ่านผิดช่องทันที
+    """
+    header = [str(h).strip() for h in (rows[0] if rows else [])]
+    if ACCOUNT_TYPE_COLUMN in header:
+        return False
+
+    worksheet = sheets_service.get_worksheet(MASTER_SHEET_ID, USERS_TABLE, ensure=False)
+    sheets_service.with_backoff(
+        worksheet.update,
+        range_name=f"{LAST_COLUMN}1",
+        values=[[ACCOUNT_TYPE_COLUMN]],
+        value_input_option="RAW",
+    )
+    return True
 
 
 def write_credentials_file(accounts: List[Dict[str, Any]], path: str) -> None:
@@ -222,6 +250,7 @@ def main() -> int:
             or current.get("Unit_ID") != account["unit"]
             or current.get("Station_ID") != account["station"]
             or current.get("Role") != account["role"]
+            or current.get(ACCOUNT_TYPE_COLUMN, "") != user_service.UNIT_ACCOUNT_TYPE
         ):
             stale.append((key, current, account))
 
@@ -236,7 +265,12 @@ def main() -> int:
     print(f"ไม่มีสถานีรองรับ {len(orphans)}")
 
     for key, current, account in stale[:60]:
-        print(f"  แก้ {key:<6} หน่วย {current.get('Unit_ID','')!r} -> {account['unit']!r}")
+        changes = []
+        if current.get("Unit_ID", "") != account["unit"]:
+            changes.append(f"หน่วย {current.get('Unit_ID','')!r} -> {account['unit']!r}")
+        if current.get(ACCOUNT_TYPE_COLUMN, "") != user_service.UNIT_ACCOUNT_TYPE:
+            changes.append(f"ตั้ง {ACCOUNT_TYPE_COLUMN}={user_service.UNIT_ACCOUNT_TYPE}")
+        print(f"  แก้ {key:<6} {', '.join(changes) or 'ข้อมูลสถานี'}")
     for key, line, current in orphans:
         print(f"  ลบ {key:<6} แถว {line} สถานี {current.get('Station_ID','')} {current.get('FullName','')}")
 
@@ -244,17 +278,29 @@ def main() -> int:
         print("\nโหมดแสดงผลอย่างเดียว — ใส่ --apply / --sync / --prune เพื่อเขียนจริง")
         return 0
 
+    if args.apply or args.sync:
+        if ensure_account_type_header(rows):
+            print(f"\nเพิ่มหัวคอลัมน์ {ACCOUNT_TYPE_COLUMN} ที่ช่อง {LAST_COLUMN}1 แล้ว")
+            rows = sheets_service.read_table(MASTER_SHEET_ID, USERS_TABLE)
+            on_sheet = read_sheet_users(rows)
+
     worksheet = sheets_service.get_worksheet(MASTER_SHEET_ID, USERS_TABLE, ensure=False)
 
     if args.sync and stale:
+        # C:F คือ FullName..Role ส่วน AccountType อยู่คอลัมน์ N ที่ไม่ติดกัน
+        # ส่งเป็นสองช่วงใน batch เดียว จะได้ไม่เขียนทับคอลัมน์ G-M ที่คั่นอยู่
+        updates = []
         for key, _, account in stale:
             line = on_sheet[key][0]
-            sheets_service.with_backoff(
-                worksheet.update,
-                range_name=f"C{line}:F{line}",
-                values=[[account["fullName"], account["station"], account["unit"], account["role"]]],
-                value_input_option="RAW",
-            )
+            updates.append({
+                "range": f"C{line}:F{line}",
+                "values": [[account["fullName"], account["station"], account["unit"], account["role"]]],
+            })
+            updates.append({
+                "range": f"{LAST_COLUMN}{line}",
+                "values": [[user_service.UNIT_ACCOUNT_TYPE]],
+            })
+        sheets_service.with_backoff(worksheet.batch_update, updates, value_input_option="RAW")
         print(f"\nอัปเดตบัญชีเดิม {len(stale)} รายการ")
 
     if args.prune and orphans:
@@ -270,7 +316,7 @@ def main() -> int:
         end_row = start_row + len(values) - 1
         sheets_service.with_backoff(
             worksheet.update,
-            range_name=f"A{start_row}:M{end_row}",
+            range_name=f"A{start_row}:{LAST_COLUMN}{end_row}",
             values=values,
             value_input_option="RAW",
         )

@@ -23,6 +23,11 @@ logger = logging.getLogger(__name__)
 USERS_TABLE = "tb_Users"
 CACHE_TTL_SECONDS = 300  # 5 นาที
 
+# บัญชีประจำหน่วยไม่ใช่คน จึงไม่ควรอยู่ใน dropdown "ผู้รายงาน"
+# ตารางนี้ออกแบบไว้ว่า 1 แถว = เจ้าหน้าที่ 1 นาย บัญชีระดับสถานี/กองกำกับที่เพิ่มเข้ามา
+# ทีหลังใช้ชื่อหน่วยเป็น FullName จึงต้องมีป้ายแยกให้ชัด ไม่ใช่เดาจากชื่อหรือ Role
+UNIT_ACCOUNT_TYPE = "Unit"
+
 _cache: Dict[str, Any] = {"users": None, "ts": 0.0}
 _lock = threading.Lock()
 
@@ -39,6 +44,7 @@ FIELD_MAP = {
     "สถานะไปช่วยราชการ": "secondedOut",
     "สถานะมาช่วยราชการ": "secondedIn",
     "หมายเหตุ": "note",
+    "AccountType": "accountType",
 }
 
 
@@ -112,16 +118,25 @@ def get_user(username: str) -> Optional[Dict[str, Any]]:
     return get_all_users().get(key)
 
 
-def _visible_users(station_id: str) -> List[Dict[str, Any]]:
+def is_unit_account(user: Dict[str, Any]) -> bool:
+    """บัญชีประจำหน่วย (ชื่อในช่อง FullName เป็นชื่อสถานี ไม่ใช่ชื่อคน)"""
+    return str(user.get("accountType") or "").strip().lower() == UNIT_ACCOUNT_TYPE.lower()
+
+
+def _visible_users(station_id: str, people_only: bool = True) -> List[Dict[str, Any]]:
     """
     ผู้ใช้ที่สถานีนั้นมองเห็นได้ตามลำดับชั้นเดิม (สถานีตรงกัน / ฝอ.กก. เห็นทั้ง กก. /
     ส่วนกลางเห็นทั้งประเทศ) เรียงตามชื่อเพื่อให้ dropdown ไม่สลับตำแหน่งทุกครั้งที่โหลด
+
+    people_only ตัดบัญชีประจำหน่วยออก เพราะช่อง "ผู้รายงาน" ต้องการชื่อคน ไม่ใช่ชื่อสถานี
     """
     requested = str(station_id or "").strip()
     matched = [
         user
         for user in get_all_users().values()
-        if user.get("fullName") and check_station_match(requested, str(user.get("station") or ""))
+        if user.get("fullName")
+        and check_station_match(requested, str(user.get("station") or ""))
+        and not (people_only and is_unit_account(user))
     ]
     return sorted(matched, key=lambda user: user["fullName"])
 

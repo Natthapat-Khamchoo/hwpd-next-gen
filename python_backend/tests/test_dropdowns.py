@@ -11,15 +11,23 @@ from app.services import reference_service, user_service
 
 USER_HEADER = [
     "Username", "Password", "FullName", "Station_ID", "Unit_ID", "Role",
-    "สถานะไปช่วยราชการ", "สถานะมาช่วยราชการ", "หมายเหตุ", "เบอร์โทร", "รหัส",
+    "สถานะไปช่วยราชการ", "สถานะมาช่วยราชการ", "หมายเหตุ", "เบอร์โทร", "รหัส", "AccountType",
 ]
 
 USER_ROWS = [
     USER_HEADER,
-    ["st51", "sha256$aaa", "ร.ต.อ. ก", "51", "คลองขลุง", "Station_Admin", "", "", "", "0811111111", ""],
-    ["st52", "sha256$bbb", "ด.ต. ข", "52", "เถิน", "Station_Admin", "", "", "", "0822222222", ""],
-    ["fo5", "sha256$ccc", "พ.ต.ท. ค", "50", "ฝอ.กก.5", "Division_Admin", "", "", "", "0833333333", ""],
-    ["st11", "sha256$ddd", "ร.ต.ท. ง", "11", "วังน้อย", "Station_Admin", "", "", "", "0844444444", ""],
+    ["st51", "sha256$aaa", "ร.ต.อ. ก", "51", "คลองขลุง", "Station_Admin", "", "", "", "0811111111", "", ""],
+    ["st52", "sha256$bbb", "ด.ต. ข", "52", "เถิน", "Station_Admin", "", "", "", "0822222222", "", ""],
+    ["fo5", "sha256$ccc", "พ.ต.ท. ค", "50", "ฝอ.กก.5", "Division_Admin", "", "", "", "0833333333", "", ""],
+    ["st11", "sha256$ddd", "ร.ต.ท. ง", "11", "วังน้อย", "Station_Admin", "", "", "", "0844444444", "", ""],
+]
+
+# บัญชีประจำหน่วย — FullName เป็นชื่อสถานี ไม่ใช่ชื่อคน
+UNIT_ROWS = USER_ROWS + [
+    ["unit51", "sha256$eee", "ส.ทล.1 กก.5 บก.ทล.", "51", "คลองขลุง", "Station_Admin",
+     "", "", "", "", "", "Unit"],
+    ["unit50", "sha256$fff", "ฝอ.กก.5 บก.ทล.", "50", "ฝอ.กก.5", "Division_Admin",
+     "", "", "", "", "", "unit"],   # ตัวพิมพ์เล็กก็ต้องนับ
 ]
 
 CHARGE_ROWS = [
@@ -70,6 +78,50 @@ class TestUserDropdowns(unittest.TestCase):
     def test_phone_map_is_scoped_the_same_way_as_names(self):
         with with_users():
             self.assertNotIn("ร.ต.ท. ง", user_service.phone_map_for_station("50"))
+
+
+class TestUnitAccountsAreNotOfficers(unittest.TestCase):
+    """
+    บัญชีประจำหน่วยใช้ชื่อสถานีเป็น FullName ถ้าไม่กรองออก ช่อง "ผู้รายงาน" จะมี
+    "ส.ทล.1 กก.5 บก.ทล." ปนอยู่กับชื่อเจ้าหน้าที่ ซึ่งชวนกดผิด
+    """
+
+    def setUp(self):
+        user_service.reset_cache()
+        self.addCleanup(user_service.reset_cache)
+
+    def test_flagged_accounts_are_recognised_regardless_of_case(self):
+        with with_users(UNIT_ROWS):
+            users = user_service.get_all_users(force=True)
+        self.assertTrue(user_service.is_unit_account(users["unit51"]))
+        self.assertTrue(user_service.is_unit_account(users["unit50"]))
+        self.assertFalse(user_service.is_unit_account(users["st51"]))
+
+    def test_they_are_left_out_of_the_officer_dropdown(self):
+        with with_users(UNIT_ROWS):
+            names = user_service.list_names_for_station("50")
+        self.assertNotIn("ส.ทล.1 กก.5 บก.ทล.", names)
+        self.assertNotIn("ฝอ.กก.5 บก.ทล.", names)
+        self.assertIn("ร.ต.อ. ก", names)
+
+    def test_they_are_left_out_of_the_phone_map(self):
+        with with_users(UNIT_ROWS):
+            phones = user_service.phone_map_for_station("50")
+        self.assertNotIn("ส.ทล.1 กก.5 บก.ทล.", phones)
+
+    def test_they_can_still_be_looked_up_and_logged_in(self):
+        with with_users(UNIT_ROWS):
+            account = user_service.get_user("unit51")
+        self.assertIsNotNone(account)
+        self.assertEqual(account["password"], "sha256$eee")
+
+    def test_a_sheet_without_the_column_treats_everyone_as_a_person(self):
+        # ชีตที่ยังไม่ได้เพิ่มคอลัมน์ต้องไม่ทำให้ dropdown ว่างเปล่า
+        legacy_header = [c for c in USER_HEADER if c != "AccountType"]
+        legacy = [legacy_header] + [row[:-1] for row in USER_ROWS[1:]]
+        with with_users(legacy):
+            names = user_service.list_names_for_station("50")
+        self.assertEqual(names, ["ด.ต. ข", "พ.ต.ท. ค", "ร.ต.อ. ก"])
 
 
 class TestUnitDropdown(unittest.TestCase):
