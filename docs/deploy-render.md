@@ -113,8 +113,21 @@ copy เก็บไว้ ใช้ในส่วนที่ 4
 
 **2.1** เข้า [vercel.com/dashboard](https://vercel.com/dashboard) เปิดโปรเจกต์
 
-**2.2** ไปที่ **Settings → General** หา **Root Directory** ต้องเป็น `react_frontend`
-ถ้าว่างหรือเป็นอย่างอื่น กด **Edit** พิมพ์ `react_frontend` แล้ว **Save**
+มีสามโปรเจกต์ที่ชี้มา repo นี้ — `hwpd-next-gen2` (ตัวจริง) `hwpd-next-gen-d398`
+และ `hwpd-next-gen` ทั้งสามตั้งค่าเหมือนกัน และโดเมนทั้งสามต้องอยู่ใน
+`CORS_ORIGINS` ข้อ 3.2
+
+**2.2** ไปที่ **Settings → Build and Deployment** หา **Root Directory** ต้องเป็น
+`react_frontend` ถ้าว่างหรือเป็นอย่างอื่น พิมพ์ `react_frontend` แล้ว **Save**
+
+หน้าเดียวกัน **Framework Preset** ต้องเป็น **Vite** ถ้าเป็น Next.js จะหา `dist`
+ไม่เจอแล้ว build ล้ม
+
+ค่านี้ตั้งบน dashboard ที่เดียว ในรีโปไม่มี `vercel.json` แล้ว ตั้งใจเอาออก ของเดิม
+สั่ง build จาก root ของรีโปซึ่งขัดกับ Root Directory เลือกได้ทางเดียว
+
+พอตั้ง Root Directory แล้ว Vercel จะเปิด **Skip deployments** ให้เอง commit ที่ไม่ได้
+แตะ `react_frontend/` จะไม่ build ใหม่ ปิดสวิตช์นั้นถ้าอยากให้ทุก commit ขึ้นเสมอ
 
 ตั้งผิดข้อนี้ build จะพังตั้งแต่ขั้นแรก
 
@@ -303,7 +316,7 @@ Google Docs API เปิดแล้ว เมนูออกเอกสาร
 | ทุกคำขอตอบ 404 | `VITE_API_BASE_URL` ลืม `/api` | เติมแล้ว Redeploy |
 | **ทุกคนล็อกอินไม่ได้พร้อมกัน** | มีคนตั้ง `PASSWORD_PEPPER` | ลบตัวแปรนั้นทิ้งทันที |
 | ไฟล์แนบไม่ขึ้น Drive | `DIVISION_FOLDERS_JSON` ไม่ได้ตั้ง | เพิ่มบน Render |
-| Vercel build fail ทันที | Root Directory ไม่ใช่ `react_frontend` | แก้ในข้อ 2.2 |
+| Vercel build fail ทันที | Root Directory ไม่ใช่ `react_frontend` หรือ Framework Preset ไม่ใช่ Vite | แก้ในข้อ 2.2 |
 | ตัวตั้งเวลาได้ 401 | `x-cron-secret` ไม่ตรง `CRON_SECRET` | copy ค่าใหม่จาก Render |
 | API ไม่บูตเลย | ไม่มี `SESSION_SECRET` | ตรวจว่า Render สุ่มค่าให้แล้ว |
 
