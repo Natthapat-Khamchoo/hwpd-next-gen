@@ -29,6 +29,9 @@ credentials_*.csv
 # Environment values exported for Render by scripts/export_render_env.py
 render-env-*.txt
 
+# สำเนาชีตที่ purge_summary_rows.py / งานซ่อมข้อมูลดัมป์ไว้ก่อนลบ เป็นข้อมูลปฏิบัติการ
+backup_*.csv
+
 # Google credentials — never commit these
 service-account*.json
 *-service-account.json

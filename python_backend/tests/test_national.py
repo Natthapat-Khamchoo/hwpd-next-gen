@@ -195,8 +195,11 @@ class TestAggregateWrites(unittest.TestCase):
     Apps Script ทำไว้ จนตารางมีแถวซ้ำของวันเดียวกันหลายสิบแถว
     """
 
-    def _run(self, existing_rows, fresh):
+    def _run(self, existing_rows, fresh, row_count=1000):
         worksheet = mock.Mock()
+        # ชีตจริงมีเพดานจำนวนแถว การเขียนต่อท้ายต้องเทียบกับค่านี้ก่อน ไม่งั้น Google
+        # ตอบ 400 exceeds grid limits แล้วทิ้งทั้ง batch
+        worksheet.row_count = row_count
         with mock.patch.object(national_service, "_configured_divisions", return_value=["1"]), \
              mock.patch.object(national_service, "aggregate_division", return_value=fresh), \
              mock.patch.object(query_service.sheets_service, "read_table", return_value=existing_rows), \
@@ -222,6 +225,26 @@ class TestAggregateWrites(unittest.TestCase):
         self.assertEqual((result["appended"], result["replaced"]), (1, 0))
         worksheet.update.assert_called_once()
         worksheet.batch_update.assert_not_called()
+        worksheet.add_rows.assert_not_called()
+
+    def test_sheet_is_grown_when_the_new_row_would_fall_outside_it(self):
+        """
+        ชีตเต็มแล้วต้องขยายก่อนเขียน ไม่ใช่ปล่อยให้ Google ตอบ 400 exceeds grid limits
+
+        เคยเกิดจริงบนชีตที่ใช้งานอยู่: แถวเต็ม 1023 การรวมยอดจึงเขียนแถวใหม่ไม่ได้ทั้ง
+        batch กก. ที่มีแถวของวันนั้นอยู่แล้วรอดเพราะไปทางเขียนทับ ที่เหลือหายจากหน้า
+        ผบก. โดยไม่มี error ให้ใครเห็น เพราะ endpoint ตอบ 202 ไปก่อนแล้ว
+        """
+        existing = [get_columns(SUMMARY_TABLE)] + [
+            summary_row(f"S{i}", "9", f"2026-06-{i:02d}") for i in range(1, 10)
+        ]
+        # แถวว่างถัดไปคือ 11 แต่ชีตมีแค่ 10 แถว
+        result, worksheet = self._run(existing, self._fresh_day(), row_count=10)
+
+        self.assertEqual((result["appended"], result["replaced"]), (1, 0))
+        worksheet.add_rows.assert_called_once()
+        self.assertGreater(worksheet.add_rows.call_args.args[0], 0)
+        worksheet.update.assert_called_once()
 
     def test_existing_day_is_written_over_in_place(self):
         existing = [get_columns(SUMMARY_TABLE), summary_row("S1", "1", "2026-07-27", Sum_Arrests=5)]

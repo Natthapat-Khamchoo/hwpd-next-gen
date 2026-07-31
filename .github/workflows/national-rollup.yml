@@ -63,4 +63,39 @@ jobs:
             exit 1
           fi
 
-          echo "::notice::สั่งรวมยอดแล้ว งานจริงทำต่อเบื้องหลังบน Render"
+          echo "::notice::สั่งรวมยอดแล้ว รอตรวจผลจริง"
+
+      - name: ตรวจว่ารอบนั้นทำสำเร็จจริง
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          BASE_URL: https://hwpd-backend.onrender.com
+        run: |
+          set -euo pipefail
+
+          # 202 บอกแค่ว่ารับงานแล้ว ไม่ได้บอกว่าทำสำเร็จ ที่ผ่านมางานล้มทั้งรอบแล้ว
+          # ตัวตั้งเวลายังขึ้นเขียว กว่าจะรู้คือ dashboard แสดงยอดผิดมาหลายวันแล้ว
+          # ครบ 8 กก. ใช้เวลาราวสองนาที เพราะต้องหยุดรอโควตาการอ่านของ Google
+          for attempt in $(seq 1 10); do
+            sleep 30
+            body=$(curl -sS --max-time 60 "${BASE_URL}/api/admin/aggregate-status" \
+              -H "x-cron-secret: ${CRON_SECRET}") || continue
+            status=$(printf '%s' "${body}" | sed -n 's/.*"status"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+            echo "ครั้งที่ ${attempt}: status=${status:-?}"
+
+            case "${status}" in
+              ok)
+                echo "${body}"
+                echo "::notice::รวมยอดสำเร็จ"
+                exit 0 ;;
+              failed)
+                echo "${body}"
+                echo "::error::รวมยอดล้มเหลว — ยอดบนหน้า ผบก. จะค้างที่รอบก่อนหน้า"
+                exit 1 ;;
+              skipped)
+                echo "::warning::รอบนี้ถูกข้ามเพราะมีรอบก่อนหน้าทำงานอยู่ ถือว่าปกติ"
+                exit 0 ;;
+            esac
+          done
+
+          echo "::error::รอครบ 5 นาทีแล้วรอบนี้ยังไม่รายงานผล — ตรวจ log ของ service"
+          exit 1

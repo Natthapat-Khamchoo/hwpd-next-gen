@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 
 import hmac
 import threading
+from datetime import datetime, timezone
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -143,6 +144,17 @@ NATIONAL_VIEW_ROLES = {"HQ_Admin", "Super_Commander"}
 
 # กันไม่ให้รอบรวมยอดสองรอบเขียนทับกันเองเมื่อถูก trigger ซ้อน
 _aggregate_lock = threading.Lock()
+
+# ผลรอบรวมยอดล่าสุด ให้ /api/admin/aggregate-status อ่านไปตรวจว่ารอบที่แล้วผ่านจริงไหม
+_aggregate_status_lock = threading.Lock()
+_last_aggregate: Dict[str, Any] = {
+    "status": "never",
+    "start": "",
+    "end": "",
+    "detail": "ยังไม่เคยรวมยอดนับตั้งแต่ service เริ่มทำงาน",
+    "result": {},
+    "finishedAt": "",
+}
 
 
 class ReportSubmissionRequest(BaseModel):
@@ -554,14 +566,47 @@ def _run_aggregate(start: str, end: str) -> None:
     """รวมยอดในเบื้องหลัง — งานนี้ใช้เวลาเป็นนาทีเมื่อครบ 8 กก. จึงไม่ควรให้ผู้เรียกรอ"""
     if not _aggregate_lock.acquire(blocking=False):
         logger.warning("มีรอบรวมยอดทำงานอยู่แล้ว ข้ามรอบนี้ไป")
+        _record_aggregate_outcome("skipped", start, end, detail="มีรอบก่อนหน้ายังทำงานอยู่")
         return
     try:
         result = national_service.aggregate_national(start, end)
         logger.info("รวมยอดระดับประเทศเสร็จแล้ว: %s", result)
-    except Exception:
+        _record_aggregate_outcome("ok", start, end, result=result)
+    except Exception as exc:
         logger.exception("รวมยอดระดับประเทศไม่สำเร็จ")
+        _record_aggregate_outcome("failed", start, end, detail=f"{type(exc).__name__}: {exc}")
     finally:
         _aggregate_lock.release()
+
+
+def _record_aggregate_outcome(
+    status: str,
+    start: str,
+    end: str,
+    result: Optional[Dict[str, Any]] = None,
+    detail: str = "",
+) -> None:
+    """
+    เก็บผลรอบล่าสุดไว้ให้ /api/admin/aggregate-status อ่าน
+
+    endpoint สั่งรวมยอดตอบ 202 ตั้งแต่ยังไม่เริ่มทำงาน ตัวตั้งเวลาจึงเห็นว่าสำเร็จเสมอ
+    แม้งานจริงจะล้มทั้งรอบ ที่ผ่านมาความล้มเหลวไปโผล่แค่ใน log ของ Render ซึ่งไม่มีใคร
+    เปิดดู กว่าจะรู้ตัวคือหน้า dashboard แสดงยอดผิดมาแล้วหลายวัน
+
+    เก็บในหน่วยความจำพอ ค่าที่ต้องการคือ "รอบล่าสุดผ่านไหม" ไม่ใช่ประวัติย้อนหลัง
+    service restart แล้วค่าหายกลายเป็น never ซึ่งตัวตรวจก็ควรถือว่ายังไม่ผ่านอยู่ดี
+    """
+    with _aggregate_status_lock:
+        _last_aggregate.update(
+            {
+                "status": status,
+                "start": start,
+                "end": end,
+                "detail": detail,
+                "result": result or {},
+                "finishedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            }
+        )
 
 
 @app.post("/api/admin/aggregate-national", status_code=202)
@@ -587,6 +632,29 @@ def trigger_aggregate_national(
     start, end = national_service.default_range(max(1, min(days, 90)))
     background.add_task(_run_aggregate, start, end)
     return {"status": "accepted", "message": f"เริ่มรวมยอด {start} ถึง {end} แล้ว", "start": start, "end": end}
+
+
+@app.get("/api/admin/aggregate-status")
+def aggregate_status(
+    x_cron_secret: Optional[str] = Header(None),
+    x_token: Optional[str] = Header(None),
+):
+    """
+    ผลรอบรวมยอดล่าสุด สำหรับให้ตัวตั้งเวลาตรวจว่ารอบที่เพิ่งสั่งไปทำสำเร็จจริง
+
+    ต้องมีเพราะ POST /api/admin/aggregate-national ตอบ 202 ก่อนงานจะเริ่ม ตัวตั้งเวลา
+    ที่ดูแค่ status code จึงขึ้นเขียวทุกครั้งแม้การรวมยอดล้มทั้งรอบ
+
+    status: ok = รอบล่าสุดสำเร็จ | failed = ล้ม ดู detail | skipped = ชนรอบก่อนหน้า
+            never = ยังไม่เคยรันตั้งแต่ service เริ่ม (รวมถึงกรณีเพิ่ง restart)
+    """
+    if not _cron_authorized(x_cron_secret):
+        session = verify_session_token(x_token or "")
+        if not session or str(session.get("r") or "") not in NATIONAL_VIEW_ROLES:
+            raise HTTPException(status_code=401, detail="ต้องเข้าสู่ระบบหรือส่ง x-cron-secret ที่ถูกต้อง")
+
+    with _aggregate_status_lock:
+        return dict(_last_aggregate)
 
 
 @app.post("/api/records/approve")

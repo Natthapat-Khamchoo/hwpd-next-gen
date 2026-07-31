@@ -229,8 +229,22 @@ Google ไม่ได้, 000 = ต่อ service ไม่ติด
 ```bash
 cd python_backend
 python scripts/aggregate_national.py --days 7 --verbose
-python scripts/aggregate_national.py --dedupe     # ล้างแถวซ้ำที่ค้างจากระบบเดิม
+python scripts/aggregate_national.py --dedupe     # ปิดแถวซ้ำที่ค้างจากระบบเดิม
 ```
+
+**`--dedupe` ไม่ได้คืนพื้นที่ให้ชีต** มันตั้ง `Sys_IsActive=False` เฉย ๆ แถวยังอยู่ครบ
+ชีตมีเพดานจำนวนแถว พอเต็มแล้วการรวมยอดจะเขียนแถวใหม่ไม่ได้ ตอบ 400 exceeds grid
+limits แล้วทิ้งทั้ง batch — กก. ที่มีแถวของวันนั้นอยู่แล้วรอดเพราะไปทางเขียนทับ ส่วนที่
+เหลือหายจากหน้า ผบก. เงียบ ๆ (โค้ดขยายชีตให้เองแล้ว แต่ชีตจะโตขึ้นเรื่อย ๆ)
+
+ลบแถวที่ปิดแล้วออกจริงด้วย:
+
+```bash
+python scripts/purge_summary_rows.py            # ดูก่อนว่าจะลบอะไร
+python scripts/purge_summary_rows.py --apply --shrink
+```
+
+ลบแล้วกู้จากในระบบไม่ได้ ทำสำเนาแท็บเก็บไว้ก่อน (คลิกขวาที่แท็บ > ทำสำเนา)
 
 ---
 
