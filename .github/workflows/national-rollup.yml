@@ -1,0 +1,66 @@
+name: National rollup
+
+# หน้า dashboard ผบก. อ่านจาก tb_National_Summary ตารางเดียว ไม่มีการอ่านสด
+# (ดูเหตุผลเรื่องโควตา Google ใน app/services/national_service.py)
+# ไม่มีอะไรมารวมยอด = หน้านั้นแสดงยอดเก่าค้างไว้เงียบ ๆ ไม่ขึ้น error
+#
+# Render Cron Jobs ต้องเสียเงิน แผนฟรีจึงยิงจากที่นี่แทน
+# ตั้งค่าที่ต้องมี: Settings → Secrets and variables → Actions → CRON_SECRET
+# ให้ตรงกับค่า CRON_SECRET ในหน้า Environment ของ service บน Render
+
+on:
+  schedule:
+    # ทุกชั่วโมงที่นาทีที่ 0 — GitHub มักดีเลย์ 5–15 นาที ซึ่งรับได้กับงานรายชั่วโมง
+    - cron: '0 * * * *'
+  # กดรันเองได้จากแท็บ Actions เวลาต้องการยอดล่าสุดทันที
+  workflow_dispatch:
+
+# รอบใหม่ไม่ต้องรอรอบเก่า แต่ห้ามซ้อนกัน ฝั่ง API ข้ามรอบที่สองให้อยู่แล้ว
+concurrency:
+  group: national-rollup
+  cancel-in-progress: false
+
+jobs:
+  rollup:
+    name: รวมยอดระดับประเทศ
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: ยิงให้ backend เริ่มรวมยอด
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          BASE_URL: https://hwpd-backend.onrender.com
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "::error::ไม่มี secret CRON_SECRET — ตั้งที่ Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+
+          # แผนฟรีของ Render พักเครื่องเมื่อไม่มีคนใช้ คำขอแรกหลังพักรอได้ถึง 50 วินาที
+          # --max-time เผื่อไว้ 120 และ --retry กันกรณีตื่นไม่ทัน
+          body=$(mktemp)
+          code=$(curl -sS -o "${body}" -w '%{http_code}' \
+            --max-time 120 --retry 2 --retry-delay 30 --retry-connrefused \
+            -X POST "${BASE_URL}/api/admin/aggregate-national?days=7" \
+            -H "x-cron-secret: ${CRON_SECRET}")
+
+          echo "HTTP ${code}"
+          cat "${body}"
+          echo
+
+          # 202 = รับงานแล้ว ตัวงานจริงทำต่อเบื้องหลังราวสองนาที
+          # เพราะต้องหยุดรอโควตาการอ่านของ Google เป็นระยะ
+          if [ "${code}" != "202" ]; then
+            case "${code}" in
+              401) echo "::error::401 — CRON_SECRET ไม่ตรงกับค่าบน Render" ;;
+              503) echo "::error::503 — backend เข้าถึง Google ไม่ได้ ตรวจ GOOGLE_OAUTH_* บน Render" ;;
+              000) echo "::error::ต่อ ${BASE_URL} ไม่ติด — service ถูกลบหรือ URL เปลี่ยน" ;;
+              *)   echo "::error::ได้ HTTP ${code} ซึ่งไม่ใช่ 202" ;;
+            esac
+            exit 1
+          fi
+
+          echo "::notice::สั่งรวมยอดแล้ว งานจริงทำต่อเบื้องหลังบน Render"

@@ -195,32 +195,34 @@ Production Branch** งานทั้งหมดอยู่บน `main` แ�
 หน้า dashboard ของ ผบก. อ่านจาก `tb_National_Summary` ถ้าไม่มีอะไรมารวมยอด หน้านั้น
 จะแสดงข้อมูลเก่าค้างไว้ ไม่ใช่ error
 
-Render Cron Jobs ต้องเสียเงิน แผนฟรีจึงใช้ตัวตั้งเวลาภายนอกยิงเข้ามาแทน
-(เช่น [cron-job.org](https://cron-job.org) ฟรี)
+ข้ามข้อนี้ไม่ได้ `national_summary()` อ่านจากตารางนั้นตารางเดียว ไม่มีการอ่านสด
+สำรอง ไม่ตั้ง = ยอดค้างที่รอบสุดท้ายที่เคยรวมไว้ตลอดไป และไม่มีสัญญาณอะไรบอก
 
-**4.1** สมัครแล้วกด **Create cronjob**
+Render Cron Jobs ต้องเสียเงิน แผนฟรีจึงยิงจาก GitHub Actions แทน ตัวงานอยู่ใน
+`.github/workflows/national-rollup.yml` แล้ว เหลือใส่ secret อย่างเดียว
 
-**4.2** กรอก
+**4.1** เข้า repo บน GitHub ไปที่ **Settings → Secrets and variables → Actions**
+
+**4.2** กด **New repository secret**
 
 | ช่อง | ค่า |
 |---|---|
-| Title | `HWPD national rollup` |
-| URL | `<RENDER_URL>/api/admin/aggregate-national?days=7` |
-| Schedule | ทุกชั่วโมง (นาทีที่ 0) |
+| Name | `CRON_SECRET` |
+| Secret | ค่า `CRON_SECRET` จากข้อ 1.12 |
 
-**4.3** เปลี่ยน **Request method** จาก GET เป็น **POST**
+**4.3** ไปแท็บ **Actions** เลือก **National rollup** ทางซ้าย แล้วกด
+**Run workflow** เพื่อทดสอบ
 
-**4.4** เปิดหัวข้อ **Advanced** ส่วน **Headers** เพิ่ม
+ผ่านคือ log ขึ้น `HTTP 202` งานจริงทำต่อเบื้องหลังราวสองนาทีเพราะต้องรอโควตาการอ่าน
+ของ Google เป็นระยะ ยิงซ้อนกันได้ รอบที่สองจะถูกข้ามไป
 
-| Name | Value |
-|---|---|
-| `x-cron-secret` | ค่า `CRON_SECRET` จากข้อ 1.12 |
+workflow แปล error ให้แล้ว: 401 = secret ไม่ตรงกับบน Render, 503 = backend เข้าถึง
+Google ไม่ได้, 000 = ต่อ service ไม่ติด
 
-**4.5** กด **Create** แล้วกด **Test run** ควรได้ HTTP **202** ทันที งานจริงทำต่อ
-เบื้องหลังราวสองนาทีเพราะต้องรอโควตาการอ่านของ Google เป็นระยะ ยิงซ้อนกันได้
-รอบที่สองจะถูกข้ามไป
+**4.4** หลังจากนี้มันรันเองทุกชั่วโมง GitHub มักดีเลย์ 5–15 นาที ซึ่งรับได้
 
-ได้ 401 แปลว่า header ไม่ตรง
+**ข้อควรระวัง** ถ้า repo ไม่มี commit เลย 60 วัน GitHub จะปิด scheduled workflow
+อัตโนมัติ และไม่แจ้งเตือน ต้องเข้าไปกดเปิดใหม่ที่แท็บ Actions
 
 รันเองจากเครื่องก็ได้:
 
@@ -329,7 +331,8 @@ Google Docs API เปิดแล้ว เมนูออกเอกสาร
 | **ทุกคนล็อกอินไม่ได้พร้อมกัน** | มีคนตั้ง `PASSWORD_PEPPER` | ลบตัวแปรนั้นทิ้งทันที |
 | ไฟล์แนบไม่ขึ้น Drive | `DIVISION_FOLDERS_JSON` ไม่ได้ตั้ง | เพิ่มบน Render |
 | Vercel build fail ทันที | Root Directory ไม่ใช่ `react_frontend` หรือ Framework Preset ไม่ใช่ Vite | แก้ในข้อ 2.2 |
-| ตัวตั้งเวลาได้ 401 | `x-cron-secret` ไม่ตรง `CRON_SECRET` | copy ค่าใหม่จาก Render |
+| ตัวตั้งเวลาได้ 401 | secret `CRON_SECRET` บน GitHub ไม่ตรงกับบน Render | copy ค่าใหม่จาก Render (ข้อ 4.2) |
+| ยอด ผบก. ไม่ขยับหลายวัน แต่ไม่มี error | GitHub ปิด scheduled workflow เพราะ repo เงียบเกิน 60 วัน | เปิดใหม่ที่แท็บ Actions |
 | API ไม่บูตเลย | ไม่มี `SESSION_SECRET` | ตรวจว่า Render สุ่มค่าให้แล้ว |
 
 **ห้ามตั้ง `PASSWORD_PEPPER`** รหัสผ่านทั้ง 58 บัญชีถูก hash ด้วยค่าเริ่มต้นในโค้ด
