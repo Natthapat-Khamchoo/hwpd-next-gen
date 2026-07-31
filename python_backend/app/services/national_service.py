@@ -220,6 +220,19 @@ def aggregate_national(start: str, end: str, divisions: Optional[List[str]] = No
     if appended:
         first_free = max((r["_row"] for r in existing), default=1) + 1
         last_row = first_free + len(appended) - 1
+
+        # ชีตมีจำนวนแถวตายตัว เขียนเลยขอบไปแม้แถวเดียว Google ตอบ 400 exceeds grid
+        # limits แล้วทิ้งทั้ง batch ผลคือ กก. ที่ยังไม่มีแถวของวันนั้นหายไปทั้งหมด ส่วน
+        # กก. ที่มีแถวอยู่แล้วรอดเพราะไปทางเขียนทับ หน้า dashboard จึงแสดงบาง กก.
+        # เหมือนปกติ ไม่มีสัญญาณว่าที่เหลือหายไป
+        #
+        # deactivate_duplicates() ช่วยตรงนี้ไม่ได้ มันแค่ตั้ง Sys_IsActive=False
+        # แถวยังกินพื้นที่เท่าเดิม ต้องขยายชีตเอง เผื่อไว้อีก 200 แถวจะได้ไม่ต้องขยาย
+        # ทุกรอบ
+        if last_row > worksheet.row_count:
+            sheets_service.with_backoff(worksheet.add_rows, last_row - worksheet.row_count + 200)
+            logger.info("ขยาย %s เป็น %d แถว เพื่อรองรับแถวใหม่", SUMMARY_TABLE, worksheet.row_count)
+
         sheets_service.with_backoff(
             worksheet.update,
             range_name=f"A{first_free}:{last_column}{last_row}",
