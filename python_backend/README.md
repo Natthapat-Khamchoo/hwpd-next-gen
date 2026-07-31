@@ -225,4 +225,14 @@ python -m unittest discover -s tests -p "test_*.py"
    uvicorn app.main:app --reload --port 8000
    ```
 
-3. เข้าถึงเอกสาร API Interactive Swagger UI ได้ที่ `http://127.0.0.1:8000/docs`
+3. เอกสาร API (Swagger UI) ปิดไว้เป็นค่าเริ่มต้น เปิดตอนพัฒนาด้วย
+
+   ```bash
+   ENABLE_API_DOCS=true uvicorn app.main:app --reload --port 8000
+   ```
+
+   แล้วเข้าที่ `http://127.0.0.1:8000/docs` (มี `/redoc` กับ `/openapi.json` ด้วย)
+
+   **อย่าตั้งตัวแปรนี้บนเซิร์ฟเวอร์จริง** สามหน้านี้ไม่ต้องล็อกอินและแจง endpoint
+   ทั้งหมดพร้อมชื่อฟิลด์ทุกตัว ทุกเส้นยังต้องมี token อยู่ก็จริง แต่ไม่มีเหตุผลให้
+   แจกแผนผังระบบกับคนนอก

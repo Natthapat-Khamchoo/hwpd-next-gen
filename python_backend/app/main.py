@@ -76,11 +76,25 @@ async def lifespan(_: FastAPI):
     yield
 
 
+# หน้าเอกสาร API ปิดไว้เป็นค่าเริ่มต้น เปิดด้วย ENABLE_API_DOCS=true เมื่อต้องการ
+#
+# /docs /redoc /openapi.json ของ FastAPI เปิดให้ทุกคนโดยไม่ต้องล็อกอิน และแจง
+# endpoint ทั้งหมดพร้อมชื่อฟิลด์ทุกตัว ไม่ใช่ช่องโหว่ตรง ๆ เพราะทุกเส้นยังต้องมี token
+# แต่เป็นการแจกแผนผังระบบให้คนนอกฟรี ซึ่งไม่ควรสำหรับระบบราชการ
+#
+# ตั้งค่าเริ่มต้นเป็นปิด ไม่ใช่ "ปิดเมื่อเป็น production" เพราะแบบหลังต้องอาศัยว่ามีคน
+# ตั้งตัวแปรบอกว่านี่คือ production ไว้ถูก ลืมเมื่อไหร่ก็เปิดโล่งเมื่อนั้น ทางนี้ลืมแล้ว
+# ผลคือปิด ซึ่งเป็นด้านที่ปลอดภัยกว่า
+_docs_enabled = os.getenv("ENABLE_API_DOCS", "").strip().lower() in {"1", "true", "yes"}
+
 app = FastAPI(
     title="HWPD Next Gen API",
     description="Python Backend API for Highway Police Division (บก.ทล.)",
     version="1.0.0",
     lifespan=lifespan,
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
 )
 
 

@@ -35,7 +35,8 @@ cd python_backend
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
-*เปิด Swagger API Documentation ได้ที่ `http://localhost:8000/docs`*
+*Swagger API Documentation ปิดไว้เป็นค่าเริ่มต้น เปิดตอนพัฒนาด้วย `ENABLE_API_DOCS=true`
+แล้วเข้าที่ `http://localhost:8000/docs` — อย่าตั้งตัวแปรนี้บนเซิร์ฟเวอร์จริง*
 
 ### 2. ⚛️ การเปิดใช้งาน React Frontend
 ```bash
