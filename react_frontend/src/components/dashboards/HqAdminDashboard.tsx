@@ -18,7 +18,8 @@ const VIEW_TITLES: Record<string, string> = {
   cases: 'ระบบบริหารคดีสำคัญ',
 };
 
-export const HqAdminDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+// ไม่รับ onBack เพราะหน้านี้เป็นปลายทางของ HQ_Admin ไม่มีเมนูหลักให้กลับไป
+export const HqAdminDashboard: React.FC = () => {
   const { user, logout } = useAuth();
   const [view, setView] = useState('compare');
   const [start, setStart] = useState(firstOfMonth());
@@ -53,7 +54,8 @@ export const HqAdminDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) =
             <SideItem icon="fa-folder-tree" active={view === 'cases'} onClick={() => nav('cases', close)}>บริหารคดีสำคัญ</SideItem>
           </div>
           <div className="mt-auto border-top border-secondary p-3">
-            <div className="sidebar-item text-warning" onClick={onBack}><i className="fa-solid fa-rotate"></i> กลับเมนูหลัก</div>
+            {/* ของเดิม hq_admin_dashboard.html ไม่มีปุ่มกลับเมนูหลัก และบัญชีระดับ บก.
+                ใช้เมนูนั้นไม่ได้อยู่แล้วเพราะสถานี 00 ไม่มีใน DB_ROUTER */}
             <div className="sidebar-item text-danger" onClick={logout}><i className="fa-solid fa-power-off"></i> ออกจากระบบ</div>
           </div>
         </>

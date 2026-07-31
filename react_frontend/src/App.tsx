@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LoginView } from './components/common/LoginView';
 import { MainMenuGrid } from './components/dashboards/MainMenuGrid';
+import { canUseMainMenu } from './utils/roles';
 import type { UserRole } from './types';
 
 // Lazily loaded so the login/menu chunk stays small and ApexCharts only loads
@@ -63,10 +64,16 @@ const MainContent: React.FC = () => {
 
   if (!user) return <LoginView />;
 
-  const back = () => setCurrentView('main');
+  // ระดับ บก. ไม่มีเมนูการปฏิบัติงานให้กลับไป ปุ่มย้อนกลับจึงพากลับแผงควบคุมของตัวเอง
+  // ไม่ใช่ 'main' ตายตัว ไม่งั้นกดครั้งเดียวก็หลุดไปหน้าเมนูที่ของเดิมไม่เคยให้เห็น
+  const back = () => setCurrentView(canUseMainMenu(user.role) ? 'main' : roleHome(user.role));
+
+  // กันไว้อีกชั้น เผื่อมีทางไหนพา currentView มาเป็น 'main' ได้อีก และกันเมนูแวบ
+  // ให้เห็นหนึ่งเฟรมก่อน useEffect จะตั้งค่า เพราะ state ตั้งต้นเป็น 'main'
+  const view = currentView === 'main' && !canUseMainMenu(user.role) ? roleHome(user.role) : currentView;
 
   const render = () => {
-    switch (currentView) {
+    switch (view) {
       case 'daily': return <DailyReportForm onBack={back} />;
       case 'checkpoint': return <CheckpointForm onBack={back} />;
       case 'arrest': return <ArrestForm onBack={back} />;
@@ -82,8 +89,8 @@ const MainContent: React.FC = () => {
       case 'station_admin': return <StationAdminDashboard onBack={back} />;
       case 'hq': return <HqDashboard onBack={back} />;
       case 'commander': return <CommanderDashboard onBack={back} onSwitchHQ={() => setCurrentView('hq')} />;
-      case 'super_commander': return <SuperCommanderDashboard onBack={back} />;
-      case 'hq_admin': return <HqAdminDashboard onBack={back} />;
+      case 'super_commander': return <SuperCommanderDashboard />;
+      case 'hq_admin': return <HqAdminDashboard />;
       default: return <MainMenuGrid onSelectView={setCurrentView} />;
     }
   };

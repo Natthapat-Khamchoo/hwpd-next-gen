@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
+import { canUseMainMenu } from '../../utils/roles';
 import Swal from 'sweetalert2';
 
 interface MainMenuGridProps {
@@ -26,6 +27,11 @@ export const MainMenuGrid: React.FC<MainMenuGridProps> = ({ onSelectView }) => {
   const { user, logout } = useAuth();
   const role = user?.role || 'Unit_Staff';
   const showBackToAdmin = role === 'สิบเวร' || role === 'Station_Admin';
+
+  // App.tsx ไม่ควรพา role ระดับ บก. มาถึงหน้านี้อยู่แล้ว กันไว้ตรงนี้อีกชั้นเผื่อมีทางอื่น
+  // ทุกเมนูในนี้อ่านหรือเขียนฐานข้อมูลปฏิบัติการของ กก. ตัวเอง บัญชีสถานี 00 จึงกดแล้วเจอ
+  // 400 ทุกปุ่ม โชว์เมนูที่กดไม่ได้แย่กว่าไม่โชว์
+  const menuItems = canUseMainMenu(role) ? MENU_ITEMS : [];
 
   const showChangePasswordModal = async () => {
     const { value } = await Swal.fire({
@@ -126,7 +132,7 @@ export const MainMenuGrid: React.FC<MainMenuGridProps> = ({ onSelectView }) => {
         </h6>
 
         <div className="menu-grid">
-          {MENU_ITEMS.map((item) => (
+          {menuItems.map((item) => (
             <div key={item.id} className="menu-btn" onClick={() => onSelectView(item.id)}>
               <i className={`fa-solid ${item.icon}`}></i>
               {item.label}

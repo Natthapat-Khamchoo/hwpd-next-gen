@@ -35,7 +35,8 @@ const donutOptions = (labels: string[], colors?: string[]): ApexCharts.ApexOptio
   tooltip: { theme: 'dark' },
 });
 
-export const SuperCommanderDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+// ไม่รับ onBack เพราะหน้านี้เป็นปลายทางของ Super_Commander ไม่มีเมนูหลักให้กลับไป
+export const SuperCommanderDashboard: React.FC = () => {
   const { user, logout } = useAuth();
   const [start, setStart] = useState(firstOfMonth());
   const [end, setEnd] = useState(getNowDateLocal());
@@ -93,7 +94,8 @@ export const SuperCommanderDashboard: React.FC<{ onBack: () => void }> = ({ onBa
     >
         <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 gap-3">
           <div className="d-flex align-items-center gap-3">
-            <button className="btn btn-outline-warning btn-sm" onClick={onBack}><i className="fa-solid fa-arrow-left"></i></button>
+            {/* ของเดิม super_commander_dashboard.html ไม่มีปุ่มย้อนกลับ หน้านี้คือปลายทาง
+                ของบัญชีระดับ บก. ซึ่งใช้เมนูการปฏิบัติงานไม่ได้ (สถานี 00 ไม่มีใน DB_ROUTER) */}
             <div>
               <h3 className="text-white m-0">National Executive Dashboard</h3>
               <p className="text-white-50 small m-0 mt-1">ยินดีต้อนรับ, <span className="text-warning">{user?.fullName}</span></p>
