@@ -51,12 +51,22 @@ python scripts/export_render_env.py
 
 ## ส่วนที่ 1 — Render (backend)
 
-**1.1** เข้า [dashboard.render.com](https://dashboard.render.com) ล็อกอินด้วย GitHub
+**1.1** เข้า [dashboard.render.com](https://dashboard.render.com) ล็อกอินด้วย
+**Google** บัญชี `marsocas.1998@gmail.com`
+
+**ห้ามกดปุ่ม GitHub** บัญชี Render ผูกกับ Google ไม่ใช่ GitHub กด GitHub แล้ว Render
+จะพาไปหน้า `/register/github` คือสมัครใหม่ ไม่ใช่ล็อกอิน แล้วขึ้น error ว่า `exists`
+เพราะอีเมลนี้มีบัญชีอยู่แล้ว วนอยู่แค่นั้น ล็อกอินไม่ผ่านสักครั้ง
+
+ปุ่มที่ถูกมีป้าย **Last used** กำกับไว้ให้อยู่แล้ว
 
 **1.2** มุมขวาบนกด **New +** แล้วเลือก **Blueprint**
 
-**1.3** เลือก repo ถ้าไม่เห็น `hwpd-next-gen` ให้กด **Configure account** แล้วให้สิทธิ์
-Render เข้าถึง repo นี้ก่อน
+**1.3** กด **Configure account** แล้วให้สิทธิ์ Render เข้าถึง repo `hwpd-next-gen`
+บน GitHub
+
+ข้อนี้ต้องทำ ไม่ใช่ทำเฉพาะตอนหาไม่เจอ เพราะล็อกอินด้วย Google บัญชี Render จึงยัง
+ไม่เคยต่อกับ GitHub เลย รายชื่อ repo จะว่างจนกว่าจะให้สิทธิ์
 
 **1.4** เลือก `Natthapat-Khamchoo/hwpd-next-gen` แล้วกด **Connect**
 
@@ -310,6 +320,8 @@ Google Docs API เปิดแล้ว เมนูออกเอกสาร
 
 | อาการ | สาเหตุ | แก้ |
 |---|---|---|
+| ล็อกอิน Render แล้วเด้งไปหน้า Create an account ขึ้น `exists` | กดปุ่ม GitHub ทั้งที่บัญชีผูกกับ Google | ใช้ปุ่ม **Google** (ข้อ 1.1) |
+| หน้า OAuth ของ Render ค้างที่ Loading | code หมดอายุแล้ว reload ซ้ำก็ไม่ติด | กลับไป `/login` เริ่มใหม่ด้วยปุ่ม Google |
 | ทุกอย่างตอบ 503 | OAuth สามตัวไม่ครบ หรือ `refresh_token` ถูกเพิกถอน | ตรวจ Environment บน Render หรือรัน `get_oauth_token.py` ใหม่ |
 | กก. บางกองตอบ 400 | `DB_ROUTER_JSON` ขาดหรือ JSON เพี้ยน | copy ใหม่ ระวัง newline ติดมา |
 | หน้าเว็บขึ้น CORS error | `CORS_ORIGINS` ไม่ตรงโดเมน หรือมี `/` ปิดท้าย | แก้ให้ตรงเป๊ะ |
