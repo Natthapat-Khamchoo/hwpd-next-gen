@@ -4,6 +4,7 @@
 โครงสร้างบัญชี (1 บัญชีต่อ 1 หน่วย) อ่านรายชื่อสถานีจาก STATION_CONFIG โดยตรง
 
     00       บก.ทล. ส่วนกลาง   Super_Commander   username: hq
+    00       ฝอ.บก.ทล.         HQ_Admin          username: fo0
     {d}0     ฝอ.กก.{d}         Division_Admin    username: fo{d}
     {d}{n}   ส.ทล.{n} กก.{d}   Station_Admin     username: st{d}{n}
 
@@ -43,7 +44,7 @@ USERS_TABLE = "tb_Users"
 DIVISIONS = range(1, 9)
 
 # ชื่อบัญชีที่สคริปต์นี้เป็นเจ้าของ ใช้กันไม่ให้ --prune ไปลบบัญชีของคนอื่น
-OWNED_USERNAME = re.compile(r"^(hq|fo[1-8]|st[1-8][1-9])$")
+OWNED_USERNAME = re.compile(r"^(hq|fo[0-8]|st[1-8][1-9])$")
 
 # ตัดตัวที่อ่านสับสนออก (0/O, 1/l/I) เพราะรหัสนี้ต้องอ่านจากกระดาษแล้วพิมพ์ตาม
 PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghijkmnpqrstuvwxyz"
@@ -105,6 +106,9 @@ def build_accounts() -> List[Dict[str, Any]]:
 
     if "00" in config:
         add("00", "hq", "Super_Commander")
+        # ฝอ.บก.ทล. อยู่สถานีเดียวกับ ผบก. แต่คนละบทบาท เห็นภาพรวมทั้ง 8 กก. เหมือนกัน
+        # (ทั้งคู่อยู่ใน NATIONAL_VIEW_ROLES) ต่างกันตรงหน้าสั่งการซึ่งมีเฉพาะฝั่ง ผบก.
+        add("00", "fo0", "HQ_Admin")
 
     for division in DIVISIONS:
         hq_id = f"{division}0"

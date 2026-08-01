@@ -52,17 +52,30 @@ _thin = Side(style="thin", color="BFBFBF")
 BORDER = Border(left=_thin, right=_thin, top=_thin, bottom=_thin)
 
 
-def latest(pattern: str) -> str:
-    matches = sorted(glob.glob(pattern))
-    return matches[-1] if matches else ""
-
-
 def read_csv(path: str):
     with open(path, encoding="utf-8-sig") as handle:
         return list(csv.DictReader(handle))
 
 
-def build_records(unit_csv: str, operator_csv: str):
+def merge_all(pattern: str):
+    """
+    รวมทุกไฟล์ที่เข้าคู่กับ pattern ไฟล์ใหม่ทับไฟล์เก่าเมื่อ Username ซ้ำ
+
+    ห้ามหยิบแค่ไฟล์ล่าสุด เพราะ create_station_users.py --apply เขียนเฉพาะบัญชีที่
+    "เพิ่งสร้าง" ลงไฟล์ใหม่ ไม่ใช่ทั้งชุด ตอนเพิ่ม fo0 ทีหลังจึงได้ไฟล์ที่มีบรรทัดเดียว
+    ถ้าอ่านไฟล์นั้นไฟล์เดียวก็จะเหลือบัญชีเดียวจาก 53
+    """
+    merged = OrderedDict()
+    files = sorted(glob.glob(pattern))
+    for path in files:
+        for row in read_csv(path):
+            username = str(row.get("Username", "")).strip()
+            if username:
+                merged[username] = row
+    return list(merged.values()), files
+
+
+def build_records(unit_rows, operator_rows):
     records = []
 
     def add(row, account_type):
@@ -82,9 +95,9 @@ def build_records(unit_csv: str, operator_csv: str):
             }
         )
 
-    for row in read_csv(unit_csv) if unit_csv else []:
+    for row in unit_rows:
         add(row, "บัญชีประจำหน่วย")
-    for row in read_csv(operator_csv) if operator_csv else []:
+    for row in operator_rows:
         add(row, "บัญชีผู้ปฏิบัติ")
 
     records.sort(key=lambda r: (0 if r["Station_ID"] == "00" else int(r["Station_ID"][:1] or 0),
@@ -124,17 +137,28 @@ def main() -> int:
     args = parser.parse_args()
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    unit_csv = args.unit or latest(os.path.join(root, "credentials_2*.csv"))
-    operator_csv = args.operators or latest(os.path.join(root, "credentials_operators_*.csv"))
+    if args.unit:
+        unit_rows, unit_files = read_csv(args.unit), [args.unit]
+    else:
+        unit_rows, unit_files = merge_all(os.path.join(root, "credentials_2*.csv"))
+    if args.operators:
+        op_rows, op_files = read_csv(args.operators), [args.operators]
+    else:
+        op_rows, op_files = merge_all(os.path.join(root, "credentials_operators_*.csv"))
 
-    if not unit_csv and not operator_csv:
+    if not unit_rows and not op_rows:
         print("ไม่พบไฟล์ credentials_*.csv — รัน create_station_users.py / create_operator_users.py ก่อน")
         return 1
 
-    print(f"บัญชีประจำหน่วย : {os.path.basename(unit_csv) if unit_csv else '(ไม่มี)'}")
-    print(f"บัญชีผู้ปฏิบัติ  : {os.path.basename(operator_csv) if operator_csv else '(ไม่มี)'}\n")
+    print(f"บัญชีประจำหน่วย : {len(unit_rows)} บัญชี จาก {len(unit_files)} ไฟล์")
+    for path in unit_files:
+        print(f"    {os.path.basename(path)}")
+    print(f"บัญชีผู้ปฏิบัติ  : {len(op_rows)} บัญชี จาก {len(op_files)} ไฟล์")
+    for path in op_files:
+        print(f"    {os.path.basename(path)}")
+    print()
 
-    records = build_records(unit_csv, operator_csv)
+    records = build_records(unit_rows, op_rows)
     if not records:
         print("ไฟล์ CSV ว่างเปล่า")
         return 1
