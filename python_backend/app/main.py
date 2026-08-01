@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict
 from typing import Dict, Any, List, Optional
 
@@ -54,6 +54,7 @@ from app.services import (
     query_service,
     reference_admin_service,
     reference_service,
+    report_export_service,
     search_service,
     sheets_service,
     user_service,
@@ -648,6 +649,41 @@ def trigger_aggregate_national(
     start, end = national_service.default_range(max(1, min(days, 90)))
     background.add_task(_run_aggregate, start, end)
     return {"status": "accepted", "message": f"เริ่มรวมยอด {start} ถึง {end} แล้ว", "start": start, "end": end}
+
+
+@app.get("/api/reports/catalog/exportable")
+def reports_exportable(session: Dict[str, Any] = Depends(current_session)):
+    """แบบฟอร์มที่ออกเป็น Excel ได้ตอนนี้"""
+    if str(session.get("r") or "") not in NATIONAL_VIEW_ROLES:
+        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์ออกรายงานระดับประเทศ")
+    return {"status": "success", "data": report_export_service.available_reports()}
+
+
+@app.get("/api/reports/export")
+def reports_export(
+    reportKey: str,
+    start: str = "",
+    end: str = "",
+    session: Dict[str, Any] = Depends(current_session),
+):
+    """ออกรายงานตามแบบฟอร์มเป็นไฟล์ Excel"""
+    if str(session.get("r") or "") not in NATIONAL_VIEW_ROLES:
+        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์ออกรายงานระดับประเทศ")
+
+    try:
+        content = report_export_service.build_workbook(reportKey, start, end)
+    except report_export_service.ReportNotSupported as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    filename = f"{reportKey}_{start}_{end}.xlsx"
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        # ชื่อไฟล์เป็น ASCII ล้วนอยู่แล้ว จึงไม่ต้องเข้ารหัสแบบ RFC 5987
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 class ReferenceUpsertRequest(BaseModel):

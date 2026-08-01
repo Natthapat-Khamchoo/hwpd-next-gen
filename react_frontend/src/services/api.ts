@@ -2,7 +2,7 @@ import type { User } from '../types';
 
 // Set VITE_API_BASE_URL on the host (e.g. Vercel) to point at a deployed backend.
 // Falls back to localhost for dev; if unreachable, api.* methods use offline demo data.
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:8000/api';
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:8000/api';
 
 // Local user directory — mirrors the tb_Users Google Sheet exactly (password: 1234).
 // Used as the offline fallback when the backend is unreachable (e.g. the Vercel site).
@@ -299,6 +299,13 @@ export const api = {
     } catch {
       return { status: 'error', message: OFFLINE_MESSAGE };
     }
+  },
+
+  /** แบบฟอร์มที่ออกเป็น Excel ได้ตอนนี้ — รายการมาจากฝั่ง API ไม่ฮาร์ดโค้ดสองที่ */
+  getExportableReports: async (token?: string): Promise<{ reportKey: string; title: string; cadence: string }[]> => {
+    const res = await fetchReference('/reports/catalog/exportable', token);
+    const data = (res as { data?: unknown })?.data;
+    return Array.isArray(data) ? (data as { reportKey: string; title: string; cadence: string }[]) : [];
   },
 
   /** ทำเนียบผู้ใช้ทั้งหมด สำหรับหน้าจัดการผู้ใช้งานของ บก. (ไม่มีคอลัมน์รหัสผ่าน) */

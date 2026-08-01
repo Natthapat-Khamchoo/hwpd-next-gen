@@ -6,6 +6,7 @@ import { ReactApexChart, vBarOptions } from './chartHelpers';
 import { DashboardLayout, SideItem } from './DashboardLayout';
 import { UserDirectory } from './UserDirectory';
 import { ReferenceTableEditor } from './ReferenceTableEditor';
+import { ReportExportPanel } from './ReportExportPanel';
 
 const firstOfMonth = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]; };
 
@@ -27,12 +28,14 @@ export const HqAdminDashboard: React.FC = () => {
   const [start, setStart] = useState(firstOfMonth());
   const [end, setEnd] = useState(getNowDateLocal());
   const [data, setData] = useState<any | null>(null);
+  const [exportable, setExportable] = useState<{ reportKey: string; title: string; cadence: string }[]>([]);
 
   const load = async () => {
     const res = await api.getNationalSummary(start, end, user?.token);
     if (res.status === 'success') setData(res.data);
   };
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  useEffect(() => { api.getExportableReports(user?.token).then(setExportable); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   const ranking = useMemo(() => (data ? [...data.byDivision].sort((a, b) => b.arrestsCount - a.arrestsCount) : []), [data]);
 
@@ -88,7 +91,7 @@ export const HqAdminDashboard: React.FC = () => {
         {view === 'users' && <UserDirectory />}
         {view === 'charges' && <ReferenceTableEditor kind="charges" />}
         {view === 'items' && <ReferenceTableEditor kind="seized-items" />}
-        {view === 'reports' && <ReferenceTableEditor kind="report-catalog" />}
+        {view === 'reports' && <><ReportExportPanel reports={exportable} /><ReferenceTableEditor kind="report-catalog" /></>}
 
         {!['compare', 'users', 'charges', 'items', 'reports'].includes(view) && (
           <div className="glass-card w-100 p-4 text-center py-5">
