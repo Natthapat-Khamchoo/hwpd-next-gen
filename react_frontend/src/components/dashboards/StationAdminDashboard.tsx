@@ -114,8 +114,8 @@ export const StationAdminDashboard: React.FC<{ onBack: () => void }> = ({ onBack
                 {[
                   { t: 'รวม ว.43', i: 'fa-road', c: 'text-primary', bg: 'rgba(13, 110, 253, 0.1)', bd: '#0d6efd', v: stats.v43 },
                   { t: 'รวม ว.42', i: 'fa-car-side', c: 'text-secondary', bg: 'rgba(108, 117, 125, 0.1)', bd: '#6c757d', v: stats.v42 },
-                  { t: 'รวม ว.20', i: 'fa-file-invoice', c: 'text-warning', bg: 'rgba(255, 193, 7, 0.1)', bd: '#ffc107', v: stats.v20 },
-                  { t: 'รายงานจับกุม', i: 'fa-handcuffs', c: 'text-danger', bg: 'rgba(220, 53, 69, 0.1)', bd: '#dc3545', v: stats.arrest },
+                  { t: 'คดีจราจร (ว.20)', i: 'fa-file-invoice', c: 'text-warning', bg: 'rgba(255, 193, 7, 0.1)', bd: '#ffc107', v: stats.v20 },
+                  { t: 'จับกุมคดีอาญา', i: 'fa-handcuffs', c: 'text-danger', bg: 'rgba(220, 53, 69, 0.1)', bd: '#dc3545', v: stats.arrest },
                   { t: 'รวม จิตอาสา', i: 'fa-hands-holding-child', c: 'text-info', bg: 'rgba(13, 202, 240, 0.1)', bd: '#0dcaf0', v: stats.volunteer },
                   { t: 'รวม รับเสด็จ', i: 'fa-shield-halved', c: 'text-success', bg: 'rgba(25, 135, 84, 0.1)', bd: '#198754', v: stats.royalGuard },
                 ].map((k, i) => (
@@ -126,7 +126,7 @@ export const StationAdminDashboard: React.FC<{ onBack: () => void }> = ({ onBack
                 <table className="table table-hq table-bordered text-center align-middle">
                   <thead><tr><th className="text-start">ประเภทการปฏิบัติ</th><th className="text-white-50">หน่วยดอนจาน</th><th className="text-white-50">หน่วยจอมทอง</th><th className="text-warning">รวมทั้งสถานี</th></tr></thead>
                   <tbody>
-                    {[['ว.43', 88, 60, stats.v43], ['ว.20', 18, 13, stats.v20], ['จับกุม', 7, 5, stats.arrest]].map((r, i) => (
+                    {[['ว.43', 88, 60, stats.v43], ['คดีจราจร', 18, 13, stats.v20], ['คดีอาญา', 7, 5, stats.arrest]].map((r, i) => (
                       <tr key={i}><td className="text-start">{r[0]}</td><td>{r[1]}</td><td>{r[2]}</td><td className="text-warning fw-bold">{r[3] ?? '-'}</td></tr>
                     ))}
                   </tbody>
@@ -140,7 +140,7 @@ export const StationAdminDashboard: React.FC<{ onBack: () => void }> = ({ onBack
         {view === 'pending' && (
           <div className="glass-card w-100 p-4">
             <div className="d-flex justify-content-between align-items-center mb-3 border-bottom border-secondary pb-3">
-              <h5 className="text-info m-0"><i className="fa-solid fa-list-check"></i> ผลการปฏิบัติ/จับกุม/อุบัติเหตุ/รับเสด็จ</h5>
+              <h5 className="text-info m-0"><i className="fa-solid fa-list-check"></i> ผลการปฏิบัติ/จับกุมคดีอาญา/อุบัติเหตุ/รับเสด็จ</h5>
               <button className="btn btn-sm btn-outline-info" onClick={load}><i className="fa-solid fa-rotate"></i> รีเฟรช</button>
             </div>
             <div className="table-responsive">

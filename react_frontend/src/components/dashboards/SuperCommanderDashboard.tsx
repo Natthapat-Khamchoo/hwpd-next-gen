@@ -114,8 +114,11 @@ export const SuperCommanderDashboard: React.FC = () => {
         {/* KPIs */}
         <div className="row g-3 mb-4">
           {[
-            { c: 'text-danger', i: 'fa-handcuffs', v: totals.arrestsCount, t: 'ยอดจับกุมทั่วประเทศ' },
-            { c: 'text-info', i: 'fa-file-invoice', v: totals.v20Count, t: 'รวม ว.20' },
+            // arrestsCount นับใบรายงานใน tb_Arrests ส่วน v20Count รวมยอดที่กรอกใน
+            // tb_DailyResult คนละเรื่องกัน ป้ายเดิมเขียนว่า "ยอดจับกุม" กับ "รวม ว.20"
+            // ซึ่งอ่านแล้วนึกว่าเป็นเรื่องเดียวกัน ใช้คำที่ระบบเดิมใช้ในข้อความ LINE แทน
+            { c: 'text-danger', i: 'fa-handcuffs', v: totals.arrestsCount, t: 'จับกุมคดีอาญาทั่วประเทศ' },
+            { c: 'text-info', i: 'fa-file-invoice', v: totals.v20Count, t: 'คดีจราจร (ว.20)' },
             { c: 'text-warning', i: 'fa-car-burst', v: totals.accCount, t: 'อุบัติเหตุ' },
             { c: 'text-success', i: 'fa-shield-halved', v: totals.royalCount, t: 'รับเสด็จ' },
             { c: 'text-primary', i: 'fa-bullseye', v: totals.missionCount, t: 'ภารกิจ' },
@@ -136,12 +139,12 @@ export const SuperCommanderDashboard: React.FC = () => {
           <div className="row g-4">
             <div className="col-12 col-lg-6">
               <div className="glass-card"><h5 className="text-warning mb-3"><i className="fa-solid fa-ranking-star"></i> จัดอันดับผลปฏิบัติ 8 กก. (จับกุม)</h5>
-                <ReactApexChart type="bar" height={320} options={barOptions(ranking.map((d) => d.divName))} series={[{ name: 'จับกุม', data: ranking.map((d) => d.arrestsCount) }]} />
+                <ReactApexChart type="bar" height={320} options={barOptions(ranking.map((d) => d.divName))} series={[{ name: 'คดีอาญา', data: ranking.map((d) => d.arrestsCount) }]} />
               </div>
             </div>
             <div className="col-12 col-lg-6">
               <div className="glass-card"><h5 className="text-warning mb-3"><i className="fa-solid fa-chart-line"></i> เทรนด์รายวันทั่วประเทศ</h5>
-                <ReactApexChart type="line" height={320} options={{ chart: { type: 'line', height: 320, toolbar: { show: false }, background: 'transparent' }, theme: { mode: 'dark' }, colors: ['#facc15', '#ef4444'], stroke: { curve: 'smooth', width: 3 }, xaxis: { categories: data.trend.map((t: any) => t.date), labels: { style: { colors: '#8b949e' } } }, yaxis: { labels: { style: { colors: '#8b949e' } } }, legend: { position: 'top', horizontalAlign: 'left', labels: { colors: '#fff' } }, grid: { borderColor: '#30363d', strokeDashArray: 4 }, tooltip: { theme: 'dark' } }} series={[{ name: 'จับกุม', data: data.trend.map((t: any) => t.arrestsCount) }, { name: 'อุบัติเหตุ', data: data.trend.map((t: any) => t.accCount) }]} />
+                <ReactApexChart type="line" height={320} options={{ chart: { type: 'line', height: 320, toolbar: { show: false }, background: 'transparent' }, theme: { mode: 'dark' }, colors: ['#facc15', '#ef4444'], stroke: { curve: 'smooth', width: 3 }, xaxis: { categories: data.trend.map((t: any) => t.date), labels: { style: { colors: '#8b949e' } } }, yaxis: { labels: { style: { colors: '#8b949e' } } }, legend: { position: 'top', horizontalAlign: 'left', labels: { colors: '#fff' } }, grid: { borderColor: '#30363d', strokeDashArray: 4 }, tooltip: { theme: 'dark' } }} series={[{ name: 'คดีอาญา', data: data.trend.map((t: any) => t.arrestsCount) }, { name: 'อุบัติเหตุ', data: data.trend.map((t: any) => t.accCount) }]} />
               </div>
             </div>
             <div className="col-12 col-lg-6">
@@ -153,7 +156,7 @@ export const SuperCommanderDashboard: React.FC = () => {
               <div className="glass-card"><h5 className="text-warning mb-3"><i className="fa-solid fa-table-list"></i> ตารางจัดอันดับ กก.</h5>
                 <div className="table-responsive">
                   <table className="table table-sc table-bordered text-center align-middle">
-                    <thead><tr><th>ลำดับ</th><th className="text-start">กก.</th><th>จับกุม</th><th>ว.20</th><th>อุบัติเหตุ</th><th>ภารกิจ</th></tr></thead>
+                    <thead><tr><th>ลำดับ</th><th className="text-start">กก.</th><th>คดีอาญา</th><th>คดีจราจร</th><th>อุบัติเหตุ</th><th>ภารกิจ</th></tr></thead>
                     <tbody>
                       {ranking.map((d, i) => (
                         <tr key={d.div}><td className={`fw-bold ${i === 0 ? 'text-warning' : ''}`}>{i + 1}</td><td className="text-start">{d.divName}</td><td>{d.arrestsCount}</td><td>{d.v20Count}</td><td>{d.accCount}</td><td>{d.missionCount}</td></tr>

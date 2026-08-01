@@ -76,9 +76,9 @@ export const HqAdminDashboard: React.FC = () => {
         {view === 'compare' && data && (
           <div className="row g-4">
             <div className="col-12 col-lg-7"><div className="glass-card h-100"><h5 className="text-white mb-3"><i className="fa-solid fa-chart-column" style={{ color: '#c084fc' }}></i> เปรียบเทียบผลปฏิบัติ 8 กองกำกับการ</h5>
-              <ReactApexChart type="bar" height={340} options={vBarOptions(ranking.map((d) => d.divName), ['#a855f7', '#ef4444', '#0dcaf0'])} series={[{ name: 'จับกุม', data: ranking.map((d) => d.arrestsCount) }, { name: 'อุบัติเหตุ', data: ranking.map((d) => d.accCount) }, { name: 'ว.20', data: ranking.map((d) => d.v20Count) }]} /></div></div>
+              <ReactApexChart type="bar" height={340} options={vBarOptions(ranking.map((d) => d.divName), ['#a855f7', '#ef4444', '#0dcaf0'])} series={[{ name: 'คดีอาญา', data: ranking.map((d) => d.arrestsCount) }, { name: 'อุบัติเหตุ', data: ranking.map((d) => d.accCount) }, { name: 'คดีจราจร', data: ranking.map((d) => d.v20Count) }]} /></div></div>
             <div className="col-12 col-lg-5"><div className="glass-card h-100"><h5 className="text-white mb-3"><i className="fa-solid fa-ranking-star" style={{ color: '#c084fc' }}></i> ตารางจัดอันดับ</h5>
-              <div className="table-responsive"><table className="table table-sc table-bordered text-center align-middle"><thead><tr><th>#</th><th className="text-start">กก.</th><th>จับกุม</th><th>ว.20</th></tr></thead><tbody>{ranking.map((d, i) => <tr key={d.div}><td className="fw-bold">{i + 1}</td><td className="text-start">{d.divName}</td><td>{d.arrestsCount}</td><td>{d.v20Count}</td></tr>)}</tbody></table></div>
+              <div className="table-responsive"><table className="table table-sc table-bordered text-center align-middle"><thead><tr><th>#</th><th className="text-start">กก.</th><th>คดีอาญา</th><th>คดีจราจร</th></tr></thead><tbody>{ranking.map((d, i) => <tr key={d.div}><td className="fw-bold">{i + 1}</td><td className="text-start">{d.divName}</td><td>{d.arrestsCount}</td><td>{d.v20Count}</td></tr>)}</tbody></table></div>
             </div></div>
           </div>
         )}

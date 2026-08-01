@@ -38,8 +38,10 @@ export const HqDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const kpis = [
     { c: 'text-primary', i: 'fa-road', v: t.v43, l: 'รวม ว.43' },
-    { c: 'text-warning', i: 'fa-file-invoice', v: t.v20, l: 'รวม ว.20' },
-    { c: 'text-danger', i: 'fa-handcuffs', v: t.arrest, l: 'จับกุม' },
+    // v20 คือยอดคดีจราจรที่กรอกในผลการปฏิบัติประจำวัน ส่วน arrest นับใบรายงานจับกุม
+    // (คดีอาญา) ใช้คำเดียวกับข้อความ LINE ของระบบเดิมเพื่อไม่ให้อ่านสับสน
+    { c: 'text-warning', i: 'fa-file-invoice', v: t.v20, l: 'คดีจราจร (ว.20)' },
+    { c: 'text-danger', i: 'fa-handcuffs', v: t.arrest, l: 'จับกุมคดีอาญา' },
     { c: 'text-info', i: 'fa-hands-holding-child', v: t.volunteer, l: 'จิตอาสา' },
     { c: 'text-success', i: 'fa-shield-halved', v: t.royalGuard, l: 'รับเสด็จ' },
     { c: 'text-secondary', i: 'fa-car-side', v: t.service, l: 'บริการ' },
@@ -90,7 +92,7 @@ export const HqDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 <table className="table table-hq table-bordered text-center align-middle">
                   <thead><tr><th className="text-start">ประเภทการปฏิบัติ</th>{bs.map((s: any) => <th key={s.station} className="text-white-50">{s.name}</th>)}<th className="text-warning">รวม</th></tr></thead>
                   <tbody>
-                    {([['ว.43', 'v43'], ['ว.20', 'v20'], ['จับกุม', 'arrest'], ['บริการ', 'service'], ['รับเสด็จ', 'royalGuard']] as const).map(([label, key]) => (
+                    {([['ว.43', 'v43'], ['คดีจราจร', 'v20'], ['คดีอาญา', 'arrest'], ['บริการ', 'service'], ['รับเสด็จ', 'royalGuard']] as const).map(([label, key]) => (
                       <tr key={key}><td className="text-start">{label}</td>{bs.map((s: any) => <td key={s.station}>{s[key]}</td>)}<td className="text-warning fw-bold">{bs.reduce((a: number, s: any) => a + s[key], 0)}</td></tr>
                     ))}
                   </tbody>
@@ -99,7 +101,7 @@ export const HqDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             </div>
             <div className="row g-4">
               <div className="col-12 col-lg-7"><div className="glass-card h-100"><h5 className="text-white mb-3"><i className="fa-solid fa-chart-column text-info"></i> เปรียบเทียบผลปฏิบัติรายสถานี</h5>
-                <ReactApexChart type="bar" height={320} options={vBarOptions(bs.map((s: any) => s.name), ['#ef4444', '#ffc107', '#20c997'])} series={[{ name: 'จับกุม', data: bs.map((s: any) => s.arrest) }, { name: 'ว.20', data: bs.map((s: any) => s.v20) }, { name: 'รับเสด็จ', data: bs.map((s: any) => s.royalGuard) }]} /></div></div>
+                <ReactApexChart type="bar" height={320} options={vBarOptions(bs.map((s: any) => s.name), ['#ef4444', '#ffc107', '#20c997'])} series={[{ name: 'คดีอาญา', data: bs.map((s: any) => s.arrest) }, { name: 'คดีจราจร', data: bs.map((s: any) => s.v20) }, { name: 'รับเสด็จ', data: bs.map((s: any) => s.royalGuard) }]} /></div></div>
               <div className="col-12 col-lg-5"><div className="glass-card h-100"><h5 className="text-white mb-3"><i className="fa-solid fa-boxes-packing text-warning"></i> หมวดหมู่ของกลาง</h5>
                 <ReactApexChart type="donut" height={320} options={donutOptions(Object.keys(data.seizedBreakdown))} series={Object.values(data.seizedBreakdown) as number[]} /></div></div>
             </div>

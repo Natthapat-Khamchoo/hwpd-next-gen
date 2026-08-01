@@ -35,8 +35,10 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ }) => {
   };
 
   const kpis = [
-    { c: 'text-danger', i: 'fa-handcuffs', v: t.arrest, l: 'จับกุม' },
-    { c: 'text-warning', i: 'fa-file-invoice', v: t.v20, l: 'ว.20' },
+    // สองตัวนี้คนละเรื่อง: arrest นับใบรายงานจับกุม (คดีอาญา) ส่วน v20 คือยอดคดีจราจร
+    // ที่เจ้าหน้าที่กรอกในผลการปฏิบัติประจำวัน ใช้คำเดียวกับข้อความ LINE ของระบบเดิม
+    { c: 'text-danger', i: 'fa-handcuffs', v: t.arrest, l: 'จับกุมคดีอาญา' },
+    { c: 'text-warning', i: 'fa-file-invoice', v: t.v20, l: 'คดีจราจร (ว.20)' },
     { c: 'text-primary', i: 'fa-road', v: t.v43, l: 'ว.43' },
     { c: 'text-info', i: 'fa-hands-holding-child', v: t.volunteer, l: 'จิตอาสา' },
     { c: 'text-success', i: 'fa-shield-halved', v: t.royalGuard, l: 'รับเสด็จ' },
@@ -106,13 +108,13 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ }) => {
           <>
             <div className="row g-4 mb-4">
               <div className="col-12">
-                <div className="glass-card"><h5 className="text-white mb-1"><i className="fa-solid fa-layer-group text-info"></i> ผลการปฏิบัติงานทั่วไปและจิตอาสา</h5><p className="small text-white-50 mb-3">เปรียบเทียบ ว.20 · บริการ · จิตอาสา แยกตามสถานี</p>
-                  <ReactApexChart type="bar" height={320} options={vBarOptions(bs.map((s: any) => s.name), ['#ffc107', '#0dcaf0', '#20c997'])} series={[{ name: 'ว.20', data: bs.map((s: any) => s.v20) }, { name: 'บริการ', data: bs.map((s: any) => s.service) }, { name: 'จิตอาสา', data: bs.map((s: any) => s.volunteer) }]} />
+                <div className="glass-card"><h5 className="text-white mb-1"><i className="fa-solid fa-layer-group text-info"></i> ผลการปฏิบัติงานทั่วไปและจิตอาสา</h5><p className="small text-white-50 mb-3">เปรียบเทียบคดีจราจร (ว.20) · บริการ · จิตอาสา แยกตามสถานี</p>
+                  <ReactApexChart type="bar" height={320} options={vBarOptions(bs.map((s: any) => s.name), ['#ffc107', '#0dcaf0', '#20c997'])} series={[{ name: 'คดีจราจร', data: bs.map((s: any) => s.v20) }, { name: 'บริการ', data: bs.map((s: any) => s.service) }, { name: 'จิตอาสา', data: bs.map((s: any) => s.volunteer) }]} />
                 </div>
               </div>
             </div>
             <div className="row g-4 mb-4">
-              <div className="col-12 col-lg-6"><div className="glass-card h-100"><h5 className="text-danger mb-1"><i className="fa-solid fa-handcuffs"></i> สถิติการจับกุมแยกตามสถานี</h5><p className="small text-white-50 mb-3">เปรียบเทียบผลงานการจับกุมของแต่ละสถานี</p><ReactApexChart type="bar" height={300} options={hBarOptions(bs.map((s: any) => s.name), '#ef4444')} series={[{ name: 'จับกุม', data: bs.map((s: any) => s.arrest) }]} /></div></div>
+              <div className="col-12 col-lg-6"><div className="glass-card h-100"><h5 className="text-danger mb-1"><i className="fa-solid fa-handcuffs"></i> สถิติการจับกุมคดีอาญาแยกตามสถานี</h5><p className="small text-white-50 mb-3">เปรียบเทียบผลงานการจับกุมคดีอาญาของแต่ละสถานี</p><ReactApexChart type="bar" height={300} options={hBarOptions(bs.map((s: any) => s.name), '#ef4444')} series={[{ name: 'คดีอาญา', data: bs.map((s: any) => s.arrest) }]} /></div></div>
               <div className="col-12 col-lg-6"><div className="glass-card h-100"><h5 className="text-success mb-1"><i className="fa-solid fa-shield-halved text-warning"></i> ภารกิจรับเสด็จแยกตามสถานี</h5><p className="small text-white-50 mb-3">เปรียบเทียบจำนวนครั้งการปฏิบัติภารกิจรับเสด็จ</p><ReactApexChart type="bar" height={300} options={hBarOptions(bs.map((s: any) => s.name), '#20c997')} series={[{ name: 'รับเสด็จ', data: bs.map((s: any) => s.royalGuard) }]} /></div></div>
             </div>
             <div className="row g-4 mb-4">
