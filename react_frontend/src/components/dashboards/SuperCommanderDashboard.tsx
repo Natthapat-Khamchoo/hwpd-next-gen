@@ -70,7 +70,7 @@ export const SuperCommanderDashboard: React.FC<{ onViewDivision?: (station: stri
   const totals = data?.totals || {};
 
   const [searchOpen, setSearchOpen] = useState(false);
-  // ผบก. ใช้แดชบอร์ดงานสืบสวนเป็นหน้าหลัก จึงเปิดหน้านี้ก่อน ภาพรวมอยู่เมนูถัดไป
+  // ผบก. ใช้ HWPD DASHBOARD เป็นหน้าหลัก จึงเปิดหน้านี้ก่อน ภาพรวมอยู่เมนูถัดไป
   const [view, setView] = useState<'overview' | 'invest'>('invest');
 
   const deepSearch = () => {
@@ -96,7 +96,7 @@ export const SuperCommanderDashboard: React.FC<{ onViewDivision?: (station: stri
           <div className="sidebar-menu">
             <div className={`sidebar-item ${view === 'invest' ? 'active' : ''}`}
                  onClick={() => { close(); setView('invest'); }}>
-              <i className="fa-solid fa-magnifying-glass-chart"></i> แดชบอร์ดงานสืบสวน
+              <i className="fa-solid fa-magnifying-glass-chart"></i> HWPD DASHBOARD
             </div>
             <div className={`sidebar-item ${view === 'overview' ? 'active' : ''}`}
                  onClick={() => { close(); setView('overview'); }}>

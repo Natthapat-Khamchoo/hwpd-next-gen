@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 
 /**
- * ฝังแดชบอร์ดงานสืบสวน (คนละแอป คนละโดเมน) ไว้ในหน้า ผบก.
+ * ฝัง HWPD DASHBOARD (คนละแอป คนละโดเมน) ไว้ในหน้า ผบก.
  *
  * ปลายทางตั้ง CSP ไว้ว่า
  *   Content-Security-Policy: frame-ancestors 'self' https://hwpd-next-gen.vercel.app
@@ -36,7 +36,7 @@ export const InvestDashboardPanel: React.FC = () => {
          style={{ height: 'calc(100vh - 150px)', minHeight: 560 }}>
       <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 px-3 py-2 border-bottom border-secondary flex-shrink-0">
         <h5 className="text-white m-0">
-          <i className="fa-solid fa-magnifying-glass-chart text-warning"></i> แดชบอร์ดงานสืบสวน
+          <i className="fa-solid fa-magnifying-glass-chart text-warning"></i> HWPD DASHBOARD
         </h5>
         <a className="btn btn-sm btn-outline-warning" href={SRC} target="_blank" rel="noreferrer">
           <i className="fa-solid fa-arrow-up-right-from-square"></i> เปิดในแท็บใหม่
@@ -48,7 +48,7 @@ export const InvestDashboardPanel: React.FC = () => {
           <i className="fa-solid fa-shield-halved text-warning mb-3" style={{ fontSize: '2.5rem' }}></i>
           <h6 className="text-white">ฝังหน้านี้ไม่ได้จากโดเมนปัจจุบัน</h6>
           <p className="text-white-50 small mb-3">
-            แดชบอร์ดงานสืบสวนอนุญาตให้ฝังได้เฉพาะจาก <code>hwpd-next-gen.vercel.app</code><br />
+            HWPD DASHBOARD อนุญาตให้ฝังได้เฉพาะจาก <code>hwpd-next-gen.vercel.app</code><br />
             แต่ระบบนี้เปิดอยู่ที่โดเมนอื่น เบราว์เซอร์จึงบล็อกไว้
           </p>
           <p className="text-white-50 small mb-3">
@@ -56,7 +56,7 @@ export const InvestDashboardPanel: React.FC = () => {
             <code> hwpd-invest-dashboard</code> ระหว่างนี้กดปุ่มด้านบนเปิดในแท็บใหม่ได้ตามปกติ
           </p>
           <a className="btn btn-warning fw-bold" href={SRC} target="_blank" rel="noreferrer">
-            เปิดแดชบอร์ดงานสืบสวน
+            เปิด HWPD DASHBOARD
           </a>
         </div>
       ) : (
@@ -64,12 +64,12 @@ export const InvestDashboardPanel: React.FC = () => {
         <div className="position-relative w-100 flex-grow-1" style={{ overflow: 'hidden' }}>
           {state === 'loading' && (
             <div className="position-absolute top-50 start-50 translate-middle text-white-50 small" style={{ zIndex: 2 }}>
-              กำลังโหลดแดชบอร์ดงานสืบสวน...
+              กำลังโหลด HWPD DASHBOARD...
             </div>
           )}
           <iframe
             src={SRC}
-            title="บก.ทล. แดชบอร์ดงานสืบสวน"
+            title="HWPD DASHBOARD"
             className="position-absolute"
             style={{
               border: 'none',
