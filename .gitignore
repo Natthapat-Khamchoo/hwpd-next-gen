@@ -23,8 +23,9 @@ env/
 *.key
 .clasp.json
 
-# Account passwords produced by scripts/create_station_users.py
-credentials_*.csv
+# Account passwords produced by scripts/create_station_users.py และไฟล์ที่แจกต่อจากนั้น
+# ไม่ผูกกับนามสกุล เพราะรหัสผ่านชุดเดียวกันถูกส่งออกเป็น .xlsx ให้แต่ละหน่วยด้วย
+credentials_*
 
 # Environment values exported for Render by scripts/export_render_env.py
 render-env-*.txt
