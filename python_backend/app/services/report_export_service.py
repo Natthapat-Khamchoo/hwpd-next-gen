@@ -21,7 +21,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from app.core.config import MASTER_SHEET_ID
-from app.services import national_service, sheets_service, tag_stats_service
+from app.services import national_service, report_cache_service, sheets_service, tag_stats_service
 
 logger = logging.getLogger(__name__)
 
@@ -135,9 +135,19 @@ def _header_row(worksheet, row: int, labels: List[str], first_width: int = 18) -
 def _build_tag_report(report: Dict[str, Any], start: str, end: str) -> bytes:
     """ตารางยอดรายป้ายหมวด — แถวคือ กก. คอลัมน์คือ ป้าย x (ราย/คน/ใบสั่ง)"""
     tags = report["tags"]
-    data = tag_stats_service.aggregate_national_tags(start, end)
-    by_division = data["byDivision"]
-    totals = data["total"]
+
+    # อ่านจากแคชก่อน สแกนสดต้องเปิด 2 ตาราง x 8 กก. ซึ่งชนโควตา Google ได้ถ้ามีคน
+    # กดพร้อมกัน ตกไปสแกนสดเฉพาะตอนแคชยังไม่ครอบคลุมวันไหนเลย
+    cached = report_cache_service.read_range(start, end)
+    if cached["cachedDates"]:
+        by_division = cached["byDivision"]
+        totals = cached["total"]
+        missing = cached["missingDates"]
+    else:
+        data = tag_stats_service.aggregate_national_tags(start, end)
+        by_division = data["byDivision"]
+        totals = data["total"]
+        missing = []
 
     workbook = Workbook()
     worksheet = workbook.active
@@ -183,6 +193,12 @@ def _build_tag_report(report: Dict[str, Any], start: str, end: str) -> bytes:
 
     worksheet.cell(row=line + 2, column=1,
                    value="ราย/คน มาจากรายงานจับกุม ส่วนใบสั่งมาจากยอดข้อหาในผลการปฏิบัติประจำวัน")
+    # บอกให้เห็นบนหน้ารายงานเลย ไม่งั้นยอดที่ขาดวันจะถูกอ่านว่าไม่มีผลงาน
+    if missing:
+        shown = ", ".join(missing[:8]) + (" ..." if len(missing) > 8 else "")
+        cell = worksheet.cell(row=line + 3, column=1,
+                              value=f"ยังไม่มีข้อมูลในแคช {len(missing)} วัน: {shown} — สั่งอัปเดตแคชแล้วออกใหม่")
+        cell.font = Font(color="C00000", bold=True)
     worksheet.freeze_panes = f"B{header_row + 1}"
 
     stream = io.BytesIO()

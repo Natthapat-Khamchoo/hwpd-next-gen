@@ -54,6 +54,7 @@ from app.services import (
     query_service,
     reference_admin_service,
     reference_service,
+    report_cache_service,
     report_export_service,
     search_service,
     sheets_service,
@@ -161,6 +162,9 @@ NATIONAL_VIEW_ROLES = {"HQ_Admin", "Super_Commander"}
 
 # กันไม่ให้รอบรวมยอดสองรอบเขียนทับกันเองเมื่อถูก trigger ซ้อน
 _aggregate_lock = threading.Lock()
+
+# แคชรายงานก็เขียนชีตเดียวกัน จึงต้องกันซ้อนแยกอีกตัว
+_report_cache_lock = threading.Lock()
 
 # ผลรอบรวมยอดล่าสุด ให้ /api/admin/aggregate-status อ่านไปตรวจว่ารอบที่แล้วผ่านจริงไหม
 _aggregate_status_lock = threading.Lock()
@@ -649,6 +653,45 @@ def trigger_aggregate_national(
     start, end = national_service.default_range(max(1, min(days, 90)))
     background.add_task(_run_aggregate, start, end)
     return {"status": "accepted", "message": f"เริ่มรวมยอด {start} ถึง {end} แล้ว", "start": start, "end": end}
+
+
+def _run_report_cache(dates: List[str]) -> None:
+    """สร้างแคชในเบื้องหลัง — สแกน 2 ตาราง x 8 กก. ใช้เวลาเป็นนาที"""
+    if not _report_cache_lock.acquire(blocking=False):
+        logger.warning("มีรอบสร้างแคชรายงานทำงานอยู่แล้ว ข้ามรอบนี้ไป")
+        return
+    try:
+        result = report_cache_service.refresh(dates)
+        logger.info("สร้างแคชรายงานเสร็จแล้ว: %s", result)
+    except Exception:
+        logger.exception("สร้างแคชรายงานไม่สำเร็จ")
+    finally:
+        _report_cache_lock.release()
+
+
+@app.post("/api/admin/report-cache/refresh", status_code=202)
+def refresh_report_cache(
+    background: BackgroundTasks,
+    days: int = 7,
+    x_cron_secret: Optional[str] = Header(None),
+    x_token: Optional[str] = Header(None),
+):
+    """
+    สั่งสร้างแคชสถิติรายงานย้อนหลัง N วัน ตอบกลับทันทีแล้วทำต่อเบื้องหลัง
+
+    เรียกได้สองทาง เหมือน aggregate-national: ผู้ใช้ระดับ บก. หรือตัวตั้งเวลาที่ส่ง
+    x-cron-secret มา
+    """
+    if not _cron_authorized(x_cron_secret):
+        session = verify_session_token(x_token or "")
+        if not session or str(session.get("r") or "") not in NATIONAL_VIEW_ROLES:
+            raise HTTPException(status_code=401, detail="ต้องเข้าสู่ระบบหรือส่ง x-cron-secret ที่ถูกต้อง")
+
+    start, end = national_service.default_range(max(1, min(days, 90)))
+    dates = report_cache_service.date_range(start, end)
+    background.add_task(_run_report_cache, dates)
+    return {"status": "accepted", "message": f"เริ่มสร้างแคช {start} ถึง {end} แล้ว",
+            "start": start, "end": end, "days": len(dates)}
 
 
 @app.get("/api/reports/catalog/exportable")

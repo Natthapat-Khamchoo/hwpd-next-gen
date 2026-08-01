@@ -99,3 +99,25 @@ jobs:
 
           echo "::error::รอครบ 5 นาทีแล้วรอบนี้ยังไม่รายงานผล — ตรวจ log ของ service"
           exit 1
+
+      - name: อัปเดตแคชสถิติรายงาน
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          BASE_URL: https://hwpd-backend.onrender.com
+        run: |
+          set -euo pipefail
+
+          # แคชนี้เลี้ยงหน้าออกรายงานของ บก. ถ้าไม่อัปเดต การกดออกรายงานจะไปสแกนชีตสด
+          # 2 ตาราง x 8 กก. ซึ่งชนโควตา Google ได้เมื่อมีคนกดพร้อมกัน
+          #
+          # ไม่ทำให้ workflow แดงถ้าล้ม เพราะการรวมยอดระดับประเทศข้างบนสำคัญกว่า และ
+          # การออกรายงานยังตกไปสแกนสดได้อยู่ แค่ช้าลง
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 120 --retry 2 --retry-delay 20 \
+            -X POST "${BASE_URL}/api/admin/report-cache/refresh?days=7" \
+            -H "x-cron-secret: ${CRON_SECRET}") || code=000
+
+          if [ "${code}" = "202" ]; then
+            echo "::notice::สั่งอัปเดตแคชรายงานแล้ว"
+          else
+            echo "::warning::สั่งอัปเดตแคชรายงานไม่สำเร็จ (HTTP ${code}) — การออกรายงานจะตกไปสแกนสด"
+          fi

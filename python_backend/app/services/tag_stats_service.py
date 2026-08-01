@@ -84,6 +84,67 @@ def _blank() -> Dict[str, int]:
     return {"cases": 0, "suspects": 0, "citations": 0}
 
 
+def aggregate_by_date_station(division: str, start: str, end: str,
+                              mapping: Optional[Dict[str, Set[str]]] = None
+                              ) -> Dict[str, Dict[str, Dict[str, Dict[str, int]]]]:
+    """
+    ยอดรายป้ายแยกตาม (วันที่, สถานี) — ใช้สร้าง tb_ReportCache
+
+    คืน {วันที่: {สถานี: {ป้าย: {cases, suspects, citations}}}}
+
+    เก็บละเอียดถึงระดับสถานีตามที่ชีต cache เดิมทำไว้ รวมขึ้นเป็นระดับ กก. หรือ
+    ระดับประเทศทีหลังได้ แต่ถ้าเก็บหยาบไว้ก่อนจะแตกกลับไม่ได้
+    """
+    mapping = mapping if mapping is not None else charge_tags()
+    if not mapping:
+        return {}
+
+    spreadsheet_id = get_target_db_id(f"{division}0")
+    out: Dict[str, Dict[str, Dict[str, Dict[str, int]]]] = defaultdict(lambda: defaultdict(lambda: defaultdict(_blank)))
+
+    def usable(record):
+        if str(record.get(query_service.COL_STATUS, "")) not in COUNTED_STATUSES:
+            return None
+        if not query_service.is_active(record.get(query_service.COL_IS_ACTIVE)):
+            return None
+        date_value = str(record.get(query_service.COL_ACTUAL_DATE, "") or "")[:10]
+        if not date_value or (start and date_value < start) or (end and date_value > end):
+            return None
+        return date_value
+
+    try:
+        for record in query_service.read_rows(spreadsheet_id, "tb_Arrests"):
+            date_value = usable(record)
+            if not date_value:
+                continue
+            station = str(record.get(query_service.COL_STATION_ID, "") or "").strip()
+            suspects = query_service._to_int(record.get(ARREST_SUSPECTS_COLUMN)) or 1
+            for tag in _tags_in(record.get(ARREST_CHARGES_COLUMN, ""), mapping):
+                out[date_value][station][tag]["cases"] += 1
+                out[date_value][station][tag]["suspects"] += suspects
+    except Exception as exc:
+        logger.warning("อ่าน tb_Arrests ของ กก.%s ไม่ได้: %s", division, exc)
+
+    try:
+        for record in query_service.read_rows(spreadsheet_id, "tb_DailyResult"):
+            date_value = usable(record)
+            if not date_value:
+                continue
+            station = str(record.get(query_service.COL_STATION_ID, "") or "").strip()
+            for part in str(record.get(DAILY_CHARGES_COLUMN, "") or "").split("|"):
+                part = part.strip()
+                if not part:
+                    continue
+                found = _AMOUNT.search(part)
+                amount = int(found.group(1)) if found else 0
+                for tag in _tags_in(part, mapping):
+                    out[date_value][station][tag]["citations"] += amount
+    except Exception as exc:
+        logger.warning("อ่าน tb_DailyResult ของ กก.%s ไม่ได้: %s", division, exc)
+
+    return {d: {s: dict(tags) for s, tags in stations.items()} for d, stations in out.items()}
+
+
 def aggregate_division_tags(division: str, start: str, end: str,
                             mapping: Optional[Dict[str, Set[str]]] = None) -> Dict[str, Dict[str, int]]:
     """ยอดรายป้ายของ กก. เดียว"""
