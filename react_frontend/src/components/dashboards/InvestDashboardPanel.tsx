@@ -30,8 +30,11 @@ export const InvestDashboardPanel: React.FC = () => {
   }, []);
 
   return (
-    <div className="glass-card w-100 p-0 overflow-hidden" style={{ minHeight: '70vh' }}>
-      <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 px-3 py-2 border-bottom border-secondary">
+    // กินพื้นที่ที่เหลือทั้งหมดใต้แถบหัวเรื่องของ dashboard แทนการตั้ง vh ตายตัว
+    // ค่าเดิม 70vh เตี้ยเกินไปจนต้องเลื่อนในกรอบซ้อนกับเลื่อนทั้งหน้า
+    <div className="glass-card w-100 p-0 overflow-hidden d-flex flex-column"
+         style={{ height: 'calc(100vh - 150px)', minHeight: 560 }}>
+      <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 px-3 py-2 border-bottom border-secondary flex-shrink-0">
         <h5 className="text-white m-0">
           <i className="fa-solid fa-magnifying-glass-chart text-warning"></i> แดชบอร์ดงานสืบสวน
         </h5>
@@ -41,7 +44,7 @@ export const InvestDashboardPanel: React.FC = () => {
       </div>
 
       {state === 'blocked' ? (
-        <div className="p-4 text-center" style={{ minHeight: '60vh' }}>
+        <div className="p-4 text-center flex-grow-1 d-flex flex-column justify-content-center">
           <i className="fa-solid fa-shield-halved text-warning mb-3" style={{ fontSize: '2.5rem' }}></i>
           <h6 className="text-white">ฝังหน้านี้ไม่ได้จากโดเมนปัจจุบัน</h6>
           <p className="text-white-50 small mb-3">
@@ -57,7 +60,8 @@ export const InvestDashboardPanel: React.FC = () => {
           </a>
         </div>
       ) : (
-        <div className="position-relative w-100" style={{ height: '72vh', overflow: 'hidden' }}>
+        // flex-grow-1 ให้กรอบยืดเต็มพื้นที่ที่เหลือของการ์ด ไม่ต้องคำนวณความสูงซ้ำ
+        <div className="position-relative w-100 flex-grow-1" style={{ overflow: 'hidden' }}>
           {state === 'loading' && (
             <div className="position-absolute top-50 start-50 translate-middle text-white-50 small" style={{ zIndex: 2 }}>
               กำลังโหลดแดชบอร์ดงานสืบสวน...

@@ -70,8 +70,8 @@ export const SuperCommanderDashboard: React.FC<{ onViewDivision?: (station: stri
   const totals = data?.totals || {};
 
   const [searchOpen, setSearchOpen] = useState(false);
-  // ผบก. ใช้แดชบอร์ดงานสืบสวนอยู่แล้ว จึงต้องเข้าถึงได้จากที่เดียวกัน
-  const [view, setView] = useState<'overview' | 'invest'>('overview');
+  // ผบก. ใช้แดชบอร์ดงานสืบสวนเป็นหน้าหลัก จึงเปิดหน้านี้ก่อน ภาพรวมอยู่เมนูถัดไป
+  const [view, setView] = useState<'overview' | 'invest'>('invest');
 
   const deepSearch = () => {
     setSearchOpen(true);
@@ -94,13 +94,13 @@ export const SuperCommanderDashboard: React.FC<{ onViewDivision?: (station: stri
             </div>
           </div>
           <div className="sidebar-menu">
-            <div className={`sidebar-item ${view === 'overview' ? 'active' : ''}`}
-                 onClick={() => { close(); setView('overview'); }}>
-              <i className="fa-solid fa-earth-asia"></i> ภาพรวมระดับประเทศ (บก.ทล.)
-            </div>
             <div className={`sidebar-item ${view === 'invest' ? 'active' : ''}`}
                  onClick={() => { close(); setView('invest'); }}>
               <i className="fa-solid fa-magnifying-glass-chart"></i> แดชบอร์ดงานสืบสวน
+            </div>
+            <div className={`sidebar-item ${view === 'overview' ? 'active' : ''}`}
+                 onClick={() => { close(); setView('overview'); }}>
+              <i className="fa-solid fa-earth-asia"></i> ภาพรวมระดับประเทศ (บก.ทล.)
             </div>
             <div className="px-4 mt-3 mb-2 small text-warning">เจาะลึกรายกองกำกับ:</div>
             {[1, 2, 3, 4, 5, 6, 7, 8].map((d) => {
