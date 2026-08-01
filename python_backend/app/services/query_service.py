@@ -13,6 +13,8 @@ report_service เตรียมแถวไปเขียน ส่วนโ�
 import json
 import logging
 import re
+import threading
+import time
 from collections import Counter
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -157,7 +159,7 @@ def pending_for_station(
     items: List[Dict[str, Any]] = []
 
     for table, label, icon in tables:
-        for record in read_rows(spreadsheet_id, table):
+        for record in cached_rows(spreadsheet_id, table):
             if not _is_pending(record):
                 continue
             if not check_station_match(station_id, record.get(COL_STATION_ID, "")):
@@ -185,7 +187,7 @@ def pending_for_user(station_id: str, username: str) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
 
     for table, label, icon in GENERAL_TABLES + FUEL_TABLES:
-        for record in read_rows(spreadsheet_id, table):
+        for record in cached_rows(spreadsheet_id, table):
             if _is_pending(record) and record.get(COL_ACTION_BY, "") == username:
                 items.append(_pending_item(record, table, label, icon))
 
@@ -462,7 +464,7 @@ def division_summary(station_id: str, start: str, end: str) -> Dict[str, Any]:
     }
 
     for table in SUMMARY_TABLES + ["tb_Accidents"]:
-        for record in read_rows(spreadsheet_id, table):
+        for record in cached_rows(spreadsheet_id, table):
             row_station = record.get(COL_STATION_ID, "")
             if row_station not in per_station:
                 continue
@@ -516,6 +518,57 @@ def division_summary(station_id: str, start: str, end: str) -> Dict[str, Any]:
     }
 
 
+# แคชระดับตารางสำหรับ "เส้นทางที่อ่านอย่างเดียว" เท่านั้น
+#
+# Google ให้อ่าน 60 ครั้ง/นาที ต่อหนึ่งบัญชี และทั้งระบบใช้บัญชีเดียว หน้าคิวของสถานี
+# อ่าน 6 ตารางต่อการเปิดหนึ่งครั้ง จึงเปิดได้ราว 10 ครั้ง/นาทีทั้งระบบ ทั้งที่มีหัวหน้า
+# สถานี 44 คน เช้าวันจันทร์เปิดพร้อมกันคือชนโควตาแน่นอน (เจอ 429 มาแล้วตอนทดสอบ)
+#
+# ตั้งใจแยกเป็นฟังก์ชันใหม่แทนการใส่แคชลง read_rows เพราะ read_rows คืน `_row` ที่
+# find_record กับ national_service เอาไปเขียนต่อ ถ้าเลขแถวมาจากแคชแล้วชีตเลื่อน จะ
+# กลายเป็นเขียนทับผิดแถว ลืมเปิดแคชตรงไหนก็แค่ไม่เร็วขึ้น ไม่ใช่เขียนผิด
+_ROW_CACHE_TTL_SECONDS = 30
+_row_cache: Dict[Tuple[str, str], Tuple[float, List[Dict[str, Any]]]] = {}
+_row_cache_lock = threading.Lock()
+
+
+def cached_rows(spreadsheet_id: str, table_name: str) -> List[Dict[str, Any]]:
+    """
+    เหมือน read_rows แต่ใช้ผลเดิมซ้ำได้ภายใน 30 วินาที
+
+    ห้ามใช้กับเส้นทางที่จะเอา `_row` ไปเขียน และ **ห้ามแก้ค่าใน dict ที่คืนมา**
+    เพราะเป็นตัวเดียวกับที่คนอื่นจะได้ไปในรอบถัดไป
+    """
+    key = (spreadsheet_id, table_name)
+    now = time.time()
+    with _row_cache_lock:
+        hit = _row_cache.get(key)
+        if hit and (now - hit[0]) < _ROW_CACHE_TTL_SECONDS:
+            return hit[1]
+
+    rows = read_rows(spreadsheet_id, table_name)
+    with _row_cache_lock:
+        _row_cache[key] = (time.time(), rows)
+    return rows
+
+
+def invalidate_cache(spreadsheet_id: str = "", table_name: str = "") -> None:
+    """
+    ล้างแคชหลังเขียน ไม่งั้นคนส่งรายงานจะไม่เห็นของตัวเองในคิวอีก 30 วินาที
+    แล้วกดส่งซ้ำ
+
+    ไม่ระบุอะไรมา = ล้างทั้งหมด (ใช้ในเทส)
+    """
+    with _row_cache_lock:
+        if not spreadsheet_id and not table_name:
+            _row_cache.clear()
+            return
+        for key in [k for k in _row_cache
+                    if (not spreadsheet_id or k[0] == spreadsheet_id)
+                    and (not table_name or k[1] == table_name)]:
+            _row_cache.pop(key, None)
+
+
 def find_record(station_id: str, table_name: str, record_id: str) -> Dict[str, Any]:
     """หาแถวตาม recordId ขว้าง RecordNotFound ถ้าไม่เจอ"""
     spreadsheet_id = get_target_db_id(station_id)
@@ -548,6 +601,7 @@ def set_status(record: Dict[str, Any], table_name: str, status: str, active: boo
         ],
         value_input_option="RAW",
     )
+    invalidate_cache(record["_spreadsheetId"], table_name)
     logger.info("เปลี่ยนสถานะ %s ใน %s เป็น %s", record.get(COL_RECORD_ID, ""), table_name, status)
 
 
@@ -601,7 +655,7 @@ def station_overview(
     approved = 0
 
     for table, label, icon in GENERAL_TABLES + FUEL_TABLES:
-        for record in read_rows(spreadsheet_id, table):
+        for record in cached_rows(spreadsheet_id, table):
             if not check_station_match(station_id, record.get(COL_STATION_ID, "")):
                 continue
 

@@ -263,7 +263,11 @@ def persist_report(prepared: Dict[str, Any]) -> Dict[str, Any]:
     ถ้าเขียนไม่ได้ให้ตอบ error ไม่ใช่ปล่อยผ่านแล้วส่ง LINE ราวกับบันทึกสำเร็จ
     """
     try:
-        return append_report_row(prepared["targetDbId"], prepared["tableName"], prepared["rowData"])
+        result = append_report_row(prepared["targetDbId"], prepared["tableName"], prepared["rowData"])
+        # ล้างแคชตารางนี้ทันที ไม่งั้นคนที่เพิ่งส่งจะไม่เห็นรายการตัวเองในคิวอีกครึ่งนาที
+        # แล้วกดส่งซ้ำ กลายเป็นรายงานซ้ำในฐานข้อมูล
+        query_service.invalidate_cache(prepared["targetDbId"], prepared["tableName"])
+        return result
     except SheetNotConfigured as exc:
         logger.error("บันทึกลง Sheet ไม่ได้เพราะยังไม่ได้ตั้งค่า: %s", exc)
         raise HTTPException(status_code=503, detail=str(exc)) from exc

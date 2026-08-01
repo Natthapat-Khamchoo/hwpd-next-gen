@@ -4,6 +4,7 @@ No network — the sheet reads and writes are stubbed.
 """
 
 import unittest
+from contextlib import contextmanager
 from unittest import mock
 
 from app.core.schema import get_columns
@@ -72,14 +73,24 @@ MISSION_ROWS = [
 ]
 
 
+@contextmanager
 def stub_sheets(tables):
-    """แทน read_table ด้วยข้อมูลจำลอง ตารางที่ไม่ได้ระบุถือว่ายังไม่มีแท็บ"""
+    """
+    แทน read_table ด้วยข้อมูลจำลอง ตารางที่ไม่ได้ระบุถือว่ายังไม่มีแท็บ
+
+    ล้างแคชระดับตารางทั้งก่อนและหลัง เพราะ query_service เก็บผลไว้ 30 วินาที
+    เทสที่วางข้อมูลจำลองชุดใหม่ต้องไม่เห็นของที่เทสก่อนหน้าอ่านค้างไว้
+    """
     def fake(spreadsheet_id, table_name):
         if table_name in tables:
             return tables[table_name]
         raise query_service.sheets_service.SheetWriteError(f"ไม่พบตาราง {table_name} ในสเปรดชีต")
 
-    return mock.patch.object(query_service.sheets_service, "read_table", side_effect=fake)
+    query_service.invalidate_cache()
+    # yield ตัว mock ออกไปด้วย เทสที่นับจำนวนการอ่านใช้ `as stub` แล้วดู call_count
+    with mock.patch.object(query_service.sheets_service, "read_table", side_effect=fake) as stub:
+        yield stub
+    query_service.invalidate_cache()
 
 
 def stub_router():
