@@ -30,10 +30,12 @@ export const InvestDashboardPanel: React.FC = () => {
   }, []);
 
   return (
-    // กินพื้นที่ที่เหลือทั้งหมดใต้แถบหัวเรื่องของ dashboard แทนการตั้ง vh ตายตัว
-    // ค่าเดิม 70vh เตี้ยเกินไปจนต้องเลื่อนในกรอบซ้อนกับเลื่อนทั้งหน้า
+    // 40px คือ padding บน+ล่างของ main-content (20+20) ที่การ์ดนี้อยู่ข้างใน
+    //
+    // เคยหักไว้ 150px เผื่อแถบหัวเรื่องของหน้า ผบก. แต่แถบนั้นอยู่ในบล็อก overview
+    // จึงไม่ถูก render ตอนดูหน้านี้ ผลคือเหลือที่ว่างด้านล่าง 130px วัดจากหน้าจริง
     <div className="glass-card w-100 p-0 overflow-hidden d-flex flex-column"
-         style={{ height: 'calc(100vh - 150px)', minHeight: 560 }}>
+         style={{ height: 'calc(100vh - 40px)', minHeight: 560 }}>
       <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 px-3 py-2 border-bottom border-secondary flex-shrink-0">
         <h5 className="text-white m-0">
           <i className="fa-solid fa-magnifying-glass-chart text-warning"></i> HWPD DASHBOARD
