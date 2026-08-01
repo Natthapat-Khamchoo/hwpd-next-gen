@@ -230,6 +230,52 @@ export const api = {
     }
   },
 
+  /** ตารางอ้างอิงที่ บก. แก้ได้ — kind: charges | seized-items | report-catalog */
+  getReferenceTable: async (kind: string, token?: string): Promise<{
+    status: string; data?: any[]; keyColumn?: string; activeColumn?: string | null; label?: string; message?: string;
+  }> => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/reference/${kind}`, { headers: { 'x-token': token || '' } });
+      if (res.status === 403) return { status: 'error', message: 'ไม่มีสิทธิ์แก้ข้อมูลอ้างอิงของระบบ' };
+      return await res.json();
+    } catch {
+      return { status: 'error', message: OFFLINE_MESSAGE };
+    }
+  },
+
+  saveReferenceRow: async (
+    kind: string,
+    values: Record<string, string>,
+    originalKey: string | null,
+    token?: string,
+  ): Promise<{ status: string; message?: string }> => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/reference/${kind}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-token': token || '' },
+        body: JSON.stringify({ values, originalKey }),
+      });
+      return await res.json();
+    } catch {
+      return { status: 'error', message: OFFLINE_MESSAGE };
+    }
+  },
+
+  setReferenceRowActive: async (
+    kind: string, key: string, active: boolean, token?: string,
+  ): Promise<{ status: string; message?: string }> => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/reference/${kind}/active`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-token': token || '' },
+        body: JSON.stringify({ key, active }),
+      });
+      return await res.json();
+    } catch {
+      return { status: 'error', message: OFFLINE_MESSAGE };
+    }
+  },
+
   /**
    * ค้นหาเชิงลึก — scope 'division' คือในกองตัวเอง 'national' คือทุก กก.
    *

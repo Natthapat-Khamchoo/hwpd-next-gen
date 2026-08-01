@@ -5,6 +5,7 @@ import { getNowDateLocal } from '../../utils/formHelpers';
 import { ReactApexChart, vBarOptions } from './chartHelpers';
 import { DashboardLayout, SideItem } from './DashboardLayout';
 import { UserDirectory } from './UserDirectory';
+import { ReferenceTableEditor } from './ReferenceTableEditor';
 
 const firstOfMonth = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]; };
 
@@ -85,8 +86,11 @@ export const HqAdminDashboard: React.FC = () => {
         )}
 
         {view === 'users' && <UserDirectory />}
+        {view === 'charges' && <ReferenceTableEditor kind="charges" />}
+        {view === 'items' && <ReferenceTableEditor kind="seized-items" />}
+        {view === 'reports' && <ReferenceTableEditor kind="report-catalog" />}
 
-        {view !== 'compare' && view !== 'users' && (
+        {!['compare', 'users', 'charges', 'items', 'reports'].includes(view) && (
           <div className="glass-card w-100 p-4 text-center py-5">
             <i className="fa-solid fa-database mb-3" style={{ fontSize: '2.5rem', color: '#c084fc' }}></i>
             <h5 className="text-white">{VIEW_TITLES[view]}</h5>

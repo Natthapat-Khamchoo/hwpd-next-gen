@@ -52,6 +52,7 @@ from app.services import (
     docs_service,
     national_service,
     query_service,
+    reference_admin_service,
     reference_service,
     search_service,
     sheets_service,
@@ -647,6 +648,87 @@ def trigger_aggregate_national(
     start, end = national_service.default_range(max(1, min(days, 90)))
     background.add_task(_run_aggregate, start, end)
     return {"status": "accepted", "message": f"เริ่มรวมยอด {start} ถึง {end} แล้ว", "start": start, "end": end}
+
+
+class ReferenceUpsertRequest(BaseModel):
+    """values คือค่าทั้งแถวตามชื่อคอลัมน์ ช่องที่ไม่ส่งมาจะคงของเดิม"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    values: Dict[str, str]
+    originalKey: Optional[str] = None
+
+
+class ReferenceActiveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    active: bool
+
+
+def _require_hq(session: Dict[str, Any]) -> None:
+    if str(session.get("r") or "") not in NATIONAL_VIEW_ROLES:
+        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์แก้ข้อมูลอ้างอิงของระบบ")
+
+
+@app.get("/api/admin/reference/{kind}")
+def admin_reference_list(kind: str, session: Dict[str, Any] = Depends(current_session)):
+    """ตารางอ้างอิงที่แก้ได้ — ข้อหา / ประเภทของกลาง / รายการรายงาน"""
+    _require_hq(session)
+    try:
+        rows = reference_admin_service.list_rows(kind)
+    except reference_admin_service.ReferenceTableError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (SheetNotConfigured, SheetWriteError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    spec = reference_admin_service.REFERENCE_TABLES[kind]
+    return {
+        "status": "success",
+        "data": rows,
+        "keyColumn": spec["key"],
+        "activeColumn": spec["active"],
+        "label": spec["label"],
+    }
+
+
+@app.post("/api/admin/reference/{kind}")
+def admin_reference_upsert(
+    kind: str,
+    req: ReferenceUpsertRequest,
+    session: Dict[str, Any] = Depends(current_session),
+):
+    """เพิ่มหรือแก้แถวในตารางอ้างอิง"""
+    _require_hq(session)
+    try:
+        message = reference_admin_service.upsert(kind, req.values, req.originalKey)
+    except reference_admin_service.ReferenceTableError as exc:
+        return {"status": "error", "message": str(exc)}
+    except (SheetNotConfigured, SheetWriteError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"status": "success", "message": message}
+
+
+@app.post("/api/admin/reference/{kind}/active")
+def admin_reference_set_active(
+    kind: str,
+    req: ReferenceActiveRequest,
+    session: Dict[str, Any] = Depends(current_session),
+):
+    """
+    เปิด/ปิดใช้งานแถว ใช้แทนการลบ
+
+    ของเดิมลบแถวทิ้ง แต่ข้อหาที่ถูกลบยังถูกอ้างอยู่ในรายงานเก่า ปิดใช้งานได้ผลเหมือน
+    กันในสายตาคนกรอกฟอร์ม แต่ข้อมูลเดิมยังตามรอยได้และกดคืนได้
+    """
+    _require_hq(session)
+    try:
+        message = reference_admin_service.set_active(kind, req.key, req.active)
+    except reference_admin_service.ReferenceTableError as exc:
+        return {"status": "error", "message": str(exc)}
+    except (SheetNotConfigured, SheetWriteError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"status": "success", "message": message}
 
 
 @app.get("/api/search/division")
