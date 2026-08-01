@@ -54,9 +54,33 @@ const Loading: React.FC = () => (
   </div>
 );
 
+/**
+ * หน่วยที่กำลังเปิดดูอยู่ เมื่อผู้บริหารเจาะลึกลงหน่วยอื่น
+ *
+ * ของเดิมทำด้วยการเขียนทับ userData.station ใน localStorage ชั่วคราวแล้วโหลดหน้าใหม่
+ * (scSwitchToDivision / cmdSwitchToStation) ที่นี่เก็บเป็น state แล้วส่งเป็น prop แทน
+ * ได้พฤติกรรมเดียวกันโดยไม่ต้องแก้ตัวตนของคนที่ล็อกอินอยู่ ซึ่งถ้าพลาดคืนค่าไม่ทัน
+ * จะทำให้สิทธิ์และหน่วยของเจ้าตัวเพี้ยนไปทั้ง session
+ */
+interface ViewAs { station: string; label: string; from: string }
+
 const MainContent: React.FC = () => {
   const { user } = useAuth();
   const [currentView, setCurrentView] = useState<string>('main');
+  // เก็บเป็น stack เพราะเจาะได้สองชั้น (ผบก. -> กก. -> สถานี) กดกลับจากสถานีต้องได้ กก.
+  // ที่กำลังดูอยู่ ไม่ใช่ กก. ของตัวเอง
+  const [viewStack, setViewStack] = useState<ViewAs[]>([]);
+  const viewAs = viewStack.length ? viewStack[viewStack.length - 1] : null;
+
+  const drillTo = (view: string, station: string, label: string) => {
+    setViewStack((s) => [...s, { station, label, from: currentView }]);
+    setCurrentView(view);
+  };
+  const exitView = () => {
+    const top = viewStack[viewStack.length - 1];
+    setViewStack((s) => s.slice(0, -1));
+    setCurrentView(top?.from || roleHome(user?.role));
+  };
 
   useEffect(() => {
     if (user) setCurrentView(roleHome(user.role));
@@ -86,10 +110,27 @@ const MainContent: React.FC = () => {
       case 'fuel': return <FuelForm onBack={back} />;
       case 'history': return <MyHistoryForm onBack={back} />;
       case 'tools': return <ToolsForm onBack={back} />;
-      case 'station_admin': return <StationAdminDashboard onBack={back} />;
+      case 'station_admin': return (
+        <StationAdminDashboard
+          onBack={back}
+          viewStation={viewAs?.station}
+          onExitView={viewAs ? exitView : undefined}
+        />
+      );
       case 'hq': return <HqDashboard onBack={back} />;
-      case 'commander': return <CommanderDashboard onBack={back} onSwitchHQ={() => setCurrentView('hq')} />;
-      case 'super_commander': return <SuperCommanderDashboard />;
+      case 'commander': return (
+        <CommanderDashboard
+          onBack={back}
+          onSwitchHQ={() => setCurrentView('hq')}
+          viewStation={viewAs?.station}
+          viewLabel={viewAs?.label}
+          onExitView={viewAs ? exitView : undefined}
+          onViewStation={(id, label) => drillTo('station_admin', id, label)}
+        />
+      );
+      case 'super_commander': return (
+        <SuperCommanderDashboard onViewDivision={(station, label) => drillTo('commander', station, label)} />
+      );
       case 'hq_admin': return <HqAdminDashboard />;
       default: return <MainMenuGrid onSelectView={setCurrentView} />;
     }

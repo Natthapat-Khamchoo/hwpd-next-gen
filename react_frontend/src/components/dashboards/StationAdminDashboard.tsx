@@ -22,8 +22,17 @@ const stationName = (st?: string) => {
   return 'ส.ทล.' + s.substring(1) + ' กก.' + div;
 };
 
-export const StationAdminDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+interface Props {
+  onBack: () => void;
+  /** ดูสถานีอื่นแทนสถานีตัวเอง — ผู้กำกับการใช้เจาะลึกลงสถานีในกอง */
+  viewStation?: string;
+  onExitView?: () => void;
+}
+
+export const StationAdminDashboard: React.FC<Props> = ({ onBack, viewStation, onExitView }) => {
   const { user, logout } = useAuth();
+  // ของเดิมสลับ userData.station ชั่วคราวแล้วเรียก loadAdminView('overview') ใหม่
+  const station = viewStation || user?.station || '';
   const [view, setView] = useState('overview');
   const [clock, setClock] = useState('--:--:--');
   const [data, setData] = useState<any | null>(null);
@@ -34,13 +43,13 @@ export const StationAdminDashboard: React.FC<{ onBack: () => void }> = ({ onBack
   }, []);
 
   const load = async () => {
-    const res = await api.getStationPending(user?.station || '', user?.token);
+    const res = await api.getStationPending(station, user?.token);
     if (res.status === 'success') setData(res.data);
   };
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [station]);
 
   const stats = data?.stats || {};
   const pending = data?.pending || [];
@@ -70,7 +79,7 @@ export const StationAdminDashboard: React.FC<{ onBack: () => void }> = ({ onBack
         <>
           <div className="sidebar-header">
             <h4 className="text-info m-0">Admin Dashboard</h4>
-            <small className="text-white-50">{stationName(user?.station)}</small>
+            <small className="text-white-50">{stationName(station)}{viewStation ? ' (โหมดผู้บริหาร)' : ''}</small>
           </div>
           <div className="sidebar-menu">
             <SideItem icon="fa-chart-line" active={view === 'overview'} onClick={() => nav('overview', close)}>ภาพรวมประจำวัน</SideItem>
@@ -81,11 +90,13 @@ export const StationAdminDashboard: React.FC<{ onBack: () => void }> = ({ onBack
             <SideItem icon="fa-list-check" active={view === 'mission_view'} onClick={() => nav('mission_view', close)}>เรียกดูภารกิจหน่วย</SideItem>
             <SideItem icon="fa-oil-can" cls="text-warning" active={view === 'fuel_stats'} onClick={() => nav('fuel_stats', close)}>โควตาและการใช้น้ำมัน</SideItem>
             <SideItem icon="fa-folder-open" cls="text-success" active={view === 'daily_detail'} onClick={() => nav('daily_detail', close)}>แฟ้มข้อมูล / ส่งออก Excel</SideItem>
-            <SideItem icon="fa-paper-plane" cls="text-info" active={view === 'summary'} onClick={() => nav('summary', close)}>สรุปยอดส่ง {stationName(user?.station)}</SideItem>
+            <SideItem icon="fa-paper-plane" cls="text-info" active={view === 'summary'} onClick={() => nav('summary', close)}>สรุปยอดส่ง {stationName(station)}</SideItem>
             <SideItem icon="fa-sitemap" cls="text-primary" active={view === 'manpower'} onClick={() => nav('manpower', close)}>ทำเนียบกำลังพลสถานี</SideItem>
           </div>
           <div className="mt-auto border-top border-secondary p-3">
-            <div className="sidebar-item text-warning" onClick={onBack}><i className="fa-solid fa-rotate"></i> กลับโหมดผู้ปฏิบัติ</div>
+            {viewStation && onExitView
+              ? <div className="sidebar-item text-warning" onClick={() => { close(); onExitView(); }}><i className="fa-solid fa-arrow-left"></i> กลับหน้าผู้กำกับการ</div>
+              : <div className="sidebar-item text-warning" onClick={onBack}><i className="fa-solid fa-rotate"></i> กลับโหมดผู้ปฏิบัติ</div>}
             <div className="sidebar-item text-danger" onClick={logout}><i className="fa-solid fa-power-off"></i> ออกจากระบบ</div>
           </div>
         </>

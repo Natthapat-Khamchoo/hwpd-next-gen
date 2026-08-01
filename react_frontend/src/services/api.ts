@@ -230,6 +230,19 @@ export const api = {
     }
   },
 
+  /**
+   * สถานะฐานข้อมูลราย กก. ใช้ทำเมนู "เจาะลึกรายกองกำกับ"
+   *
+   * ของเดิมเรียก getNationalDivisionOptions() เพื่อรู้ว่า กก. ไหนตั้งค่าฐานข้อมูลแล้ว
+   * จะได้ทำตัวที่ยังไม่พร้อมให้จางและกดไม่ได้ ฝั่ง Python ไม่มี endpoint ชื่อนั้น แต่
+   * /health/database คืนข้อมูลชุดเดียวกันอยู่แล้ว (division + status ครบทั้ง 8)
+   */
+  getDatabaseHealth: async (token?: string): Promise<{ division: string; status: string; title?: string }[]> => {
+    const res = await fetchReference('/health/database', token);
+    const divisions = (res as { divisions?: unknown })?.divisions;
+    return Array.isArray(divisions) ? (divisions as { division: string; status: string; title?: string }[]) : [];
+  },
+
   getDivisionSummary: async (station: string, start: string, end: string, token?: string): Promise<{ status: string; data?: any; message?: string }> => {
     try {
       const q = new URLSearchParams({ station, start, end }).toString();

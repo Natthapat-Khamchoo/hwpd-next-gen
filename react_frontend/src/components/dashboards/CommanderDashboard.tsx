@@ -8,11 +8,22 @@ import Swal from 'sweetalert2';
 
 const firstOfMonth = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]; };
 
-interface Props { onBack: () => void; onSwitchHQ?: () => void }
+interface Props {
+  onBack: () => void;
+  onSwitchHQ?: () => void;
+  /** ดูหน่วยอื่นแทนหน่วยตัวเอง — ผบก. ใช้เจาะลึกลง กก. ที่เลือก */
+  viewStation?: string;
+  viewLabel?: string;
+  onExitView?: () => void;
+  onViewStation?: (stationId: string, label: string) => void;
+}
 
-export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ }) => {
+export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewStation, viewLabel, onExitView, onViewStation }) => {
   const { user, logout } = useAuth();
-  const div = String(user?.station || '5').charAt(0);
+  // ของเดิมสลับ userData.station ใน localStorage ชั่วคราวแล้วโหลดใหม่ ที่นี่ส่งเป็น prop
+  // แทน ได้ผลเหมือนกันแต่ไม่ต้องเขียนทับตัวตนของคนที่ล็อกอินอยู่
+  const station = viewStation || user?.station || '';
+  const div = String(station || '5').charAt(0);
   const [start, setStart] = useState(firstOfMonth());
   const [end, setEnd] = useState(getNowDateLocal());
   const [data, setData] = useState<any | null>(null);
@@ -20,10 +31,11 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ }) => {
   const [target, setTarget] = useState('ALL');
 
   const load = async () => {
-    const res = await api.getDivisionSummary(user?.station || '', start, end, user?.token);
+    const res = await api.getDivisionSummary(station, start, end, user?.token);
     if (res.status === 'success') setData(res.data);
   };
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  // โหลดใหม่เมื่อสลับไปดู กก. อื่น ไม่งั้นหัวเปลี่ยนแต่ตัวเลขยังเป็นของหน่วยเดิม
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [station]);
 
   const t = data?.totals || {};
   const bs = data?.byStation || [];
@@ -60,9 +72,18 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ }) => {
             <h6 className="text-white-50 px-4 mt-4 mb-2 small"><i className="fa-solid fa-sitemap"></i> ทางลัดการเข้าถึงระบบ</h6>
             {onSwitchHQ && <div className="sidebar-item text-info" onClick={() => { close(); onSwitchHQ(); }}><i className="fa-solid fa-building-shield"></i> เข้าสู่หน้า ฝอ. (HQ Dashboard)</div>}
             <div className="px-4 mt-3 mb-2 small text-warning">เจาะลึกรายสถานี:</div>
-            {bs.map((s: any) => <div className="sidebar-item text-secondary py-1" key={s.station} onClick={() => { close(); Swal.fire('เจาะลึก ' + s.name, 'ดูรายละเอียดสถานี ' + s.name, 'info'); }}> {s.name}</div>)}
+            {bs.map((s: any) => (
+              <div className="sidebar-item text-secondary py-1" key={s.station}
+                   onClick={() => { close(); onViewStation?.(String(s.station), s.name); }}> {s.name}</div>
+            ))}
           </div>
           <div className="mt-auto border-top border-secondary p-3">
+            {/* ของเดิมโชว์ปุ่มนี้ (cmdBackToScBtn) เฉพาะตอนถูกเรียกจากหน้า ผบก. */}
+            {viewStation && onExitView && (
+              <div className="sidebar-item text-warning" onClick={() => { close(); onExitView(); }}>
+                <i className="fa-solid fa-arrow-left"></i> กลับหน้าผู้บังคับการ
+              </div>
+            )}
             <div className="sidebar-item text-danger" onClick={logout}><i className="fa-solid fa-power-off"></i> ออกจากระบบ</div>
           </div>
         </>
@@ -71,7 +92,7 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ }) => {
         <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 gap-3">
           <div className="d-flex align-items-center gap-3">
             <button className="btn btn-outline-warning btn-sm" onClick={onBack}><i className="fa-solid fa-arrow-left"></i></button>
-            <div><h3 className="text-white m-0">Executive Dashboard</h3><p className="text-white-50 small m-0 mt-1">ยินดีต้อนรับ, <span className="text-warning">{user?.fullName}</span></p></div>
+            <div><h3 className="text-white m-0">Executive Dashboard</h3><p className="text-white-50 small m-0 mt-1">ยินดีต้อนรับ, <span className="text-warning">{user?.fullName}</span>{viewStation && <span className="text-info"> (มุมมอง {viewLabel || 'กก.' + div})</span>}</p></div>
           </div>
           <div className="d-flex flex-wrap align-items-center gap-2">
             <input type="date" className="form-control form-control-sm bg-dark text-white border-warning" style={{ width: 150 }} value={start} onChange={(e) => setStart(e.target.value)} />

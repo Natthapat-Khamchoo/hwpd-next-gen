@@ -36,8 +36,17 @@ const donutOptions = (labels: string[], colors?: string[]): ApexCharts.ApexOptio
 });
 
 // ไม่รับ onBack เพราะหน้านี้เป็นปลายทางของ Super_Commander ไม่มีเมนูหลักให้กลับไป
-export const SuperCommanderDashboard: React.FC = () => {
+export const SuperCommanderDashboard: React.FC<{ onViewDivision?: (station: string, label: string) => void }> = ({ onViewDivision }) => {
   const { user, logout } = useAuth();
+  // กก. ที่ตั้งค่าฐานข้อมูลแล้วเท่านั้นที่กดเข้าไปได้ ของเดิมทำตัวที่ยังไม่พร้อมให้จาง
+  // และกดไม่ได้ แทนที่จะปล่อยให้กดแล้วเจอหน้าเปล่า
+  const [dbHealth, setDbHealth] = useState<Record<string, string>>({});
+  useEffect(() => {
+    api.getDatabaseHealth(user?.token).then((list) => {
+      setDbHealth(Object.fromEntries(list.map((d) => [String(d.division), String(d.status)])));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [start, setStart] = useState(firstOfMonth());
   const [end, setEnd] = useState(getNowDateLocal());
   const [data, setData] = useState<any | null>(null);
@@ -82,9 +91,19 @@ export const SuperCommanderDashboard: React.FC = () => {
           <div className="sidebar-menu">
             <div className="sidebar-item active"><i className="fa-solid fa-earth-asia"></i> ภาพรวมระดับประเทศ (บก.ทล.)</div>
             <div className="px-4 mt-3 mb-2 small text-warning">เจาะลึกรายกองกำกับ:</div>
-            {[1, 2, 3, 4, 5, 6, 7, 8].map((d) => (
-              <div className="sidebar-item text-secondary py-1" key={d} onClick={() => { close(); Swal.fire('เจาะลึก กก.' + d, 'เปิดหน้าผู้กำกับการของ กก.' + d + ' (พอร์ตหน้า commander ต่อไป)', 'info'); }}> กก.{d}</div>
-            ))}
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((d) => {
+              const ready = dbHealth[String(d)] === 'ok';
+              // รหัสสถานีของ ฝอ.กก. คือเลข กก. ตามด้วย 0 (กก.7 -> "70") ตรงกับที่ของเดิมส่ง
+              return ready ? (
+                <div className="sidebar-item text-secondary py-1" key={d}
+                     onClick={() => { close(); onViewDivision?.(`${d}0`, `กก.${d}`); }}> กก.{d}</div>
+              ) : (
+                <div className="sidebar-item text-secondary py-1 opacity-50" key={d}
+                     style={{ cursor: 'not-allowed' }} title={`ยังไม่ได้ตั้งค่าฐานข้อมูลของ กก.${d}`}>
+                  {' '}กก.{d} <small>(ยังไม่พร้อม)</small>
+                </div>
+              );
+            })}
           </div>
           <div className="mt-auto border-top border-secondary p-3">
             <div className="sidebar-item text-danger" onClick={logout}><i className="fa-solid fa-power-off"></i> ออกจากระบบ</div>
