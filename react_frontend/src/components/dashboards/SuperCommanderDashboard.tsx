@@ -8,6 +8,7 @@ import { api } from '../../services/api';
 import { getNowDateLocal } from '../../utils/formHelpers';
 import { DashboardLayout } from './DashboardLayout';
 import { DeepSearchModal } from './DeepSearchModal';
+import { InvestDashboardPanel } from './InvestDashboardPanel';
 import Swal from 'sweetalert2';
 
 const firstOfMonth = () => {
@@ -69,6 +70,8 @@ export const SuperCommanderDashboard: React.FC<{ onViewDivision?: (station: stri
   const totals = data?.totals || {};
 
   const [searchOpen, setSearchOpen] = useState(false);
+  // ผบก. ใช้แดชบอร์ดงานสืบสวนอยู่แล้ว จึงต้องเข้าถึงได้จากที่เดียวกัน
+  const [view, setView] = useState<'overview' | 'invest'>('overview');
 
   const deepSearch = () => {
     setSearchOpen(true);
@@ -91,7 +94,14 @@ export const SuperCommanderDashboard: React.FC<{ onViewDivision?: (station: stri
             </div>
           </div>
           <div className="sidebar-menu">
-            <div className="sidebar-item active"><i className="fa-solid fa-earth-asia"></i> ภาพรวมระดับประเทศ (บก.ทล.)</div>
+            <div className={`sidebar-item ${view === 'overview' ? 'active' : ''}`}
+                 onClick={() => { close(); setView('overview'); }}>
+              <i className="fa-solid fa-earth-asia"></i> ภาพรวมระดับประเทศ (บก.ทล.)
+            </div>
+            <div className={`sidebar-item ${view === 'invest' ? 'active' : ''}`}
+                 onClick={() => { close(); setView('invest'); }}>
+              <i className="fa-solid fa-magnifying-glass-chart"></i> แดชบอร์ดงานสืบสวน
+            </div>
             <div className="px-4 mt-3 mb-2 small text-warning">เจาะลึกรายกองกำกับ:</div>
             {[1, 2, 3, 4, 5, 6, 7, 8].map((d) => {
               const ready = dbHealth[String(d)] === 'ok';
@@ -113,6 +123,9 @@ export const SuperCommanderDashboard: React.FC<{ onViewDivision?: (station: stri
         </>
       )}
     >
+        {view === 'invest' && <InvestDashboardPanel />}
+
+        {view === 'overview' && (<>
         <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 gap-3">
           <div className="d-flex align-items-center gap-3">
             {/* ของเดิม super_commander_dashboard.html ไม่มีปุ่มย้อนกลับ หน้านี้คือปลายทาง
@@ -199,6 +212,8 @@ export const SuperCommanderDashboard: React.FC<{ onViewDivision?: (station: stri
             </div>
           </div>
         )}
+        </>)}
+
         {searchOpen && <DeepSearchModal scope="national" onClose={() => setSearchOpen(false)} />}
     </DashboardLayout>
   );
