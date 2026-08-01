@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { getNowDateLocal } from '../../utils/formHelpers';
 import { DashboardLayout } from './DashboardLayout';
+import { DeepSearchModal } from './DeepSearchModal';
 import Swal from 'sweetalert2';
 
 const firstOfMonth = () => {
@@ -67,9 +68,10 @@ export const SuperCommanderDashboard: React.FC<{ onViewDivision?: (station: stri
   const ranking = useMemo(() => (data ? [...data.byDivision].sort((a, b) => b.arrestsCount - a.arrestsCount) : []), [data]);
   const totals = data?.totals || {};
 
-  const deepSearch = async () => {
-    const { value } = await Swal.fire({ title: 'แกะรอยผลงานทั่วประเทศ', input: 'text', inputPlaceholder: 'พิมพ์ชื่อ, ทะเบียนรถ, คีย์เวิร์ด...', showCancelButton: true, confirmButtonText: 'ค้นหา', confirmButtonColor: '#facc15', cancelButtonText: 'ปิด' });
-    if (value) Swal.fire('ค้นหาทุกกอง', `ระบบจะสแกน 7 ฐานข้อมูลทั่ว 8 กก. หา "${value}" (เชื่อมต่อ backend เพื่อดูผลจริง)`, 'info');
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  const deepSearch = () => {
+    setSearchOpen(true);
   };
   const order = async () => {
     const { value } = await Swal.fire({ title: 'สั่งการทั่วประเทศ', input: 'textarea', inputPlaceholder: 'ข้อความคำสั่งการ...', showCancelButton: true, confirmButtonText: 'ส่งคำสั่งการ', confirmButtonColor: '#facc15', cancelButtonText: 'ยกเลิก' });
@@ -197,6 +199,7 @@ export const SuperCommanderDashboard: React.FC<{ onViewDivision?: (station: stri
             </div>
           </div>
         )}
+        {searchOpen && <DeepSearchModal scope="national" onClose={() => setSearchOpen(false)} />}
     </DashboardLayout>
   );
 };

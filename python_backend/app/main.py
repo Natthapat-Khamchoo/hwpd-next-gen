@@ -53,6 +53,7 @@ from app.services import (
     national_service,
     query_service,
     reference_service,
+    search_service,
     sheets_service,
     user_service,
 )
@@ -646,6 +647,48 @@ def trigger_aggregate_national(
     start, end = national_service.default_range(max(1, min(days, 90)))
     background.add_task(_run_aggregate, start, end)
     return {"status": "accepted", "message": f"เริ่มรวมยอด {start} ถึง {end} แล้ว", "start": start, "end": end}
+
+
+@app.get("/api/search/division")
+def search_division(
+    station: Optional[str] = None,
+    keyword: str = "",
+    start: str = "",
+    end: str = "",
+    session: Dict[str, Any] = Depends(current_session),
+):
+    """ค้นหาเชิงลึกในกองกำกับ — ปุ่ม "แกะรอยผลงาน" ของผู้กำกับการ"""
+    if str(session.get("r") or "") not in DIVISION_VIEW_ROLES:
+        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์ค้นหาข้อมูลระดับกองกำกับ")
+    if not keyword.strip():
+        return {"status": "error", "message": "กรุณาระบุคำค้นหา"}
+
+    station_id = authorized_station_id(station, session)
+    try:
+        data = search_service.search_division(station_id, keyword, start, end)
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"status": "success", "data": data}
+
+
+@app.get("/api/search/national")
+def search_national(
+    keyword: str = "",
+    start: str = "",
+    end: str = "",
+    session: Dict[str, Any] = Depends(current_session),
+):
+    """ค้นหาข้ามทุก กก. — ปุ่ม "ค้นหาทุกกอง" ของ ผบก. ทำงานเฉพาะตอนกด ไม่โหลดเอง"""
+    if str(session.get("r") or "") not in NATIONAL_VIEW_ROLES:
+        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์ค้นหาข้อมูลระดับประเทศ")
+    if not keyword.strip():
+        return {"status": "error", "message": "กรุณาระบุคำค้นหา"}
+
+    try:
+        data = search_service.search_national(keyword, start, end)
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"status": "success", "data": data}
 
 
 class UserProfileUpdateRequest(BaseModel):

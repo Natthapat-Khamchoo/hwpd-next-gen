@@ -230,6 +230,31 @@ export const api = {
     }
   },
 
+  /**
+   * ค้นหาเชิงลึก — scope 'division' คือในกองตัวเอง 'national' คือทุก กก.
+   *
+   * ยิงเฉพาะตอนกดค้นหา ระดับประเทศต้องเปิด 8 สเปรดชีต x 7 ตาราง จึงไม่ควรโหลดเอง
+   */
+  deepSearch: async (
+    scope: 'division' | 'national',
+    params: { keyword: string; start: string; end: string; station?: string },
+    token?: string,
+  ): Promise<{ status: string; data?: any[]; message?: string }> => {
+    try {
+      const q = new URLSearchParams({
+        keyword: params.keyword,
+        start: params.start,
+        end: params.end,
+        ...(scope === 'division' && params.station ? { station: params.station } : {}),
+      }).toString();
+      const res = await fetch(`${API_BASE_URL}/search/${scope}?${q}`, { headers: { 'x-token': token || '' } });
+      if (res.status === 403) return { status: 'error', message: 'ไม่มีสิทธิ์ค้นหาข้อมูลระดับนี้' };
+      return await res.json();
+    } catch {
+      return { status: 'error', message: OFFLINE_MESSAGE };
+    }
+  },
+
   /** ทำเนียบผู้ใช้ทั้งหมด สำหรับหน้าจัดการผู้ใช้งานของ บก. (ไม่มีคอลัมน์รหัสผ่าน) */
   getAllUsers: async (token?: string): Promise<any[]> => {
     const res = await fetchReference('/admin/users', token);

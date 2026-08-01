@@ -4,6 +4,7 @@ import { api } from '../../services/api';
 import { getNowDateLocal } from '../../utils/formHelpers';
 import { ReactApexChart, hBarOptions, vBarOptions, donutOptions } from './chartHelpers';
 import { DashboardLayout } from './DashboardLayout';
+import { DeepSearchModal } from './DeepSearchModal';
 import Swal from 'sweetalert2';
 
 const firstOfMonth = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]; };
@@ -29,6 +30,7 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
   const [data, setData] = useState<any | null>(null);
   const [msg, setMsg] = useState('');
   const [target, setTarget] = useState('ALL');
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const load = async () => {
     const res = await api.getDivisionSummary(station, start, end, user?.token);
@@ -99,7 +101,7 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
             <span className="text-white-50 fw-bold">-</span>
             <input type="date" className="form-control form-control-sm bg-dark text-white border-warning" style={{ width: 150 }} value={end} onChange={(e) => setEnd(e.target.value)} />
             <button className="btn btn-warning fw-bold px-3" onClick={load}><i className="fa-solid fa-rotate"></i></button>
-            <button className="btn btn-info fw-bold px-3" onClick={() => Swal.fire('แกะรอยผลงาน', 'ค้นหาผลงานเจ้าหน้าที่ในกอง (เชื่อมต่อ backend)', 'info')}><i className="fa-solid fa-user-secret"></i> แกะรอยผลงาน</button>
+            <button className="btn btn-info fw-bold px-3" onClick={() => setSearchOpen(true)}><i className="fa-solid fa-user-secret"></i> แกะรอยผลงาน</button>
           </div>
         </div>
 
@@ -144,6 +146,7 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
             </div>
           </>
         )}
+        {searchOpen && <DeepSearchModal scope="division" station={station} onClose={() => setSearchOpen(false)} />}
     </DashboardLayout>
   );
 };
