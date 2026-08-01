@@ -648,6 +648,58 @@ def trigger_aggregate_national(
     return {"status": "accepted", "message": f"เริ่มรวมยอด {start} ถึง {end} แล้ว", "start": start, "end": end}
 
 
+class UserProfileUpdateRequest(BaseModel):
+    """แก้ได้เฉพาะชื่อจริงกับเบอร์โทร ดู user_service.EDITABLE_COLUMNS ว่าทำไม"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    username: str
+    fullName: Optional[str] = None
+    phone: Optional[str] = None
+
+
+@app.get("/api/admin/users")
+def admin_list_users(session: Dict[str, Any] = Depends(current_session)):
+    """
+    ทำเนียบผู้ใช้ทั้งหมดสำหรับหน้าจัดการผู้ใช้งานของ บก.
+
+    ไม่ส่งคอลัมน์ Password ออกไปแม้จะ hash แล้ว หน้าเว็บไม่มีอะไรต้องใช้ค่านั้น
+    และ hash ที่หลุดออกไปคือของที่เอาไปไล่เดารหัสแบบออฟไลน์ได้
+    """
+    if str(session.get("r") or "") not in NATIONAL_VIEW_ROLES:
+        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์ดูทำเนียบผู้ใช้ทั้งหมด")
+
+    try:
+        users = user_service.get_all_users()
+    except user_service.UserDirectoryUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    data = [
+        {k: v for k, v in user.items() if k != "password"}
+        for user in sorted(users.values(), key=lambda u: str(u.get("username", "")))
+    ]
+    return {"status": "success", "data": data}
+
+
+@app.post("/api/admin/users/update")
+def admin_update_user(req: UserProfileUpdateRequest, session: Dict[str, Any] = Depends(current_session)):
+    """แก้ชื่อจริง/เบอร์โทรของบัญชี — ใช้เติมชื่อแทนบัญชีที่สร้างไว้เป็น placeholder"""
+    if str(session.get("r") or "") not in NATIONAL_VIEW_ROLES:
+        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์แก้ข้อมูลผู้ใช้")
+
+    if req.fullName is None and req.phone is None:
+        return {"status": "error", "message": "ไม่ได้ระบุข้อมูลที่จะแก้"}
+
+    try:
+        changed = user_service.update_profile(req.username, req.fullName, req.phone)
+    except user_service.UserDirectoryUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    if not changed:
+        return {"status": "error", "message": f"ไม่พบบัญชี {req.username}"}
+    return {"status": "success", "message": f"แก้ข้อมูลบัญชี {req.username} เรียบร้อยแล้ว"}
+
+
 @app.get("/api/admin/aggregate-status")
 def aggregate_status(
     x_cron_secret: Optional[str] = Header(None),

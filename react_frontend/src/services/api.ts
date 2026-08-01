@@ -230,6 +230,31 @@ export const api = {
     }
   },
 
+  /** ทำเนียบผู้ใช้ทั้งหมด สำหรับหน้าจัดการผู้ใช้งานของ บก. (ไม่มีคอลัมน์รหัสผ่าน) */
+  getAllUsers: async (token?: string): Promise<any[]> => {
+    const res = await fetchReference('/admin/users', token);
+    const data = (res as { data?: unknown })?.data;
+    return Array.isArray(data) ? data : [];
+  },
+
+  /** แก้ชื่อจริง/เบอร์โทร — ส่งเฉพาะช่องที่แก้ ช่องที่ไม่ส่งจะไม่ถูกแตะ */
+  updateUserProfile: async (
+    username: string,
+    patch: { fullName?: string; phone?: string },
+    token?: string,
+  ): Promise<{ status: string; message?: string }> => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/users/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-token': token || '' },
+        body: JSON.stringify({ username, ...patch }),
+      });
+      return await res.json();
+    } catch {
+      return { status: 'error', message: OFFLINE_MESSAGE };
+    }
+  },
+
   /**
    * สถานะฐานข้อมูลราย กก. ใช้ทำเมนู "เจาะลึกรายกองกำกับ"
    *

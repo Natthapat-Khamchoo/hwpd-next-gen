@@ -4,6 +4,7 @@ import { api } from '../../services/api';
 import { getNowDateLocal } from '../../utils/formHelpers';
 import { ReactApexChart, vBarOptions } from './chartHelpers';
 import { DashboardLayout, SideItem } from './DashboardLayout';
+import { UserDirectory } from './UserDirectory';
 
 const firstOfMonth = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]; };
 
@@ -83,7 +84,9 @@ export const HqAdminDashboard: React.FC = () => {
           </div>
         )}
 
-        {view !== 'compare' && (
+        {view === 'users' && <UserDirectory />}
+
+        {view !== 'compare' && view !== 'users' && (
           <div className="glass-card w-100 p-4 text-center py-5">
             <i className="fa-solid fa-database mb-3" style={{ fontSize: '2.5rem', color: '#c084fc' }}></i>
             <h5 className="text-white">{VIEW_TITLES[view]}</h5>

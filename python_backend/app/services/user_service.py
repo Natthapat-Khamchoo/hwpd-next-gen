@@ -190,6 +190,63 @@ def update_password(username: str, stored_password: str) -> bool:
     return False
 
 
+# แก้ได้เฉพาะสองช่องนี้ ชื่อคอลัมน์ในชีต -> ชื่อฟิลด์ที่ API รับ
+#
+# ตั้งใจไม่ให้แตะ Password, Role, Station_ID, AccountType ผ่านทางนี้ การแก้ Role หรือ
+# Station_ID คือการเปลี่ยนสิทธิ์และปลายทางที่รายงานจะถูกเขียนลง ส่วน Password มี
+# /api/change-password ที่ hash ให้อยู่แล้ว เขียนตรงจะได้รหัสที่ล็อกอินไม่ได้
+EDITABLE_COLUMNS = {"FullName": "fullName", "เบอร์โทร": "phone"}
+
+
+def update_profile(username: str, fullName: str = None, phone: str = None) -> bool:
+    """
+    แก้ชื่อจริงและเบอร์โทรของบัญชี คืน False ถ้าไม่พบ username
+
+    อ่านชีตสดเหมือน update_password ด้วยเหตุผลเดียวกัน — เลขแถวที่แคชไว้อาจเลื่อนแล้ว
+    ถ้ามีคนเพิ่มหรือลบแถวระหว่างนั้น จะกลายเป็นเขียนทับข้อมูลของคนอื่น
+
+    ส่งเฉพาะช่องที่ต้องการแก้ ช่องที่เป็น None จะไม่ถูกแตะ ไม่ใช่ถูกล้างเป็นค่าว่าง
+    """
+    key = (username or "").strip().lower()
+    if not key:
+        return False
+
+    updates_wanted = {"FullName": fullName, "เบอร์โทร": phone}
+    updates_wanted = {k: v for k, v in updates_wanted.items() if v is not None}
+    if not updates_wanted:
+        return False
+
+    rows = sheets_service.read_table(MASTER_SHEET_ID, USERS_TABLE)
+    if not rows:
+        raise UserDirectoryUnavailable(f"ตาราง {USERS_TABLE} ว่างเปล่า")
+
+    header = [str(h).strip() for h in rows[0]]
+    if "Username" not in header:
+        raise UserDirectoryUnavailable(f"ตาราง {USERS_TABLE} ไม่มีคอลัมน์ Username")
+
+    missing = [c for c in updates_wanted if c not in header]
+    if missing:
+        raise UserDirectoryUnavailable(f"ตาราง {USERS_TABLE} ไม่มีคอลัมน์ {', '.join(missing)}")
+
+    name_index = header.index("Username")
+
+    for line, row in enumerate(rows[1:], start=2):
+        if name_index < len(row) and str(row[name_index]).strip().lower() == key:
+            worksheet = sheets_service.get_worksheet(MASTER_SHEET_ID, USERS_TABLE, ensure=False)
+            # ส่งเป็นช่วงแยกกันใน batch เดียว เพราะสองคอลัมน์นี้ไม่ได้อยู่ติดกัน
+            # (FullName คอลัมน์ C, เบอร์โทร คอลัมน์ J) เขียนเป็นช่วงเดียวจะทับ D-I ทิ้ง
+            batch = [
+                {"range": f"{chr(ord('A') + header.index(column))}{line}", "values": [[value]]}
+                for column, value in updates_wanted.items()
+            ]
+            sheets_service.with_backoff(worksheet.batch_update, batch, value_input_option="RAW")
+            reset_cache()
+            logger.info("แก้ข้อมูลบัญชี %s: %s", username, ", ".join(updates_wanted))
+            return True
+
+    return False
+
+
 def reset_cache() -> None:
     """ล้างแคช (ใช้ในเทสและตอนแก้ข้อมูลผู้ใช้ในชีต)"""
     with _lock:
