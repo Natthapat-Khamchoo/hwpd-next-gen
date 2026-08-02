@@ -266,11 +266,15 @@ class TestDivisionSummary(unittest.TestCase):
         self.assertEqual(names[0], "ส.ทล.1")
         self.assertTrue(all(len(name) <= 10 for name in names))
 
-    def test_reads_each_table_once_regardless_of_station_count(self):
+    def test_reads_each_table_at_most_once_regardless_of_station_count(self):
+        """
+        ต้องไม่อ่านซ้ำตามจำนวนสถานี และ prefetch ต้องดึงมาในคำขอเดียว
+        ตารางที่ batchGet คืนมาแล้วจะไม่ถูกอ่านเดี่ยวอีก จำนวนจึงน้อยกว่าหรือเท่ากับ
+        จำนวนตารางเสมอ
+        """
         with stub_router(), stub_sheets(ALL_TABLES) as stub:
             query_service.division_summary("50", *RANGE)
-        # 5 ตารางสรุป + tb_Accidents ไม่ใช่คูณจำนวนสถานี
-        self.assertEqual(stub.call_count, len(query_service.SUMMARY_TABLES) + 1)
+        self.assertLessEqual(stub.call_count, len(query_service.SUMMARY_TABLES) + 1)
 
     def test_returns_every_key_the_dashboards_read(self):
         with stub_router(), stub_sheets(ALL_TABLES):

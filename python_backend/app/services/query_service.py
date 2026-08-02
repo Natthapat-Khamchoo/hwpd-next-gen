@@ -463,6 +463,7 @@ def division_summary(station_id: str, start: str, end: str) -> Dict[str, Any]:
     """
     spreadsheet_id = get_target_db_id(station_id)
     stations = get_division_stations(station_id, include_hq=False)
+    prefetch(spreadsheet_id, SUMMARY_TABLES + ["tb_Accidents"])
 
     totals = _blank_totals()
     charges: Counter = Counter()
@@ -595,6 +596,45 @@ def cached_rows(spreadsheet_id: str, table_name: str) -> List[Dict[str, Any]]:
         return rows
 
 
+def prefetch(spreadsheet_id: str, table_names: List[str]) -> None:
+    """
+    อ่านหลายตารางในคำขอเดียวแล้วยัดลงแคช ก่อนที่ cached_rows จะถูกเรียกทีละตัว
+
+    Google คิดโควตาเป็นจำนวนคำขอ ไม่ใช่ปริมาณข้อมูล การอ่านทีละตารางจึงกินโควตาเท่า
+    จำนวนตาราง หน้าแดชบอร์ดหนึ่งหน้าอ่าน 7-8 ตาราง 8 กก. เปิดพร้อมกันก็ชนเพดาน
+    60 ครั้ง/นาทีทันที เรียกตัวนี้ก่อนจึงเหลือ 1 คำขอต่อการเปิดหนึ่งหน้า
+
+    ตารางที่มีในแคชอยู่แล้วจะไม่ถูกอ่านซ้ำ และถ้า batchGet ล้มก็ปล่อยผ่านเงียบ ๆ
+    ให้ cached_rows อ่านทีละตัวตามเดิม — ตัวนี้เป็นแค่ตัวเร่ง ไม่ใช่เส้นทางบังคับ
+    """
+    missing = [name for name in table_names if _fresh((spreadsheet_id, name)) is None]
+    if len(missing) < 2:
+        return
+
+    try:
+        blocks = sheets_service.read_tables(spreadsheet_id, missing)
+    except sheets_service.SheetWriteError as exc:
+        logger.info("อ่านรวดเดียวไม่สำเร็จ ใช้การอ่านทีละตารางแทน: %s", exc)
+        return
+
+    now = time.time()
+    for table_name, rows in blocks.items():
+        try:
+            columns = get_columns(table_name)
+        except KeyError:
+            continue
+        records = []
+        for line, row in enumerate(rows[1:], start=2):
+            if not row or not str(row[0]).strip():
+                continue
+            record: Dict[str, Any] = {"_row": line}
+            for index, column in enumerate(columns):
+                record[column] = str(row[index]).strip() if index < len(row) else ""
+            records.append(record)
+        with _row_cache_lock:
+            _row_cache[(spreadsheet_id, table_name)] = (now, records)
+
+
 def invalidate_cache(spreadsheet_id: str = "", table_name: str = "") -> None:
     """
     ล้างแคชหลังเขียน ไม่งั้นคนส่งรายงานจะไม่เห็นของตัวเองในคิวอีก 30 วินาที
@@ -695,6 +735,7 @@ def station_overview(
     spreadsheet_id = get_target_db_id(station_id)
     lookup = name_lookup or {}
     today = datetime.now().strftime("%Y-%m-%d")
+    prefetch(spreadsheet_id, [name for name, _, _ in GENERAL_TABLES + FUEL_TABLES])
 
     pending: List[Dict[str, Any]] = []
     fuel: List[Dict[str, Any]] = []

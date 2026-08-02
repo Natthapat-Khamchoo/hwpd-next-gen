@@ -86,10 +86,16 @@ def stub_sheets(tables):
             return tables[table_name]
         raise query_service.sheets_service.SheetWriteError(f"ไม่พบตาราง {table_name} ในสเปรดชีต")
 
+    def fake_many(spreadsheet_id, table_names):
+        """คู่กับ read_tables — prefetch เรียกตัวนี้เพื่ออ่านหลายตารางในคำขอเดียว"""
+        return {name: tables[name] for name in table_names if name in tables}
+
     query_service.invalidate_cache()
-    # yield ตัว mock ออกไปด้วย เทสที่นับจำนวนการอ่านใช้ `as stub` แล้วดู call_count
-    with mock.patch.object(query_service.sheets_service, "read_table", side_effect=fake) as stub:
-        yield stub
+    # yield ตัว mock ของ read_table ออกไป เทสที่นับจำนวนการอ่านใช้ `as stub` แล้วดู
+    # call_count — ต้อง stub read_tables ด้วย ไม่งั้น prefetch จะวิ่งไปเรียก Google จริง
+    with mock.patch.object(query_service.sheets_service, "read_tables", side_effect=fake_many):
+        with mock.patch.object(query_service.sheets_service, "read_table", side_effect=fake) as stub:
+            yield stub
     query_service.invalidate_cache()
 
 
@@ -254,12 +260,31 @@ class TestStationOverview(unittest.TestCase):
         )
         self.assertEqual(overview["stats"]["pendingCount"], len(separate))
 
-    def test_reads_each_table_only_once(self):
+    def test_reads_each_table_at_most_once(self):
+        """
+        เดิมแยกเป็นสามฟังก์ชันจึงอ่านตารางเดิมซ้ำรวม 16 ครั้งต่อการเปิดหนึ่งหน้า
+        ตอนนี้ prefetch ดึงทุกตารางมาในคำขอเดียว ที่เหลืออ่านเดี่ยวเฉพาะตารางที่
+        batchGet ไม่ได้คืนมา (เช่นแท็บที่ยังไม่มีในสเปรดชีต) จึงต้องไม่เกินจำนวนตาราง
+        """
         tables = {"tb_DailyResult": RESULT_ROWS}
         with stub_router(), stub_sheets(tables) as stub:
             query_service.station_overview("51")
-        # 5 ตารางทั่วไป + 1 ตารางน้ำมัน ไม่ใช่ 16 ครั้งแบบที่แยกเป็นสามฟังก์ชัน
-        self.assertEqual(stub.call_count, len(query_service.GENERAL_TABLES) + len(query_service.FUEL_TABLES))
+        self.assertLessEqual(
+            stub.call_count,
+            len(query_service.GENERAL_TABLES) + len(query_service.FUEL_TABLES),
+        )
+
+    def test_prefetch_pulls_every_table_in_one_request(self):
+        # จุดสำคัญของการแก้โควตา — ตารางที่มีจริงต้องมาจาก batchGet ไม่ใช่อ่านทีละตัว
+        tables = {"tb_DailyResult": RESULT_ROWS}
+        with stub_router(), stub_sheets(tables) as stub:
+            with mock.patch.object(
+                query_service.sheets_service, "read_tables",
+                side_effect=lambda sid, names: {"tb_DailyResult": RESULT_ROWS},
+            ) as batch:
+                query_service.station_overview("51")
+        self.assertEqual(batch.call_count, 1)
+        self.assertNotIn("tb_DailyResult", [c.args[1] for c in stub.call_args_list])
 
     def test_fuel_rows_go_to_the_fuel_queue_not_the_general_one(self):
         fuel_rows = [

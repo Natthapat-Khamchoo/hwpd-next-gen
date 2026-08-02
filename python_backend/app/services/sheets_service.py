@@ -299,6 +299,42 @@ def read_table(spreadsheet_id: str, table_name: str) -> List[List[str]]:
         raise SheetWriteError(f"อ่านตาราง {table_name} ไม่สำเร็จ: {exc}") from exc
 
 
+def read_tables(spreadsheet_id: str, table_names: List[str]) -> Dict[str, List[List[str]]]:
+    """
+    อ่านหลายตารางในคำขอเดียวด้วย values.batchGet
+
+    Google คิดโควตาเป็น "จำนวนคำขอ" ไม่ใช่จำนวนข้อมูล การอ่านทีละตารางจึงกินโควตา
+    เท่าจำนวนตาราง — หน้าแดชบอร์ดหนึ่งหน้าอ่าน 7-8 ตาราง แปลว่า 8 กก. เปิดพร้อมกัน
+    ก็ 60+ คำขอ ชนเพดาน 60 ครั้ง/นาทีทันที (วัดมาแล้ว บางกองรอถึง 80 วินาที)
+    รวมเป็นคำขอเดียวจึงลดโควตาที่ใช้ลงเกือบเท่าจำนวนตาราง
+
+    ตารางที่ยังไม่มีแท็บจะไม่อยู่ใน dict ที่คืน ผู้เรียกต้องเผื่อกรณีคีย์หาย
+    """
+    import gspread
+
+    if not table_names:
+        return {}
+
+    spreadsheet = open_spreadsheet(spreadsheet_id)
+    existing = {ws.title for ws in with_backoff(spreadsheet.worksheets)}
+    wanted = [name for name in table_names if name in existing]
+    if not wanted:
+        return {}
+
+    try:
+        # ใส่ single quote รอบชื่อแท็บเสมอ ชื่อไทยกับชื่อที่มีจุด (tb_HQ_Summary ไม่มี
+        # แต่ชื่ออื่นอาจมี) ทำให้ Sheets ตีความ range ผิดถ้าไม่ quote
+        ranges = [f"'{name}'" for name in wanted]
+        result = with_backoff(spreadsheet.values_batch_get, ranges)
+    except gspread.exceptions.APIError as exc:
+        raise SheetWriteError(f"อ่านหลายตารางไม่สำเร็จ: {exc}") from exc
+
+    out: Dict[str, List[List[str]]] = {}
+    for name, block in zip(wanted, result.get("valueRanges", [])):
+        out[name] = block.get("values", []) or []
+    return out
+
+
 def append_report_row(spreadsheet_id: str, table_name: str, row_data: List[Any]) -> Dict[str, Any]:
     """
     เขียนหนึ่งแถวลงตารางที่กำหนด คืน {'spreadsheetId', 'tableName', 'updatedRange'}
