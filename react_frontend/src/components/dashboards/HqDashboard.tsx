@@ -40,6 +40,7 @@ export const HqDashboard: React.FC<HqDashboardProps> = ({ onBack, onBackToComman
   const [start, setStart] = useState(recentStart());
   const [end, setEnd] = useState(getNowDateLocal());
   const [data, setData] = useState<any | null>(null);
+  const [loadError, setLoadError] = useState('');
   const [reports, setReports] = useState<{ reportKey: string; title: string; cadence: string }[]>([]);
   const station = user?.station || '';
 
@@ -52,7 +53,9 @@ export const HqDashboard: React.FC<HqDashboardProps> = ({ onBack, onBackToComman
 
   const load = async () => {
     const res = await api.getDivisionSummary(station, start, end, user?.token);
-    if (res.status === 'success') setData(res.data);
+    // เหมือนหน้าผู้กำกับการ — เงียบแล้วโชว์ 0 อันตรายกว่าบอกตรง ๆ ว่าโหลดไม่สำเร็จ
+    if (res.status === 'success') { setData(res.data); setLoadError(''); }
+    else setLoadError(res.message || 'โหลดข้อมูลไม่สำเร็จ');
   };
   useEffect(() => {
     load();
@@ -117,6 +120,13 @@ export const HqDashboard: React.FC<HqDashboardProps> = ({ onBack, onBackToComman
             </div>
           )}
         </div>
+
+        {view === 'overview' && loadError && (
+          <div className="alert alert-danger d-flex justify-content-between align-items-center py-2 mb-4">
+            <span><i className="fa-solid fa-triangle-exclamation"></i> {loadError} — ตัวเลขด้านล่างยังไม่ใช่ข้อมูลจริง</span>
+            <button className="btn btn-sm btn-outline-light" onClick={load}>ลองใหม่</button>
+          </div>
+        )}
 
         {view === 'overview' && data && (
           <>

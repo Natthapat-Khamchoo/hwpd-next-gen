@@ -39,6 +39,7 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
   const [target, setTarget] = useState('ALL');
   const [sending, setSending] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [view, setView] = useState<'overview' | 'evidence' | 'escort'>('overview');
   const [summaryOpen, setSummaryOpen] = useState(false);
   // กราฟนำขบวนกับโดนัทกำลังพลของเดิมอ่านจากสองชุดนี้ ดึงมาพร้อมภาพรวมในรอบเดียว
@@ -51,7 +52,10 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
       api.commanderOverview(station, start, end, user?.token),
       api.hqEscort(station, start, end, user?.token),
     ]);
-    if (summary.status === 'success') setData(summary.data);
+    // โหลดล้มต้องบอกให้รู้ ไม่ใช่ปล่อยให้ KPI ขึ้น 0 ซึ่งอ่านว่า "ไม่มีผลงาน" — ผู้บังคับ
+    // บัญชีแยกไม่ออกว่าเป็นเพราะไม่มีข้อมูลจริงหรือเรียกข้อมูลไม่สำเร็จ
+    if (summary.status === 'success') { setData(summary.data); setLoadError(''); }
+    else setLoadError(summary.message || 'โหลดข้อมูลไม่สำเร็จ');
     if (overview.status === 'success') setExec(overview.data);
     if (escortRes.status === 'success') setEscort(escortRes.data);
   };
@@ -182,6 +186,13 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
             <div className="col-12 col-md-2"><button className="btn btn-info w-100 fw-bold h-100" onClick={sendOrder} disabled={sending}><i className="fa-solid fa-paper-plane"></i> {sending ? 'กำลังส่ง...' : 'ถ่ายทอดคำสั่ง'}</button></div>
           </div>
         </div>
+
+        {loadError && (
+          <div className="alert alert-danger d-flex justify-content-between align-items-center py-2 mb-4">
+            <span><i className="fa-solid fa-triangle-exclamation"></i> {loadError} — ตัวเลขด้านล่างยังไม่ใช่ข้อมูลจริง</span>
+            <button className="btn btn-sm btn-outline-light" onClick={load}>ลองใหม่</button>
+          </div>
+        )}
 
         {/* KPIs */}
         <div className="row g-3 mb-4">
