@@ -541,4 +541,13 @@ export const api = {
   commanderOrder: (body: Record<string, unknown>, token?: string) =>
     hqPost('/commander/order', body, token),
 
+  hqAnalysisCategories: (token?: string) =>
+    hqGet('/hq/analysis/categories', {}, token),
+
+  hqAnalysis: (body: Record<string, unknown>, token?: string) =>
+    hqPost('/hq/analysis', body, token),
+
+  hqRecords: (body: Record<string, unknown>, token?: string) =>
+    hqPost('/hq/records', body, token),
+
 };

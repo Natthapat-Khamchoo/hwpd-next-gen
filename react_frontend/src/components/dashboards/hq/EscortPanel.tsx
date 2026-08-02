@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { api } from '../../../services/api';
 import Swal from 'sweetalert2';
+import { downloadSheet } from './excel';
 import { PanelState, RangePicker, recentStart, today } from './panelHelpers';
 
 /**
@@ -33,6 +34,7 @@ export const EscortPanel: React.FC<{ station: string; canEdit: boolean }> = ({ s
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState({ escortType: ESCORT_TYPES[0], startDateTime: '', endDateTime: '', details: '' });
 
   const load = async () => {
@@ -56,6 +58,7 @@ export const EscortPanel: React.FC<{ station: string; canEdit: boolean }> = ({ s
     const res = await api.hqSaveEscort({ stationId: station, ...form }, user?.token);
     setSaving(false);
     if (res.status === 'success') {
+      setFormOpen(false);
       setForm({ escortType: ESCORT_TYPES[0], startDateTime: '', endDateTime: '', details: '' });
       await Swal.fire('บันทึกแล้ว', res.message || '', 'success');
       load();
@@ -64,46 +67,35 @@ export const EscortPanel: React.FC<{ station: string; canEdit: boolean }> = ({ s
     }
   };
 
+  const exportExcel = () => {
+    downloadSheet('นำขบวน_' + start + '_' + end, [
+      ['รายการภารกิจนำขบวน ช่วงวันที่ ' + start + ' ถึง ' + end],
+      [],
+      ['ยอดรวม', summary.total, 'บุคคลสำคัญ', summary.vip, 'ทั่วไป', summary.general],
+      [],
+      ['สถานีรับผิดชอบ', 'ประเภท', 'วัน-เวลาเริ่ม', 'วัน-เวลาสิ้นสุด', 'รายละเอียดภารกิจ', 'ผู้บันทึก', 'หนังสือสั่งการ'],
+      ...rows.map((r) => [r.station, r.type, r.start, r.end, r.details, r.actionBy, r.fileUrl]),
+    ], 'นำขบวน');
+  };
+
   return (
     <>
-      {canEdit && (
-        <div className="glass-card mb-4" style={{ borderColor: 'rgba(13,202,240,0.4)' }}>
-          <h5 className="text-info mb-3"><i className="fa-solid fa-motorcycle"></i> บันทึกงานนำขบวนที่ได้รับมอบหมาย</h5>
-          <div className="row g-3">
-            <div className="col-12 col-md-4">
-              <label className="form-label small text-white-50">ประเภทการนำขบวน</label>
-              <select className="form-select form-select-sm bg-dark text-white border-secondary"
-                      value={form.escortType} onChange={(e) => setForm({ ...form, escortType: e.target.value })}>
-                {ESCORT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-            <div className="col-12 col-md-4">
-              <label className="form-label small text-white-50">วันเวลาเริ่ม</label>
-              <input type="datetime-local" className="form-control form-control-sm bg-dark text-white border-secondary"
-                     value={form.startDateTime} onChange={(e) => setForm({ ...form, startDateTime: e.target.value })} />
-            </div>
-            <div className="col-12 col-md-4">
-              <label className="form-label small text-white-50">วันเวลาสิ้นสุด</label>
-              <input type="datetime-local" className="form-control form-control-sm bg-dark text-white border-secondary"
-                     value={form.endDateTime} onChange={(e) => setForm({ ...form, endDateTime: e.target.value })} />
-            </div>
-            <div className="col-12">
-              <label className="form-label small text-white-50">รายละเอียด (เส้นทาง ผู้ร่วมขบวน หมายเหตุ)</label>
-              <textarea className="form-control form-control-sm bg-dark text-white border-secondary" rows={2}
-                        value={form.details} onChange={(e) => setForm({ ...form, details: e.target.value })} />
-            </div>
-            <div className="col-12 d-flex justify-content-end">
-              <button className="btn btn-info fw-bold" onClick={save} disabled={saving}>
-                <i className="fa-solid fa-floppy-disk"></i> {saving ? 'กำลังบันทึก...' : 'บันทึกงานนำขบวน'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="glass-card">
-        <h5 className="text-white mb-3"><i className="fa-solid fa-list-check text-info"></i> รายการนำขบวน</h5>
-        <RangePicker start={start} end={end} onStart={setStart} onEnd={setEnd} onLoad={load} busy={busy} />
+        <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 border-bottom border-secondary pb-3 mb-3">
+          <h5 className="text-white m-0"><i className="fa-solid fa-motorcycle text-info"></i> ระบบจัดการการนำขบวน (ฝอ.)</h5>
+          {canEdit && (
+            <button className="btn btn-primary fw-bold px-4" onClick={() => setFormOpen(true)}>
+              <i className="fa-solid fa-plus"></i> บันทึกภารกิจนำขบวน
+            </button>
+          )}
+        </div>
+
+        <div className="d-flex flex-wrap align-items-center gap-2">
+          <RangePicker start={start} end={end} onStart={setStart} onEnd={setEnd} onLoad={load} busy={busy} />
+          <button className="btn btn-success btn-sm fw-bold mb-3" onClick={exportExcel} disabled={!rows.length}>
+            <i className="fa-solid fa-file-excel"></i> Export Excel
+          </button>
+        </div>
 
         {!busy && !error && (
           <div className="row g-3 mb-3">
@@ -151,6 +143,53 @@ export const EscortPanel: React.FC<{ station: string; canEdit: boolean }> = ({ s
           </div>
         )}
       </div>
+
+      {formOpen && (
+        <div className="modal d-block" style={{ background: 'rgba(0,0,0,0.7)' }} onClick={() => setFormOpen(false)}>
+          <div className="modal-dialog modal-lg modal-dialog-centered" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-content bg-dark border border-secondary">
+              <div className="modal-header border-secondary">
+                <h6 className="modal-title text-white">
+                  <i className="fa-solid fa-motorcycle text-info"></i> บันทึกภารกิจนำขบวน
+                </h6>
+                <button className="btn-close btn-close-white" onClick={() => setFormOpen(false)}></button>
+              </div>
+              <div className="modal-body">
+                <div className="row g-3">
+            <div className="col-12 col-md-4">
+              <label className="form-label small text-white-50">ประเภทการนำขบวน</label>
+              <select className="form-select form-select-sm bg-dark text-white border-secondary"
+                      value={form.escortType} onChange={(e) => setForm({ ...form, escortType: e.target.value })}>
+                {ESCORT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div className="col-12 col-md-4">
+              <label className="form-label small text-white-50">วันเวลาเริ่ม</label>
+              <input type="datetime-local" className="form-control form-control-sm bg-dark text-white border-secondary"
+                     value={form.startDateTime} onChange={(e) => setForm({ ...form, startDateTime: e.target.value })} />
+            </div>
+            <div className="col-12 col-md-4">
+              <label className="form-label small text-white-50">วันเวลาสิ้นสุด</label>
+              <input type="datetime-local" className="form-control form-control-sm bg-dark text-white border-secondary"
+                     value={form.endDateTime} onChange={(e) => setForm({ ...form, endDateTime: e.target.value })} />
+            </div>
+            <div className="col-12">
+              <label className="form-label small text-white-50">รายละเอียด (เส้นทาง ผู้ร่วมขบวน หมายเหตุ)</label>
+              <textarea className="form-control form-control-sm bg-dark text-white border-secondary" rows={2}
+                        value={form.details} onChange={(e) => setForm({ ...form, details: e.target.value })} />
+            </div>
+            </div>
+              </div>
+              <div className="modal-footer border-secondary">
+                <button className="btn btn-secondary btn-sm" onClick={() => setFormOpen(false)}>ยกเลิก</button>
+                <button className="btn btn-info btn-sm fw-bold" onClick={save} disabled={saving}>
+                  <i className="fa-solid fa-floppy-disk"></i> {saving ? 'กำลังบันทึก...' : 'บันทึกงานนำขบวน'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

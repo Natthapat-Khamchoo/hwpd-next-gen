@@ -11,6 +11,7 @@ import { EvidencePanel } from './hq/EvidencePanel';
 import { EscortPanel } from './hq/EscortPanel';
 import { DailyDetailPanel } from './hq/DailyDetailPanel';
 import { SearchPanel } from './hq/SearchPanel';
+import { AnalysisPanel } from './hq/AnalysisPanel';
 
 
 const VIEW_TITLES: Record<string, string> = {
@@ -118,6 +119,9 @@ export const HqDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 </table>
               </div>
             </div>
+            <AnalysisPanel station={station} start={start} end={end}
+                           stations={bs.map((s: any) => ({ station: String(s.station), name: s.name }))} />
+
             <div className="row g-4">
               <div className="col-12 col-lg-7"><div className="glass-card h-100"><h5 className="text-white mb-3"><i className="fa-solid fa-chart-column text-info"></i> เปรียบเทียบผลปฏิบัติรายสถานี</h5>
                 <ReactApexChart type="bar" height={320} options={vBarOptions(bs.map((s: any) => s.name), ['#ef4444', '#ffc107', '#20c997'])} series={[{ name: 'คดีอาญา', data: bs.map((s: any) => s.arrest) }, { name: 'คดีจราจร', data: bs.map((s: any) => s.v20) }, { name: 'รับเสด็จ', data: bs.map((s: any) => s.royalGuard) }]} /></div></div>

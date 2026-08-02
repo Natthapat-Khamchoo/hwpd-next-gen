@@ -728,3 +728,143 @@ def mission_calendar(station_id: str, year_month: str) -> List[Dict[str, Any]]:
 
     results.sort(key=lambda item: _sort_key(item["startTime"]))
     return results
+
+
+# ------------------------------------------- ตารางแจกแจงเชิงลึก
+
+
+# หมวดรายงานจับกุมที่หน้าภาพรวมให้เลือกชำแหละ ตรงกับ checkbox ชุด chkContainerArrest
+# ของเดิม (hq_dashboard.html บรรทัด 209-218) สี่ตัวแรกติ๊กไว้ให้ตั้งแต่เปิดหน้า
+ARREST_CATEGORIES: List[Tuple[str, bool]] = [
+    ("ยาเสพติด", True),
+    ("จับตามหมายจับ (คดีค้างเก่า)", True),
+    ("พ.ร.บ.จราจรทางบก", True),
+    ("เมาแล้วขับ", True),
+    ("พ.ร.บ.รถยนต์ (ป้ายปลอม/สวมทะเบียน)", False),
+    ("อาวุธปืน/เครื่องกระสุน", False),
+    ("บุคคลต่างด้าวหลบหนีเข้าเมือง", False),
+    ("สินค้าหนีภาษี/ศุลกากร", False),
+    ("พ.ร.บ.ป่าไม้/สัตว์ป่า", False),
+]
+
+# Charges_Detail เก็บเป็น "ข้อหา (จำนวน) | ข้อหา (จำนวน)" — ดึงชื่อกับจำนวนออกจากกัน
+_CHARGE_WITH_COUNT = re.compile(r"^(.*?)\s*\((\d+)\)\s*$")
+
+
+def detailed_analysis(
+    station_id: str,
+    start: str,
+    end: str,
+    mode: str,
+    categories: List[str],
+) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    """
+    ตารางแจกแจง "ข้อหา/หมวดจับกุม x สถานี" ของหน้าภาพรวม
+
+    mode = daily_charges  นับจำนวนใบสั่งรายข้อหาจาก Charges_Detail ใน tb_DailyResult
+    mode = arrests        นับจำนวนคดีรายหมวดจาก "หัวข้อการจับกุม" ใน tb_Arrests
+
+    เก็บ recordId ของแถวที่นับไว้ในแต่ละช่องด้วย หน้าเว็บใช้ตอนคลิกตัวเลขเพื่อเปิดดู
+    ว่ายอดนั้นมาจากใบงานไหนบ้าง
+    """
+    spreadsheet_id = get_target_db_id(station_id)
+    stations = get_division_stations(station_id, include_hq=False)
+
+    breakdown: Dict[str, Dict[str, Dict[str, Any]]] = {
+        category: {key: {"count": 0, "ids": []} for key in ["total", *stations]}
+        for category in categories
+    }
+    wanted = set(categories)
+
+    def bump(category: str, station_key: str, amount: int, record_id: str) -> None:
+        row = breakdown[category].setdefault(station_key, {"count": 0, "ids": []})
+        row["count"] += amount
+        if record_id not in row["ids"]:
+            row["ids"].append(record_id)
+        total = breakdown[category]["total"]
+        total["count"] += amount
+        if record_id not in total["ids"]:
+            total["ids"].append(record_id)
+
+    table = "tb_DailyResult" if mode == "daily_charges" else "tb_Arrests"
+    for record in query_service.cached_rows(spreadsheet_id, table):
+        if record.get(query_service.COL_STATUS) != query_service.STATUS_APPROVED:
+            continue
+        if not query_service.is_active(record.get(query_service.COL_IS_ACTIVE)):
+            continue
+        when = record.get("วันที่เวลาที่รายงาน") or record.get(query_service.COL_ACTUAL_DATE)
+        if not _in_range(when, start, end):
+            continue
+
+        key = _station_key(record.get(query_service.COL_STATION_ID, ""))
+        record_id = record.get(query_service.COL_RECORD_ID, "")
+
+        if mode == "daily_charges":
+            raw = str(record.get("Charges_Detail", "")).strip()
+            if not raw or raw == "-":
+                continue
+            for part in raw.split("|"):
+                match = _CHARGE_WITH_COUNT.match(part.strip())
+                if not match:
+                    continue
+                name, amount = match.group(1).strip(), int(match.group(2))
+                if name in wanted:
+                    bump(name, key, amount, record_id)
+        else:
+            category = str(record.get("หัวข้อการจับกุม", "")).strip()
+            if category in wanted:
+                bump(category, key, 1, record_id)
+
+    return breakdown
+
+
+def records_summary(station_id: str, table_name: str, record_ids: List[str]) -> List[Dict[str, Any]]:
+    """
+    สรุปย่อของใบงานที่ระบุ ใช้ตอนคลิกตัวเลขในตารางแจกแจงเพื่อดูว่ายอดมาจากใบไหน
+
+    คืนเป็นข้อความล้วน ไม่ใช่ HTML เหมือนของเดิม เพราะฝั่ง React ประกอบเองได้และ
+    การส่ง HTML ข้ามมาแปลว่าต้อง dangerouslySetInnerHTML ซึ่งเปิดช่อง XSS ฟรี ๆ
+    """
+    spreadsheet_id = get_target_db_id(station_id)
+    wanted = set(record_ids)
+    results: List[Dict[str, Any]] = []
+
+    for record in query_service.cached_rows(spreadsheet_id, table_name):
+        record_id = record.get(query_service.COL_RECORD_ID, "")
+        if record_id not in wanted:
+            continue
+        if not query_service.check_station_match(str(station_id), record.get(query_service.COL_STATION_ID, "")):
+            continue
+
+        if table_name == "tb_Arrests":
+            results.append({
+                "recordId": record_id,
+                "sheetName": table_name,
+                "date": _display_datetime(
+                    record.get("วันที่เวลาที่ดำเนินการ") or record.get("วันที่เวลาที่รายงาน")
+                ),
+                "title": f"จับกุม {record.get('หัวข้อการจับกุม', '')}",
+                "station": _station_name(record.get(query_service.COL_STATION_ID, "")),
+                "unit": record.get(query_service.COL_UNIT_ID, ""),
+                "tag": f"{record.get('จำนวนผู้ต้องหา', '0')} คน",
+                "tagClass": "bg-danger",
+                "charges": record.get("ข้อหาทั้งหมด", ""),
+                "detail": record.get("พฤติการณ์", ""),
+            })
+        else:
+            results.append({
+                "recordId": record_id,
+                "sheetName": table_name,
+                "date": _display_datetime(
+                    record.get("วันที่เวลาที่รายงาน") or record.get(query_service.COL_TIMESTAMP)
+                ),
+                "title": "ผลปฏิบัติประจำวัน",
+                "station": _station_name(record.get(query_service.COL_STATION_ID, "")),
+                "unit": record.get(query_service.COL_UNIT_ID, ""),
+                "tag": f"ว.20 : {record.get('ยอด ว.20', '0')} ครั้ง",
+                "tagClass": "bg-warning text-dark",
+                "charges": str(record.get("Charges_Detail", "")).replace("|", ", "),
+                "detail": "",
+            })
+
+    return results

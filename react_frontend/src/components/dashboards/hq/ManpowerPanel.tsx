@@ -2,13 +2,17 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { api } from '../../../services/api';
 import Swal from 'sweetalert2';
+import { downloadSheet } from './excel';
 import { PanelState } from './panelHelpers';
 
 /**
- * ระบบจัดการกำลังพล (พอร์ตจาก loadHqView('manpower'))
+ * ระบบจัดการกำลังพล (พอร์ตจาก loadHQManpowerOverview + viewHQStationManpower)
  *
  * ยอดที่ผู้บังคับบัญชาใช้จริงคือ "ปฏิบัติจริง" = ฐาน - ไปช่วย + มาช่วย ไม่ใช่ยอดฐาน
  * เพราะสถานีที่ส่งคนไปช่วยที่อื่นครึ่งหนึ่งมีกำลังพลบนกระดาษเท่าเดิมแต่ทำงานได้ครึ่งเดียว
+ *
+ * ผังกำลังพลเปิดดูได้ทุกสถานีในกอง ไม่ใช่แค่สถานีของคนที่ล็อกอิน — ของเดิมมีปุ่ม
+ * "จัดการ/ดูผัง" ต่อแถว เพราะงานของ ฝอ. คือดูแลกำลังพลทั้งกอง
  */
 
 interface Person {
@@ -22,6 +26,7 @@ interface Person {
   rawOutStation?: string;
   rawStart?: string;
   rawEnd?: string;
+  homeStation?: string;
   homeStationLabel?: string;
 }
 
@@ -33,20 +38,34 @@ const LEVELS: { key: 'level1' | 'level2' | 'level3'; label: string }[] = [
 
 export const ManpowerPanel: React.FC<{ station: string; canEdit: boolean }> = ({ station, canEdit }) => {
   const { user } = useAuth();
-  const [data, setData] = useState<any | null>(null);
+  const [overview, setOverview] = useState<Record<string, any>>({});
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState('');
+  // สถานีที่กำลังกางผังอยู่ ปิดไว้ตั้งแต่แรกเหมือนของเดิม (hqOrgChartArea display:none)
+  const [chartStation, setChartStation] = useState('');
+  const [chart, setChart] = useState<any | null>(null);
+  const [chartBusy, setChartBusy] = useState(false);
 
-  const load = async () => {
+  const loadOverview = async () => {
     setBusy(true);
     setError('');
     const res = await api.hqManpower(station, user?.token);
-    if (res.status === 'success') setData(res.data);
+    if (res.status === 'success') setOverview(res.data.overview || {});
     else setError(res.message || 'โหลดข้อมูลกำลังพลไม่สำเร็จ');
     setBusy(false);
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [station]);
+  useEffect(() => { loadOverview(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [station]);
+
+  const openChart = async (stationId: string) => {
+    setChartStation(stationId);
+    setChartBusy(true);
+    setChart(null);
+    const res = await api.hqManpower(stationId, user?.token);
+    setChartBusy(false);
+    if (res.status === 'success') setChart(res.data.station);
+    else Swal.fire('โหลดผังไม่สำเร็จ', res.message || '', 'error');
+  };
 
   const editPerson = async (p: Person) => {
     const { value } = await Swal.fire({
@@ -78,16 +97,25 @@ export const ManpowerPanel: React.FC<{ station: string; canEdit: boolean }> = ({
     const res = await api.hqSaveManpowerStatus({ username: p.username, ...value }, user?.token);
     if (res.status === 'success') {
       await Swal.fire('บันทึกแล้ว', res.message || '', 'success');
-      load();
+      loadOverview();
+      if (chartStation) openChart(chartStation);
     } else {
       Swal.fire('บันทึกไม่สำเร็จ', res.message || '', 'error');
     }
   };
 
-  const overview = data?.overview || {};
-  const chart = data?.station?.chart || {};
-  const stats = data?.station?.stats || {};
   const stationRows = Object.entries(overview).filter(([id]) => id !== 'total') as [string, any][];
+  const total = overview.total;
+
+  const exportExcel = () => {
+    downloadSheet('กำลังพลรายสถานี', [
+      ['สรุปกำลังพลระดับกองกำกับการ'],
+      [],
+      ['หน่วย/สถานี', 'อัตรา', 'ไปช่วยราชการ', 'มาช่วยราชการ', 'ปฏิบัติงานจริง'],
+      ...stationRows.map(([, r]) => [r.name, r.base, r.out, r.in, r.net]),
+      ...(total ? [['รวมทั้ง กก.', total.base, total.out, total.in, total.net]] : []),
+    ], 'กำลังพล');
+  };
 
   const card = (p: Person, incoming = false) => (
     <div
@@ -96,30 +124,57 @@ export const ManpowerPanel: React.FC<{ station: string; canEdit: boolean }> = ({
       style={{
         background: incoming ? 'rgba(32,201,151,0.12)' : p.status === 'out' ? 'rgba(255,193,7,0.12)' : 'rgba(255,255,255,0.04)',
         border: '1px solid rgba(255,255,255,0.08)',
+        cursor: canEdit && !incoming ? 'pointer' : 'default',
       }}
+      onClick={() => canEdit && !incoming && editPerson(p)}
     >
       <div style={{ minWidth: 0 }}>
         <div className="text-white small text-truncate">{p.name}</div>
         <div className="text-white-50" style={{ fontSize: '.72rem' }}>
-          {p.code && <span className="me-2">รหัส {p.code}</span>}
-          {p.phone}
+          {p.code && <span className="me-2">รหัส {p.code}</span>}{p.phone}
         </div>
         {incoming && <div className="text-success" style={{ fontSize: '.72rem' }}>มาช่วยจาก {p.homeStationLabel}</div>}
         {!incoming && p.status === 'out' && <div className="text-warning" style={{ fontSize: '.72rem' }}>ไปช่วย {p.tag}</div>}
         {p.remark && <div className="text-white-50 fst-italic" style={{ fontSize: '.72rem' }}>{p.remark}</div>}
       </div>
-      {canEdit && !incoming && (
-        <button className="btn btn-sm btn-outline-info py-0 px-2" onClick={() => editPerson(p)} title="แก้สถานะช่วยราชการ">
-          <i className="fa-solid fa-pen"></i>
-        </button>
-      )}
+      {canEdit && !incoming && <i className="fa-solid fa-pen text-info" style={{ fontSize: '.7rem' }}></i>}
     </div>
   );
 
   return (
     <>
       <div className="glass-card mb-4">
-        <h5 className="text-white mb-3"><i className="fa-solid fa-users text-primary"></i> ยอดกำลังพลรายสถานีทั้งกองกำกับการ</h5>
+        <h5 className="text-primary mb-3"><i className="fa-solid fa-users"></i> ภาพรวมกำลังพลระดับกองกำกับการ</h5>
+
+        {total && (
+          <div className="row g-3 mb-4">
+            {[
+              { l: 'ยอดรวมทั้งกองกำกับ (นาย)', v: total.base, c: 'text-primary' },
+              { l: 'ไปช่วยราชการทั้งหมด (นาย)', v: total.out, c: 'text-danger' },
+              { l: 'มาช่วยราชการทั้งหมด (นาย)', v: total.in, c: 'text-success' },
+              { l: 'กำลังพลปฏิบัติงานจริง (นาย)', v: total.net, c: 'text-info' },
+            ].map((k, i) => (
+              <div className="col-md-3 col-6" key={i}>
+                <div className="kpi-card" style={{ background: 'rgba(255,255,255,0.03)' }}>
+                  <div className="title">{k.l}</div><div className={`value ${k.c}`}>{k.v}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 border-bottom border-secondary pb-3">
+          <h6 className="text-white m-0"><i className="fa-solid fa-list"></i> สรุปยอดแยกตามสถานี</h6>
+          <div className="d-flex gap-2">
+            <button className="btn btn-sm btn-success fw-bold" onClick={exportExcel} disabled={!stationRows.length}>
+              <i className="fa-solid fa-file-excel"></i> Export
+            </button>
+            <button className="btn btn-sm btn-outline-info" onClick={loadOverview}>
+              <i className="fa-solid fa-rotate"></i> รีเฟรช
+            </button>
+          </div>
+        </div>
+
         <PanelState busy={busy} error={error} empty={!busy && !error && !stationRows.length} emptyText="ไม่พบข้อมูลกำลังพล" />
 
         {!busy && !error && !!stationRows.length && (
@@ -127,30 +182,37 @@ export const ManpowerPanel: React.FC<{ station: string; canEdit: boolean }> = ({
             <table className="table table-hq table-bordered text-center align-middle small mb-0">
               <thead>
                 <tr>
-                  <th className="text-start">หน่วย</th>
-                  <th>ยอดฐาน</th>
-                  <th className="text-warning">ไปช่วยราชการ</th>
+                  <th className="text-start">หน่วย/สถานี</th>
+                  <th className="text-primary">อัตรา</th>
+                  <th className="text-danger">ไปช่วยราชการ</th>
                   <th className="text-success">มาช่วยราชการ</th>
-                  <th className="text-info">ปฏิบัติจริง</th>
+                  <th className="text-info">ปฏิบัติงานจริง</th>
+                  <th style={{ width: 130 }}>จัดการ / ดูผัง</th>
                 </tr>
               </thead>
               <tbody>
                 {stationRows.map(([id, row]) => (
-                  <tr key={id}>
+                  <tr key={id} style={chartStation === id ? { background: 'rgba(13,202,240,0.08)' } : undefined}>
                     <td className="text-start text-white">{row.name}</td>
                     <td>{row.base}</td>
-                    <td className={row.out ? 'text-warning' : ''}>{row.out}</td>
+                    <td className={row.out ? 'text-danger' : ''}>{row.out}</td>
                     <td className={row.in ? 'text-success' : ''}>{row.in}</td>
                     <td className="fw-bold text-info">{row.net}</td>
+                    <td>
+                      <button className="btn btn-sm btn-outline-info py-0 px-2" onClick={() => openChart(id)}>
+                        <i className="fa-solid fa-sitemap"></i> ดูผัง
+                      </button>
+                    </td>
                   </tr>
                 ))}
-                {overview.total && (
+                {total && (
                   <tr style={{ background: 'rgba(255,255,255,0.05)' }}>
                     <td className="text-start text-warning fw-bold">รวมทั้ง กก.</td>
-                    <td className="fw-bold">{overview.total.base}</td>
-                    <td className="fw-bold text-warning">{overview.total.out}</td>
-                    <td className="fw-bold text-success">{overview.total.in}</td>
-                    <td className="fw-bold text-info">{overview.total.net}</td>
+                    <td className="fw-bold">{total.base}</td>
+                    <td className="fw-bold text-danger">{total.out}</td>
+                    <td className="fw-bold text-success">{total.in}</td>
+                    <td className="fw-bold text-info">{total.net}</td>
+                    <td></td>
                   </tr>
                 )}
               </tbody>
@@ -159,45 +221,68 @@ export const ManpowerPanel: React.FC<{ station: string; canEdit: boolean }> = ({
         )}
       </div>
 
-      {!busy && !error && data?.station && (
+      {chartStation && (
         <div className="glass-card">
           <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-            <h5 className="text-white m-0"><i className="fa-solid fa-sitemap text-info"></i> ผังกำลังพล {overview[station]?.name || station}</h5>
-            <div className="small text-white-50">
-              ฐาน {stats.base} · ไปช่วย <span className="text-warning">{stats.out}</span> ·
-              มาช่วย <span className="text-success">{stats.in}</span> ·
-              ปฏิบัติจริง <span className="text-info fw-bold">{stats.net}</span>
+            <h5 className="text-info m-0">
+              <i className="fa-solid fa-sitemap"></i> ทำเนียบกำลังพล: {overview[chartStation]?.name || chartStation}
+            </h5>
+            <div className="d-flex align-items-center gap-3">
+              {chart && (
+                <div className="small text-white-50">
+                  ฐาน {chart.stats.base} · ไปช่วย <span className="text-danger">{chart.stats.out}</span> ·
+                  มาช่วย <span className="text-success">{chart.stats.in}</span> ·
+                  ปฏิบัติจริง <span className="text-info fw-bold">{chart.stats.net}</span>
+                </div>
+              )}
+              <button className="btn btn-sm btn-outline-secondary" onClick={() => { setChartStation(''); setChart(null); }}>
+                <i className="fa-solid fa-xmark"></i> ปิดผัง
+              </button>
             </div>
           </div>
 
-          {LEVELS.map(({ key, label }) => (
-            <div className="mb-3" key={key}>
-              <div className="small text-white-50 mb-2 border-bottom border-secondary pb-1">
-                {label} ({(chart[key] || []).length})
-              </div>
-              {(chart[key] || []).length ? (
-                <div className="d-flex flex-wrap gap-2">
-                  {(chart[key] as Person[]).map((p) => (
-                    <div key={p.username} style={{ minWidth: 230, flex: '1 1 230px' }}>{card(p)}</div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-white-50 small fst-italic">ไม่มีเจ้าหน้าที่ในระดับนี้</div>
-              )}
-            </div>
-          ))}
+          <PanelState busy={chartBusy} error="" empty={false} emptyText="" />
 
-          {!!(chart.incoming || []).length && (
-            <div>
-              <div className="small text-success mb-2 border-bottom border-secondary pb-1">
-                กำลังเสริมจากหน่วยอื่น ({chart.incoming.length})
-              </div>
-              <div className="d-flex flex-wrap gap-2">
-                {(chart.incoming as Person[]).map((p) => (
-                  <div key={p.username} style={{ minWidth: 230, flex: '1 1 230px' }}>{card(p, true)}</div>
-                ))}
-              </div>
-            </div>
+          {chart && (
+            <>
+              {LEVELS.map(({ key, label }) => (
+                <div className="mb-3" key={key}>
+                  <div className="small text-white-50 mb-2 border-bottom border-secondary pb-1">
+                    {label} ({(chart.chart[key] || []).length})
+                  </div>
+                  {(chart.chart[key] || []).length ? (
+                    <div className="d-flex flex-wrap gap-2">
+                      {(chart.chart[key] as Person[]).map((p) => (
+                        <div key={p.username} style={{ minWidth: 230, flex: '1 1 230px' }}>{card(p)}</div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-white-50 small fst-italic">ไม่มีเจ้าหน้าที่ในระดับนี้</div>
+                  )}
+                </div>
+              ))}
+
+              {!!(chart.chart.incoming || []).length && (
+                <div>
+                  <div className="small text-success mb-2 border-bottom border-secondary pb-1">
+                    กำลังเสริมจากหน่วยอื่น ({chart.chart.incoming.length})
+                  </div>
+                  <div className="d-flex flex-wrap gap-2">
+                    {(chart.chart.incoming as Person[]).map((p) => (
+                      <div key={p.username} style={{ minWidth: 230, flex: '1 1 230px' }}>{card(p, true)}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {canEdit && (
+                <div className="text-center mt-4 border-top border-secondary pt-3">
+                  <span className="badge bg-dark border border-secondary text-white-50 p-2">
+                    <i className="fa-solid fa-hand-pointer text-info"></i> คลิกที่การ์ดรายชื่อ เพื่อแก้ไขสถานะ ไปช่วย/มาช่วย ราชการ
+                  </span>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

@@ -335,7 +335,15 @@ def _split_charge_counts(text: str) -> List[Tuple[str, int]]:
 
 
 def _split_seized(raw: str) -> List[str]:
-    """ชื่อของกลางจากคอลัมน์ JSON — ข้อความอิสระข้าง ๆ เจ้าหน้าที่แก้เองได้ จึงนับไม่ได้"""
+    """
+    ชนิดของกลางจากคอลัมน์ JSON — ข้อความอิสระข้าง ๆ เจ้าหน้าที่แก้เองได้ จึงนับไม่ได้
+
+    หน้าจัดหมวดหมู่ของกลางเก็บเป็น {cat, type, unit, qty} ตามที่ EVI_MASTER_DATA
+    ของเดิมกำหนด นับที่ `type` ซึ่งเป็นชนิดจริง ("ยาบ้า") ไม่ใช่ `cat` ซึ่งเป็นหมวดกว้าง
+    ("ยาเสพติด") ถ้าไม่ได้เลือกชนิดไว้ก็ถอยไปใช้หมวดแทน
+
+    ยังรับคีย์ `name` ด้วยเพราะแถวที่บันทึกไว้ก่อนหน้านี้ใช้รูปแบบนั้น
+    """
     text = str(raw or "").strip()
     if not text:
         return []
@@ -345,7 +353,15 @@ def _split_seized(raw: str) -> List[str]:
         return []
     if not isinstance(items, list):
         return []
-    return [str(item.get("name", "")).strip() for item in items if isinstance(item, dict) and item.get("name")]
+
+    names = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("type") or item.get("cat") or item.get("name") or "").strip()
+        if label:
+            names.append(label)
+    return names
 
 
 def _add_causes(text: str, causes: Counter) -> None:

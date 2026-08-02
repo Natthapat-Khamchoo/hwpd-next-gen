@@ -1511,3 +1511,66 @@ def commander_order(payload: Dict[str, Any], session: Dict[str, Any] = Depends(c
 
     note = f" (ข้าม {len(skipped)} สถานีที่ยังไม่ได้ผูกกลุ่ม LINE)" if skipped else ""
     return {"status": "success", "message": f"ส่งข้อความสั่งการแล้ว {len(sent)} สถานี{note}"}
+
+
+@app.get("/api/hq/analysis/categories")
+def hq_analysis_categories(session: Dict[str, Any] = Depends(current_session)):
+    """หมวดรายงานจับกุมที่ให้เลือกชำแหละ พร้อมค่าที่ติ๊กไว้ตั้งแต่เปิดหน้า"""
+    _require_division(session)
+    return {
+        "status": "success",
+        "data": [{"name": name, "checked": checked} for name, checked in hq_service.ARREST_CATEGORIES],
+    }
+
+
+@app.post("/api/hq/analysis")
+def hq_analysis(payload: Dict[str, Any], session: Dict[str, Any] = Depends(current_session)):
+    """
+    ตารางแจกแจง "ข้อหา/หมวดจับกุม x สถานี"
+
+    ใช้ POST เพราะรายการหมวดที่เลือกมีได้หลายสิบตัวและเป็นข้อความไทยยาว ๆ ยัดลง
+    query string แล้วชน limit ความยาว URL ของ proxy บางตัว
+    """
+    station_id = authorized_station_id(payload.get("stationId"), session)
+    _require_division(session)
+
+    mode = str(payload.get("mode") or "daily_charges")
+    if mode not in {"daily_charges", "arrests"}:
+        raise HTTPException(status_code=400, detail="โหมดวิเคราะห์ไม่ถูกต้อง")
+
+    categories = payload.get("categories") or []
+    if not isinstance(categories, list) or not categories:
+        raise HTTPException(status_code=400, detail="กรุณาเลือกอย่างน้อยหนึ่งรายการ")
+
+    try:
+        data = hq_service.detailed_analysis(
+            station_id,
+            str(payload.get("start") or ""),
+            str(payload.get("end") or ""),
+            mode,
+            [str(c) for c in categories],
+        )
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"status": "success", "data": data}
+
+
+@app.post("/api/hq/records")
+def hq_records(payload: Dict[str, Any], session: Dict[str, Any] = Depends(current_session)):
+    """ใบงานเบื้องหลังตัวเลขในตารางแจกแจง — เรียกตอนคลิกที่ตัวเลข"""
+    station_id = authorized_station_id(payload.get("stationId"), session)
+    _require_division(session)
+
+    table = str(payload.get("sheetName") or "")
+    if table not in {"tb_DailyResult", "tb_Arrests"}:
+        raise HTTPException(status_code=400, detail="ตารางไม่ถูกต้อง")
+
+    ids = payload.get("recordIds") or []
+    if not isinstance(ids, list):
+        raise HTTPException(status_code=400, detail="recordIds ต้องเป็นรายการ")
+
+    try:
+        data = hq_service.records_summary(station_id, table, [str(i) for i in ids])
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"status": "success", "data": data}

@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { api } from '../../../services/api';
+import Swal from 'sweetalert2';
+import { downloadSheet } from './excel';
 import { PanelState, recentStart, today } from './panelHelpers';
 
 /**
@@ -30,6 +32,34 @@ export const SearchPanel: React.FC<{ station: string }> = ({ station }) => {
     setRows(res.data || []);
   };
 
+  /** ทุกฟิลด์ของแถวที่ค้นเจอ — ของเดิมมีปุ่ม "ตรวจสอบ" ต่อแถวเพื่อการนี้ */
+  const showRecord = (row: any) => {
+    const skip = new Set(['matches', 'dateMs']);
+    const body = Object.entries(row)
+      .filter(([k, v]) => !skip.has(k) && v !== '' && v !== null && v !== undefined)
+      .map(([k, v]) => '<tr><td style="text-align:left;color:#9ca3af;white-space:nowrap;padding-right:12px">' +
+        k + '</td><td style="text-align:left">' + String(v) + '</td></tr>')
+      .join('');
+    Swal.fire({
+      title: row.type || 'รายละเอียด',
+      width: 720,
+      html: '<table style="width:100%;font-size:.85rem;border-collapse:collapse"><tbody>' + body + '</tbody></table>' +
+        '<div style="margin-top:12px;text-align:left;font-size:.8rem;color:#9ca3af">ข้อความที่ตรงกับคำค้น:<br>' +
+        (row.matches || []).join('<br>') + '</div>',
+      confirmButtonText: 'ปิด',
+    });
+  };
+
+  const exportExcel = () => {
+    if (!rows || !rows.length) return;
+    downloadSheet('ผลค้นหา_' + start + '_' + end, [
+      ['ผลการค้นหา "' + keyword + '" ช่วงวันที่ ' + start + ' ถึง ' + end],
+      [],
+      ['วันที่', 'ประเภท', 'สถานี', 'หน่วย', 'ผู้บันทึก', 'ข้อความที่ตรง'],
+      ...rows.map((r) => [r.date, r.type, r.station, r.unit, r.actionBy, (r.matches || []).join(' | ')]),
+    ], 'ผลการค้นหา');
+  };
+
   return (
     <div className="glass-card">
       <h5 className="text-white mb-1"><i className="fa-solid fa-magnifying-glass text-info"></i> สืบค้นฐานข้อมูลกองกำกับการ</h5>
@@ -53,12 +83,18 @@ export const SearchPanel: React.FC<{ station: string }> = ({ station }) => {
 
       {rows && !busy && (
         <>
-          <p className="text-white-50 small mb-2">พบ {rows.length} รายการ{rows.length >= 300 && ' (แสดงสูงสุด 300)'}</p>
+          <div className="d-flex justify-content-between align-items-center mb-2">
+            <p className="text-white-50 small m-0">พบ {rows.length} รายการ{rows.length >= 300 && ' (แสดงสูงสุด 300)'}</p>
+            <button className="btn btn-sm btn-success fw-bold" onClick={exportExcel} disabled={!rows.length}>
+              <i className="fa-solid fa-file-excel"></i> Export
+            </button>
+          </div>
           <div className="table-responsive" style={{ maxHeight: 520, overflowY: 'auto' }}>
             <table className="table table-hq table-bordered align-middle small mb-0">
               <thead>
                 <tr><th>วันที่</th><th>ประเภท</th><th className="text-start">สถานี/หน่วย</th>
-                    <th className="text-start">ผู้บันทึก</th><th className="text-start">ข้อความที่ตรง</th></tr>
+                    <th className="text-start">ผู้บันทึก</th><th className="text-start">ข้อความที่ตรง</th>
+                    <th style={{ width: 80 }}>ตรวจสอบ</th></tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
@@ -70,9 +106,14 @@ export const SearchPanel: React.FC<{ station: string }> = ({ station }) => {
                     <td className="text-start text-white-50" style={{ maxWidth: 420 }}>
                       {(r.matches || []).map((m: string, i: number) => <div key={i}>{m}</div>)}
                     </td>
+                    <td>
+                      <button className="btn btn-sm btn-outline-info py-0 px-2" onClick={() => showRecord(r)}>
+                        <i className="fa-solid fa-eye"></i>
+                      </button>
+                    </td>
                   </tr>
                 ))}
-                {!rows.length && <tr><td colSpan={5} className="text-center text-white-50 py-4">ไม่พบรายการที่ตรงกับคำค้น</td></tr>}
+                {!rows.length && <tr><td colSpan={6} className="text-center text-white-50 py-4">ไม่พบรายการที่ตรงกับคำค้น</td></tr>}
               </tbody>
             </table>
           </div>

@@ -3,6 +3,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { api } from '../../../services/api';
 import { PanelState, RangePicker, recentStart, today } from './panelHelpers';
 import { ReportExportPanel } from '../ReportExportPanel';
+import { downloadWorkbook } from './excel';
 
 /**
  * แฟ้มข้อมูลรายวัน (พอร์ตจาก loadHqView('daily_detail'))
@@ -74,13 +75,53 @@ export const DailyDetailPanel: React.FC<Props> = ({ station, reports, canExport 
     return Array.from(map.entries());
   }, [filtered]);
 
+  /**
+   * ส่งออกสองแบบตามของเดิม
+   *   ย่อ  = ตารางเดียว เอาไว้แนบรายงานหรือปรินต์
+   *   เต็ม = แยกชีตตามประเภทรายงาน เอาไว้ทำงานต่อใน Excel
+   */
+  const exportExcel = (kind: 'short' | 'full') => {
+    const head = ['วันที่', 'เวลา', 'ประเภท', 'สถานี', 'หน่วย', 'รายละเอียด', 'ผู้รายงาน', 'ลิงก์ไฟล์แนบ'];
+    const toRow = (r: Row) => [r.rawDate, r.time, r.type, r.station, r.unit, r.details, r.reporter, r.link];
+    const title = 'แฟ้มข้อมูลรายวัน ' + start + ' ถึง ' + end;
+
+    if (kind === 'short') {
+      downloadWorkbook('แฟ้มข้อมูล_ย่อ_' + start + '_' + end, [
+        { name: 'ทั้งหมด', rows: [[title], [], head, ...filtered.map(toRow)] },
+      ]);
+      return;
+    }
+
+    const types = Array.from(new Set(filtered.map((r) => r.type)));
+    downloadWorkbook('แฟ้มข้อมูล_เต็ม_' + start + '_' + end, [
+      {
+        name: 'สรุปรวม',
+        rows: [[title], [], ['ประเภทรายงาน', 'จำนวน'],
+          ...types.map((t) => [t, filtered.filter((r) => r.type === t).length]),
+          ['รวม', filtered.length]],
+      },
+      ...types.map((t) => ({
+        name: t,
+        rows: [[t], [], head, ...filtered.filter((r) => r.type === t).map(toRow)],
+      })),
+    ]);
+  };
+
   return (
     <>
       <div className="glass-card mb-4">
         <h5 className="text-white mb-1"><i className="fa-solid fa-folder-open text-success"></i> แฟ้มข้อมูลรายวัน</h5>
         <p className="text-white-50 small mb-3">ทุกรายงานที่ผ่านการอนุมัติแล้วในช่วงวันที่ที่เลือก</p>
 
-        <RangePicker start={start} end={end} onStart={setStart} onEnd={setEnd} onLoad={load} busy={busy} />
+        <div className="d-flex flex-wrap align-items-center gap-2">
+          <RangePicker start={start} end={end} onStart={setStart} onEnd={setEnd} onLoad={load} busy={busy} />
+          <button className="btn btn-success btn-sm fw-bold mb-3" onClick={() => exportExcel('short')} disabled={!filtered.length}>
+            <i className="fa-solid fa-file-excel"></i> Export (ย่อ)
+          </button>
+          <button className="btn btn-warning btn-sm text-dark fw-bold mb-3" onClick={() => exportExcel('full')} disabled={!filtered.length}>
+            <i className="fa-solid fa-file-excel"></i> Export (เต็ม)
+          </button>
+        </div>
 
         {!busy && !error && !!rows.length && (
           <div className="d-flex flex-wrap gap-2 mb-3">
