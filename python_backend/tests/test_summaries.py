@@ -74,11 +74,35 @@ OTHER = [
     }),
 ]
 
+# ภารกิจกับรับเสด็จเคยไม่มีใน fixture ทั้งที่ทั้งสองสรุปอ่านสองตารางนี้ด้วย
+# ช่องโหว่นั้นทำให้ NameError ใน _station_summary หลุดขึ้น production ไปหนึ่งรอบ
+MISSIONS = [
+    get_columns("tb_Missions"),
+    row("tb_Missions", **{
+        COL_RECORD_ID: "M1", COL_STATION_ID: "51", COL_ACTUAL_DATE: "2026-07-27",
+        COL_STATUS: "Active", COL_IS_ACTIVE: "TRUE", "รายละเอียดภารกิจ": "ตรวจจุดเสี่ยง",
+    }),
+    row("tb_Missions", **{
+        COL_RECORD_ID: "M2", COL_STATION_ID: "52", COL_ACTUAL_DATE: "2026-07-28",
+        COL_STATUS: "Active", COL_IS_ACTIVE: "TRUE", "รายละเอียดภารกิจ": "กวดขันวินัยจราจร",
+    }),
+]
+
+ROYAL_GUARD = [
+    get_columns("tb_RoyalGuard"),
+    row("tb_RoyalGuard", **{
+        COL_RECORD_ID: "RG1", COL_STATION_ID: "51", COL_ACTUAL_DATE: "2026-07-27",
+        COL_STATUS: "Approved", COL_IS_ACTIVE: "TRUE", "ชื่อภารกิจ": "รับเสด็จ",
+    }),
+]
+
 ALL_TABLES = {
     "tb_DailyResult": RESULTS,
     "tb_Arrests": ARRESTS,
     "tb_Accidents": ACCIDENTS,
     "tb_OtherDuties": OTHER,
+    "tb_Missions": MISSIONS,
+    "tb_RoyalGuard": ROYAL_GUARD,
 }
 
 RANGE = ("2026-07-25", "2026-07-31")
@@ -298,3 +322,31 @@ class TestSeizedItemsReachTheSheet(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMissionAndRoyalGuardCounters(unittest.TestCase):
+    """
+    ทั้งสองสรุปวนตารางชุดเดียวกันแต่เก็บผลคนละแบบ — สรุปสถานีเดียวมีแต่ totals
+    ส่วนสรุประดับ กก. มี bucket รายสถานีด้วย เผลอคัดลอกโค้ดข้ามกันเมื่อไหร่พังทันที
+    """
+
+    def test_station_summary_counts_missions_without_a_per_station_bucket(self):
+        with stub_router(), stub_sheets(ALL_TABLES):
+            data = query_service.daily_summary("51", *RANGE)
+        self.assertIn("v43", data)
+
+    def test_division_summary_splits_missions_per_station(self):
+        with stub_router(), stub_sheets(ALL_TABLES):
+            data = query_service.division_summary("50", *RANGE)
+        by_station = {s["station"]: s for s in data["byStation"]}
+        self.assertEqual(by_station["51"]["mission"], 1)
+        self.assertEqual(by_station["52"]["mission"], 1)
+        self.assertEqual(by_station["53"]["mission"], 0)
+        self.assertEqual(data["totals"]["mission"], 2)
+
+    def test_royal_guard_is_counted_on_both_paths(self):
+        with stub_router(), stub_sheets(ALL_TABLES):
+            station = query_service.daily_summary("51", *RANGE)
+            division = query_service.division_summary("50", *RANGE)
+        self.assertEqual(division["totals"]["royalGuard"], 1)
+        self.assertIn("v43", station)
