@@ -177,7 +177,7 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
 
         {view === 'overview' && (<>
         {/* Command Center */}
-        <div className="glass-card mb-4" style={{ borderColor: 'rgba(13,202,240,0.4)' }}>
+        <div className="cmd-card mb-4" style={{ borderColor: 'rgba(13,202,240,0.4)' }}>
           <h5 className="text-info mb-3"><i className="fa-solid fa-walkie-talkie"></i> ศูนย์สั่งการผู้บังคับบัญชา (Command Center)</h5>
           <div className="row g-3 align-items-end">
             <div className="col-12 col-md-7"><label className="form-label small text-white-50">พิมพ์ข้อความแจ้งเตือน / สั่งการ</label><textarea className="form-control bg-dark text-white border-secondary" rows={2} placeholder="พิมพ์ข้อความที่นี่... (ระบบจะส่งเข้า LINE กลุ่มทันที)" value={msg} onChange={(e) => setMsg(e.target.value)} /></div>
@@ -201,7 +201,7 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
         {/* KPIs */}
         <div className="row g-3 mb-4">
           {kpis.map((k, i) => (
-            <div className="col-md-2 col-6" key={i}><div className={`sc-kpi ${k.c}`}><div className="icon"><i className={`fa-solid ${k.i}`}></i></div><div className="value">{k.v ?? 0}</div><div className="title">{k.l}</div></div></div>
+            <div className="col-md col-6" key={i}><div className={`cmd-kpi ${k.c}`}><div className="icon"><i className={`fa-solid ${k.i}`}></i></div><div className="value">{k.v ?? 0}</div><div className="title">{k.l}</div></div></div>
           ))}
         </div>
 
@@ -209,7 +209,7 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
           <>
             <div className="row g-4 mb-4">
               <div className="col-12">
-                <div className="glass-card"><h5 className="text-white mb-1"><i className="fa-solid fa-layer-group text-info"></i> ผลการปฏิบัติงานทั่วไปและจิตอาสา</h5><p className="small text-white-50 mb-3">เปรียบเทียบ ว.20 · ว.42 · จิตอาสา แยกตามสถานี</p>
+                <div className="cmd-card"><h5 className="text-white mb-1"><i className="fa-solid fa-layer-group text-info"></i> ผลการปฏิบัติงานทั่วไปและจิตอาสา</h5><p className="small text-white-50 mb-3">เปรียบเทียบ ว.20 · ว.42 · จิตอาสา แยกตามสถานี</p>
                   <ReactApexChart type="bar" height={320}
                     options={{ ...vBarOptions(bs.map((s: any) => s.name), ['#ffc107', '#6c757d', '#0dcaf0']),
                                chart: { type: 'bar', height: 320, stacked: true, toolbar: { show: false }, background: 'transparent' } }}
@@ -218,12 +218,12 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
               </div>
             </div>
             <div className="row g-4 mb-4">
-              <div className="col-12 col-lg-6"><div className="glass-card h-100"><h5 className="text-danger mb-1"><i className="fa-solid fa-handcuffs"></i> สถิติการจับกุมแยกตามสถานี</h5><p className="small text-white-50 mb-3">เปรียบเทียบผลงานการจับกุมคดีอาญาของแต่ละสถานี</p><ReactApexChart type="bar" height={300} options={hBarOptions(bs.map((s: any) => s.name), '#ef4444')} series={[{ name: 'คดีอาญา', data: bs.map((s: any) => s.arrest) }]} /></div></div>
-              <div className="col-12 col-lg-6"><div className="glass-card h-100"><h5 className="text-success mb-1"><i className="fa-solid fa-shield-halved text-warning"></i> ภารกิจรับเสด็จแยกตามสถานี</h5><p className="small text-white-50 mb-3">เปรียบเทียบจำนวนครั้งการปฏิบัติภารกิจรับเสด็จ</p><ReactApexChart type="bar" height={300} options={hBarOptions(bs.map((s: any) => s.name), '#20c997')} series={[{ name: 'รับเสด็จ', data: bs.map((s: any) => s.royalGuard) }]} /></div></div>
+              <div className="col-12 col-lg-6"><div className="cmd-card h-100"><h5 className="text-danger mb-1"><i className="fa-solid fa-handcuffs"></i> สถิติการจับกุมแยกตามสถานี</h5><p className="small text-white-50 mb-3">เปรียบเทียบผลงานการจับกุมคดีอาญาของแต่ละสถานี</p><ReactApexChart type="bar" height={300} options={hBarOptions(bs.map((s: any) => s.name), '#ef4444')} series={[{ name: 'คดีอาญา', data: bs.map((s: any) => s.arrest) }]} /></div></div>
+              <div className="col-12 col-lg-6"><div className="cmd-card h-100"><h5 className="text-success mb-1"><i className="fa-solid fa-shield-halved text-warning"></i> ภารกิจรับเสด็จแยกตามสถานี</h5><p className="small text-white-50 mb-3">เปรียบเทียบจำนวนครั้งการปฏิบัติภารกิจรับเสด็จ</p><ReactApexChart type="bar" height={300} options={hBarOptions(bs.map((s: any) => s.name), '#20c997')} series={[{ name: 'รับเสด็จ', data: bs.map((s: any) => s.royalGuard) }]} /></div></div>
             </div>
             <div className="row g-4 mb-4">
               <div className="col-12 col-lg-6">
-                <div className="glass-card h-100">
+                <div className="cmd-card h-100">
                   <h5 className="text-warning mb-1"><i className="fa-solid fa-boxes-packing"></i> สถิติหมวดหมู่ของกลาง</h5>
                   <p className="small text-white-50 mb-3">สัดส่วนประเภทของกลางที่ทำการตรวจยึดได้เข้าคลังข้อมูล</p>
                   <div className="row align-items-center">
@@ -257,7 +257,7 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
               </div>
 
               <div className="col-12 col-lg-6">
-                <div className="glass-card h-100">
+                <div className="cmd-card h-100">
                   <h5 className="text-info mb-1"><i className="fa-solid fa-motorcycle"></i> สถิติภารกิจนำขบวน</h5>
                   <p className="small text-white-50 mb-3">เปรียบเทียบภาระงานนำขบวนแยกระดับสถานี (VIP และ ทั่วไป)</p>
                   {escort && escort.summary.total ? (
@@ -281,7 +281,7 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
               </div>
 
               <div className="col-12 col-lg-6">
-                <div className="glass-card h-100">
+                <div className="cmd-card h-100">
                   <h5 className="text-white mb-1">สถานภาพกำลังพล กก.{div}</h5>
                   <p className="small text-white-50 mb-3">สัดส่วนกำลังพลภาพรวมทั้งกองกำกับการ และแยกตามสถานี</p>
                   {exec?.manpower?.total ? (

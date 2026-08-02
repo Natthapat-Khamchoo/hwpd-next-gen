@@ -314,3 +314,133 @@ body {
 ::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.2); }
 ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--neon-blue); }
+
+/* ==========================================================================
+   คลาสจัดวางที่ยกมาจาก Apps Script ตรง ๆ
+   ที่มา: <style> ใน hq_dashboard.html และ commander_dashboard.html
+   คัดลอกค่ามาทั้งหมดโดยไม่ปรับ เพื่อให้หน้าตาออกมาเท่าต้นฉบับจริง ๆ ไม่ใช่ใกล้เคียง
+   ========================================================================== */
+
+/* --- ตารางแจกแจงเชิงลึก: ตัวเลขที่กดดูใบงานได้ --- */
+.drilldown-btn {
+  cursor: pointer; color: #facc15; font-weight: bold;
+  text-decoration: underline; text-decoration-style: dotted;
+  padding: 5px 10px; border-radius: 5px; transition: all 0.2s;
+  background: none; border: none;
+}
+.drilldown-btn:hover { background: rgba(250, 204, 21, 0.2); color: #fff; }
+/* ช่องที่เป็นศูนย์ต้องกดไม่ได้และดูจางลง ไม่งั้นผู้ใช้กดแล้วเจอรายการว่าง */
+.drilldown-btn.zero { color: #64748b; text-decoration: none; cursor: default; }
+.drilldown-btn.zero:hover { background: transparent; }
+
+.category-checkbox { accent-color: #0ea5e9; width: 1.2rem; height: 1.2rem; cursor: pointer; }
+.chk-label { cursor: pointer; user-select: none; }
+
+/* --- ผังทำเนียบกำลังพล --- */
+.org-chart { text-align: center; margin-top: 20px; }
+.org-level {
+  display: flex; justify-content: center; flex-wrap: wrap;
+  gap: 15px; margin-bottom: 40px; position: relative;
+}
+/* เส้นเชื่อมระหว่างชั้นยศ วาดด้วย ::after ไม่ใช่ element จริง */
+.org-level::after {
+  content: ''; position: absolute; bottom: -25px; left: 50%;
+  transform: translateX(-50%); width: 2px; height: 20px;
+  background: rgba(0, 242, 255, 0.3);
+}
+.org-level:last-child::after { display: none; }
+
+.org-card {
+  background: linear-gradient(145deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 1));
+  border: 1px solid rgba(0, 242, 255, 0.2); border-radius: 10px;
+  padding: 15px; width: 220px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+  position: relative; transition: all 0.2s; cursor: pointer;
+}
+.org-card:hover {
+  transform: translateY(-5px) scale(1.02); border-color: #00f2ff;
+  box-shadow: 0 0 15px rgba(0, 242, 255, 0.3);
+}
+.org-card.out { border-color: rgba(220, 53, 69, 0.5); opacity: 0.8; }
+.org-card.in { border-color: rgba(25, 135, 84, 0.5); cursor: default; }
+.org-card.in:hover {
+  transform: none; border-color: rgba(25, 135, 84, 0.5);
+  box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+}
+.org-card-title { font-size: 0.9rem; font-weight: 600; color: #fff; margin-bottom: 5px; }
+.org-card-badge {
+  position: absolute; top: -12px; right: -10px; font-size: 0.75rem;
+  padding: 4px 10px; border-radius: 12px; font-weight: bold;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+.badge-out { background: #dc3545; color: white; border: 1px solid #ff4d4d; }
+.badge-in { background: #198754; color: white; border: 1px solid #28a745; }
+
+/* --- หน้าผู้กำกับการ --- */
+.cmd-card {
+  background: linear-gradient(145deg, rgba(22, 27, 34, 0.9), rgba(13, 17, 23, 0.95));
+  border: 1px solid rgba(250, 204, 21, 0.15);
+  border-radius: 16px; padding: 20px;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+}
+.cmd-kpi {
+  text-align: center; position: relative; overflow: hidden;
+  padding: 20px 10px; border-radius: 12px;
+  background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+  transition: transform 0.3s;
+}
+.cmd-kpi:hover { transform: translateY(-5px); border-color: #facc15; background: rgba(250, 204, 21, 0.05); }
+.cmd-kpi .icon { font-size: 2rem; margin-bottom: 10px; opacity: 0.8; }
+.cmd-kpi .value { font-size: 2.2rem; font-weight: 700; margin: 0; line-height: 1; }
+.cmd-kpi .title {
+  font-size: 0.85rem; color: #8b949e; margin-top: 8px;
+  text-transform: uppercase; letter-spacing: 1px;
+}
+
+/* --- ปฏิทินปฏิบัติการ --- */
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin-top: 10px; }
+.cal-header { text-align: center; font-weight: bold; padding: 10px 0; color: #8b949e; font-size: 0.9rem; }
+.cal-day {
+  background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 8px; min-height: 70px; padding: 5px; cursor: pointer;
+  transition: all 0.2s; display: flex; flex-direction: column;
+}
+.cal-day:hover { background: rgba(250, 204, 21, 0.1); border-color: #facc15; }
+.cal-day.active { background: rgba(14, 165, 233, 0.15); border-color: #0ea5e9; }
+.cal-day.empty { background: transparent; border-color: transparent; cursor: default; }
+.cal-date-num { font-size: 1.1rem; font-weight: bold; color: #fff; margin-bottom: auto; text-align: right; }
+.cal-dots-container { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 5px; justify-content: flex-end; }
+.cal-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; box-shadow: 0 0 5px rgba(0,0,0,0.5); }
+
+/*
+  สีประจำสถานี ใช้ทั้งจุดในปฏิทินและแถบซ้ายของการ์ดภารกิจ
+  ท้ายคลาสเป็นเลขสถานีสองหลัก (X0 = ฝอ. ของ กก. นั้น) เขียนเป็นเลขหลักที่สองอย่างเดียว
+  เพื่อให้ใช้ได้ทุก กก. ไม่ใช่แค่ กก.5 แบบต้นฉบับที่ฮาร์ดโค้ด st-color-5X ไว้
+*/
+.st-color-0 { background-color: #facc15; }
+.st-color-1 { background-color: #ef4444; }
+.st-color-2 { background-color: #22c55e; }
+.st-color-3 { background-color: #3b82f6; }
+.st-color-4 { background-color: #f97316; }
+.st-color-5 { background-color: #a855f7; }
+.st-color-6 { background-color: #06b6d4; }
+.st-color-7 { background-color: #ec4899; }
+.st-color-8 { background-color: #14b8a6; }
+.st-color-9 { background-color: #94a3b8; }
+
+.agenda-card {
+  background: rgba(255,255,255,0.03); border-left: 4px solid #fff;
+  border-radius: 6px; padding: 12px 15px; margin-bottom: 10px;
+}
+.agenda-card.st-0 { border-left-color: #facc15; }
+.agenda-card.st-1 { border-left-color: #ef4444; }
+.agenda-card.st-2 { border-left-color: #22c55e; }
+.agenda-card.st-3 { border-left-color: #3b82f6; }
+.agenda-card.st-4 { border-left-color: #f97316; }
+.agenda-card.st-5 { border-left-color: #a855f7; }
+.agenda-card.st-6 { border-left-color: #06b6d4; }
+.agenda-card.st-7 { border-left-color: #ec4899; }
+.agenda-card.st-8 { border-left-color: #14b8a6; }
+.agenda-card.st-9 { border-left-color: #94a3b8; }
+
+.chart-container { width: 100%; min-height: 350px; }

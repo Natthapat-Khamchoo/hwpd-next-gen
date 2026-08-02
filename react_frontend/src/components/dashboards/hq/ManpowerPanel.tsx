@@ -136,27 +136,24 @@ export const ManpowerPanel: React.FC<{ station: string; canEdit: boolean }> = ({
     ], 'กำลังพล');
   };
 
+  /** การ์ดรายชื่อ ใช้คลาส org-card ของต้นฉบับ ป้ายไป/มาช่วยราชการลอยมุมบนขวา */
   const card = (p: Person, incoming = false) => (
     <div
       key={p.username}
-      className="p-2 rounded d-flex justify-content-between align-items-center gap-2"
-      style={{
-        background: incoming ? 'rgba(32,201,151,0.12)' : p.status === 'out' ? 'rgba(255,193,7,0.12)' : 'rgba(255,255,255,0.04)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        cursor: canEdit && !incoming ? 'pointer' : 'default',
-      }}
+      className={`org-card${incoming ? ' in' : p.status === 'out' ? ' out' : ''}`}
+      style={canEdit && !incoming ? undefined : { cursor: 'default' }}
       onClick={() => canEdit && !incoming && editPerson(p)}
     >
-      <div style={{ minWidth: 0 }}>
-        <div className="text-white small text-truncate">{p.name}</div>
-        <div className="text-white-50" style={{ fontSize: '.72rem' }}>
-          {p.code && <span className="me-2">รหัส {p.code}</span>}{p.phone}
-        </div>
-        {incoming && <div className="text-success" style={{ fontSize: '.72rem' }}>มาช่วยจาก {p.homeStationLabel}</div>}
-        {!incoming && p.status === 'out' && <div className="text-warning" style={{ fontSize: '.72rem' }}>ไปช่วย {p.tag}</div>}
-        {p.remark && <div className="text-white-50 fst-italic" style={{ fontSize: '.72rem' }}>{p.remark}</div>}
+      {incoming && <span className="org-card-badge badge-in">มาช่วย</span>}
+      {!incoming && p.status === 'out' && <span className="org-card-badge badge-out">ไปช่วย</span>}
+
+      <div className="org-card-title text-truncate" title={p.name}>{p.name}</div>
+      <div className="text-white-50" style={{ fontSize: '.75rem' }}>
+        {p.code && <span className="me-2">รหัส {p.code}</span>}{p.phone}
       </div>
-      {canEdit && !incoming && <i className="fa-solid fa-pen text-info" style={{ fontSize: '.7rem' }}></i>}
+      {incoming && <div className="text-success mt-1" style={{ fontSize: '.75rem' }}>จาก {p.homeStationLabel}</div>}
+      {!incoming && p.status === 'out' && <div className="text-danger mt-1" style={{ fontSize: '.75rem' }}>{p.tag}</div>}
+      {p.remark && <div className="text-white-50 fst-italic mt-1" style={{ fontSize: '.72rem' }}>{p.remark}</div>}
     </div>
   );
 
@@ -266,17 +263,15 @@ export const ManpowerPanel: React.FC<{ station: string; canEdit: boolean }> = ({
           <PanelState busy={chartBusy} error="" empty={false} emptyText="" />
 
           {chart && (
-            <>
+            <div className="org-chart">
               {LEVELS.map(({ key, label }) => (
                 <div className="mb-3" key={key}>
                   <div className="small text-white-50 mb-2 border-bottom border-secondary pb-1">
                     {label} ({(chart.chart[key] || []).length})
                   </div>
                   {(chart.chart[key] || []).length ? (
-                    <div className="d-flex flex-wrap gap-2">
-                      {(chart.chart[key] as Person[]).map((p) => (
-                        <div key={p.username} style={{ minWidth: 230, flex: '1 1 230px' }}>{card(p)}</div>
-                      ))}
+                    <div className="org-level">
+                      {(chart.chart[key] as Person[]).map((p) => card(p))}
                     </div>
                   ) : (
                     <div className="text-white-50 small fst-italic">ไม่มีเจ้าหน้าที่ในระดับนี้</div>
@@ -289,10 +284,8 @@ export const ManpowerPanel: React.FC<{ station: string; canEdit: boolean }> = ({
                   <div className="small text-success mb-2 border-bottom border-secondary pb-1">
                     กำลังเสริมจากหน่วยอื่น ({chart.chart.incoming.length})
                   </div>
-                  <div className="d-flex flex-wrap gap-2">
-                    {(chart.chart.incoming as Person[]).map((p) => (
-                      <div key={p.username} style={{ minWidth: 230, flex: '1 1 230px' }}>{card(p, true)}</div>
-                    ))}
+                  <div className="org-level">
+                    {(chart.chart.incoming as Person[]).map((p) => card(p, true))}
                   </div>
                 </div>
               )}
@@ -304,7 +297,7 @@ export const ManpowerPanel: React.FC<{ station: string; canEdit: boolean }> = ({
                   </span>
                 </div>
               )}
-            </>
+            </div>
           )}
         </div>
       )}

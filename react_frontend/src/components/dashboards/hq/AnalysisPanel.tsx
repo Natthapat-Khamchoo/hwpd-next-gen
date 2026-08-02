@@ -181,8 +181,8 @@ export const AnalysisPanel: React.FC<Props> = ({ station, start, end, stations }
           <div className="row g-2">
             {options.map((name) => (
               <div className="col-md-4 col-6" key={name}>
-                <label className="d-flex align-items-center gap-2 text-white small" style={{ cursor: 'pointer' }}>
-                  <input type="checkbox" checked={selected.has(name)} onChange={() => toggle(name)} />
+                <label className="chk-label d-flex align-items-center gap-2 text-white small">
+                  <input type="checkbox" className="category-checkbox" checked={selected.has(name)} onChange={() => toggle(name)} />
                   <span className="text-truncate" title={name}>{name}</span>
                 </label>
               </div>
@@ -238,22 +238,18 @@ export const AnalysisPanel: React.FC<Props> = ({ station, start, end, stations }
                       const cell = cells[s.station] || { count: 0, ids: [] };
                       return (
                         <td key={s.station} className="text-center">
-                          {cell.count ? (
-                            <button className="btn btn-link p-0 text-info fw-bold text-decoration-none"
-                                    onClick={() => openCell(category, cell, s.name)}>
-                              {cell.count}
-                            </button>
-                          ) : <span className="text-white-50">0</span>}
+                          <button className={`drilldown-btn${cell.count ? '' : ' zero'}`}
+                                  onClick={() => openCell(category, cell, s.name)}>
+                            {cell.count}
+                          </button>
                         </td>
                       );
                     })}
                     <td className="text-center text-warning fw-bold">
-                      {cells.total?.count ? (
-                        <button className="btn btn-link p-0 text-warning fw-bold text-decoration-none"
-                                onClick={() => openCell(category, cells.total, 'ทั้งกองกำกับการ')}>
-                          {cells.total.count}
-                        </button>
-                      ) : 0}
+                      <button className={`drilldown-btn${cells.total?.count ? '' : ' zero'}`}
+                              onClick={() => openCell(category, cells.total, 'ทั้งกองกำกับการ')}>
+                        {cells.total?.count ?? 0}
+                      </button>
                     </td>
                   </tr>
                 ))}

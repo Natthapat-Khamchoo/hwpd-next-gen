@@ -4,10 +4,14 @@ import { api } from '../../../services/api';
 import { PanelState, currentMonth } from './panelHelpers';
 
 /**
- * ปฏิทินภารกิจ (พอร์ตจาก getCommanderCalendarData)
+ * ปฏิทินปฏิบัติการ (พอร์ตจาก initOperationCalendar / renderCalendarGrid / renderAgendaView)
  *
- * ผู้กำกับการใช้ดูว่าเดือนนี้ กก. รับภารกิจซ้อนกันวันไหนบ้าง วันที่มีภารกิจจึงต้อง
- * เห็นได้จากตารางปฏิทินโดยไม่ต้องกด แล้วค่อยกดดูรายละเอียดของวันนั้น
+ * ผู้กำกับการใช้ดูว่าเดือนนี้ กก. รับภารกิจซ้อนกันวันไหนบ้าง จุดสีในช่องวันบอกว่าเป็น
+ * ของสถานีไหน — เห็นได้ทันทีว่าวันนั้นกระจุกอยู่ที่สถานีเดียวหรือกระจายทั้งกอง
+ * ซึ่งข้อความ "3 ภารกิจ" เฉย ๆ บอกไม่ได้
+ *
+ * สีประจำสถานีใช้เลขหลักที่สองของรหัส (X0 = ฝอ.) จึงใช้ได้ทุก กก. ต่างจากต้นฉบับ
+ * ที่ฮาร์ดโค้ด st-color-5X ไว้เฉพาะ กก.5
  */
 
 interface Mission {
@@ -23,8 +27,12 @@ interface Mission {
 }
 
 const DAY_LABELS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+const THAI_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+
 /** ภารกิจที่กรอกมาแต่วันที่ไม่มีเวลา ให้ขึ้นว่า "ทั้งวัน" ไม่ใช่ --:-- ซึ่งอ่านเหมือนข้อมูลเสีย */
 const timeOf = (iso: string) => (iso || '').slice(11, 16);
+const stationTone = (stationId: string) => stationId.slice(-1) || '0';
 
 export const MissionCalendar: React.FC<{ station: string }> = ({ station }) => {
   const { user } = useAuth();
@@ -73,52 +81,52 @@ export const MissionCalendar: React.FC<{ station: string }> = ({ station }) => {
 
   const dayKey = (d: number) => `${month}-${String(d).padStart(2, '0')}`;
   const selectedMissions = selected ? byDay.get(selected) || [] : [];
+  const monthLabel = `${THAI_MONTHS[mon - 1]} ${year + 543}`;
 
   return (
-    <div className="glass-card mb-4">
-      <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-        <h5 className="text-white m-0"><i className="fa-solid fa-calendar-days text-warning"></i> ปฏิทินภารกิจประจำเดือน</h5>
-        <div className="d-flex align-items-center gap-2">
-          <span className="small text-white-50">{missions.length} ภารกิจ</span>
-          {/* ปุ่มเลื่อนเดือนตามของเดิม (changeCalMonth) เร็วกว่าเปิดตัวเลือกเดือนทุกครั้ง */}
-          <button className="btn btn-sm btn-outline-warning px-2" title="เดือนก่อนหน้า" onClick={() => shiftMonth(-1)}>
-            <i className="fa-solid fa-chevron-left"></i>
-          </button>
-          <input type="month" className="form-control form-control-sm bg-dark text-white border-warning"
-                 style={{ width: 165 }} value={month} onChange={(e) => setMonth(e.target.value)} />
-          <button className="btn btn-sm btn-outline-warning px-2" title="เดือนถัดไป" onClick={() => shiftMonth(1)}>
-            <i className="fa-solid fa-chevron-right"></i>
-          </button>
+    <div className="cmd-card mb-4">
+      <h5 className="text-white mb-1">
+        <i className="fa-solid fa-calendar-days text-warning"></i> ปฏิทินปฏิบัติการ (Master Operation Calendar)
+      </h5>
+      <p className="small text-white-50 mb-3">คลิกที่วันเพื่อดูภารกิจของวันนั้น · จุดสีคือสถานีที่รับผิดชอบ</p>
+
+      <div className="d-flex justify-content-between align-items-center mb-2">
+        <button className="btn btn-sm btn-outline-warning px-3" title="เดือนก่อนหน้า" onClick={() => shiftMonth(-1)}>
+          <i className="fa-solid fa-chevron-left"></i>
+        </button>
+        <div className="text-center">
+          <div className="text-white fw-bold">{monthLabel}</div>
+          <div className="text-white-50" style={{ fontSize: '.75rem' }}>{missions.length} ภารกิจ</div>
         </div>
+        <button className="btn btn-sm btn-outline-warning px-3" title="เดือนถัดไป" onClick={() => shiftMonth(1)}>
+          <i className="fa-solid fa-chevron-right"></i>
+        </button>
       </div>
 
       <PanelState busy={busy} error={error} empty={false} emptyText="" />
 
       {!busy && !error && (
         <>
-          <div className="d-grid" style={{ gridTemplateColumns: 'repeat(7,1fr)', gap: 6 }}>
-            {DAY_LABELS.map((d) => (
-              <div key={d} className="text-center text-white-50 small pb-1">{d}</div>
-            ))}
+          <div className="cal-grid">
+            {DAY_LABELS.map((d) => <div key={d} className="cal-header">{d}</div>)}
             {cells.map((day, i) => {
-              if (day === null) return <div key={`pad-${i}`} />;
+              if (day === null) return <div key={`pad-${i}`} className="cal-day empty" />;
               const key = dayKey(day);
               const items = byDay.get(key) || [];
-              const isSelected = selected === key;
               return (
                 <div
                   key={key}
-                  onClick={() => items.length && setSelected(isSelected ? '' : key)}
-                  className="p-2 rounded text-center"
-                  style={{
-                    minHeight: 58,
-                    cursor: items.length ? 'pointer' : 'default',
-                    background: isSelected ? 'rgba(250,204,21,0.25)' : items.length ? 'rgba(250,204,21,0.10)' : 'rgba(255,255,255,0.03)',
-                    border: `1px solid ${isSelected ? '#facc15' : 'rgba(255,255,255,0.08)'}`,
-                  }}
+                  className={`cal-day${selected === key ? ' active' : ''}`}
+                  onClick={() => items.length && setSelected(selected === key ? '' : key)}
+                  style={items.length ? undefined : { cursor: 'default' }}
                 >
-                  <div className={items.length ? 'text-warning fw-bold' : 'text-white-50'}>{day}</div>
-                  {!!items.length && <div className="text-white" style={{ fontSize: '.7rem' }}>{items.length} ภารกิจ</div>}
+                  <div className="cal-date-num">{day}</div>
+                  <div className="cal-dots-container">
+                    {items.map((m) => (
+                      <span key={m.recordId} className={`cal-dot st-color-${stationTone(m.stationId)}`}
+                            title={`${m.stationName} — ${m.details || 'ภารกิจ'}`} />
+                    ))}
+                  </div>
                 </div>
               );
             })}
@@ -129,32 +137,29 @@ export const MissionCalendar: React.FC<{ station: string }> = ({ station }) => {
           )}
 
           {!!selectedMissions.length && (
-            <div className="mt-3">
-              <div className="small text-warning border-bottom border-secondary pb-1 mb-2">
-                ภารกิจวันที่ {selected} ({selectedMissions.length} รายการ)
-              </div>
-              <div className="table-responsive">
-                <table className="table table-sc table-bordered align-middle small mb-0">
-                  <thead>
-                    <tr><th style={{ width: 110 }}>เวลา</th><th className="text-start" style={{ width: 170 }}>หน่วย</th>
-                        <th className="text-start">รายละเอียด</th><th className="text-start" style={{ width: 180 }}>สถานที่</th></tr>
-                  </thead>
-                  <tbody>
-                    {selectedMissions.map((m) => (
-                      <tr key={m.recordId}>
-                        <td className="text-nowrap">
-                          {timeOf(m.startTime)
-                            ? `${timeOf(m.startTime)}${timeOf(m.endTime || '') ? ` - ${timeOf(m.endTime || '')}` : ''}`
-                            : 'ทั้งวัน'}
-                        </td>
-                        <td className="text-start">{m.stationName}<div className="text-white-50" style={{ fontSize: '.72rem' }}>{m.unitId}</div></td>
-                        <td className="text-start text-white-50" style={{ whiteSpace: 'pre-wrap' }}>{m.details || '-'}</td>
-                        <td className="text-start text-white-50">{m.location || '-'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            <div className="mt-4 border-top border-secondary pt-3">
+              <h6 className="text-warning mb-3">
+                <i className="fa-solid fa-list-check"></i> ภารกิจประจำวันที่ {selected} ({selectedMissions.length} รายการ)
+              </h6>
+              {selectedMissions.map((m) => (
+                <div key={m.recordId} className={`agenda-card st-${stationTone(m.stationId)}`}>
+                  <div className="d-flex justify-content-between align-items-start gap-2">
+                    <div className="text-white fw-bold small">{m.stationName}</div>
+                    <span className="text-white-50" style={{ fontSize: '.75rem' }}>
+                      {timeOf(m.startTime)
+                        ? `${timeOf(m.startTime)}${timeOf(m.endTime || '') ? ` - ${timeOf(m.endTime || '')}` : ''}`
+                        : 'ทั้งวัน'}
+                    </span>
+                  </div>
+                  {m.unitId && <div className="text-white-50" style={{ fontSize: '.75rem' }}>{m.unitId}</div>}
+                  <div className="text-white-50 small mt-1" style={{ whiteSpace: 'pre-wrap' }}>{m.details || '-'}</div>
+                  {m.location && (
+                    <div className="text-white-50" style={{ fontSize: '.75rem' }}>
+                      <i className="fa-solid fa-location-dot"></i> {m.location}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </>
