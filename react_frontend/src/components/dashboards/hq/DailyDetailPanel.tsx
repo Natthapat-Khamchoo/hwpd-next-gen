@@ -33,9 +33,14 @@ const TYPE_COLORS: Record<string, string> = {
   'รับเสด็จ': 'text-success',
 };
 
-interface Props { station: string; reports: { reportKey: string; title: string; cadence: string }[] }
+interface Props {
+  station: string;
+  reports: { reportKey: string; title: string; cadence: string }[];
+  /** ออก Excel ได้เฉพาะระดับ บก. เพราะตัวสร้างไฟล์รวมยอดทั้ง 8 กก. ไว้ในไฟล์เดียว */
+  canExport: boolean;
+}
 
-export const DailyDetailPanel: React.FC<Props> = ({ station, reports }) => {
+export const DailyDetailPanel: React.FC<Props> = ({ station, reports, canExport }) => {
   const { user } = useAuth();
   const [start, setStart] = useState(recentStart());
   const [end, setEnd] = useState(today());
@@ -136,7 +141,17 @@ export const DailyDetailPanel: React.FC<Props> = ({ station, reports }) => {
         )}
       </div>
 
-      <ReportExportPanel reports={reports} />
+      {canExport ? (
+        <ReportExportPanel reports={reports} />
+      ) : (
+        <div className="glass-card w-100 p-4">
+          <h5 className="text-white mb-1"><i className="fa-solid fa-file-excel text-success"></i> ออกรายงานเป็น Excel</h5>
+          <p className="text-white-50 small mb-0">
+            แบบฟอร์มที่ระบบออกให้อัตโนมัติเป็นรายงานรวมทั้ง 8 กองกำกับการในไฟล์เดียว จึงออกได้ที่ระดับ
+            บก.ทล. เท่านั้น ระดับ กก. ใช้ตารางด้านบนดูรายการแล้วคัดลอกเฉพาะส่วนที่ต้องการได้
+          </p>
+        </div>
+      )}
     </>
   );
 };

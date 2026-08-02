@@ -36,6 +36,9 @@ export const HqDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   // ฝอ.กก. กรอกรายงานเองได้ ผู้กำกับการดูอย่างเดียว ตรงกับที่ของเดิมวางปุ่มบันทึกไว้
   // ใน hq_dashboard เท่านั้น ฝั่ง API บังคับซ้ำอีกชั้นที่ _require_division_admin
   const canEdit = user?.role !== 'Division_Commander';
+  // ตัวออก Excel รวมยอดทั้ง 8 กก. ไว้ในไฟล์เดียว ระดับ กก. จึงเรียกไม่ได้ (API ตอบ 403)
+  // ถ้าไม่กันไว้ตรงนี้ หน้าจะขึ้นว่า "ยังไม่มีแบบฟอร์ม" ซึ่งอ่านเหมือนระบบเสีย
+  const canExport = user?.role === 'HQ_Admin' || user?.role === 'Super_Commander';
 
   const load = async () => {
     const res = await api.getDivisionSummary(station, start, end, user?.token);
@@ -43,7 +46,7 @@ export const HqDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   };
   useEffect(() => {
     load();
-    api.getExportableReports(user?.token).then(setReports);
+    if (canExport) api.getExportableReports(user?.token).then(setReports);
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, []);
 
@@ -126,7 +129,7 @@ export const HqDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
         {view === 'search' && <SearchPanel station={station} />}
         {view === 'fuel' && <FuelPanel station={station} canEdit={canEdit} />}
-        {view === 'daily_detail' && <DailyDetailPanel station={station} reports={reports} />}
+        {view === 'daily_detail' && <DailyDetailPanel station={station} reports={reports} canExport={canExport} />}
         {view === 'manpower' && <ManpowerPanel station={station} canEdit={canEdit} />}
         {view === 'evidence' && <EvidencePanel station={station} canEdit={canEdit} />}
         {view === 'escort' && <EscortPanel station={station} canEdit={canEdit} />}
