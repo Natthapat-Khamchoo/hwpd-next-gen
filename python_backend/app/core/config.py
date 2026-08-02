@@ -107,13 +107,13 @@ DEFAULT_STATION_CONFIG: Dict[str, Dict[str, Any]] = {
     "45": {"province": "สกลนคร", "units": ["สร้างค้อ", "พังโคน", "นครพนม"]},
 
     # กก.5
-    "50": {"province": "ฝอ.กก.5", "units": ["ฝอ.กก.5"]},
-    "51": {"province": "ตาก", "units": ["คลองขลุง", "นครชุม", "สามเงา", "แม่สอด", "เขตตรวจ 3"]},
-    "52": {"province": "ลำปาง", "units": ["เถิน", "เกาะคา", "ห้างฉัตร", "งาว", "ลำพูน", "ลี้"]},
-    "53": {"province": "พิษณุโลก", "units": ["บ้านป่า", "สีหราชเดโชชัย", "ทรัพย์ไพรวัลย์", "สุโขทัย", "ศรีสัชนาลัย"]},
-    "54": {"province": "เชียงใหม่", "units": ["สารภี", "ฮอด", "แม่สะเรียง", "ดอยสะเก็ด", "แม่แตง", "เขตครวจฝาง"]},
-    "55": {"province": "พะเยา", "units": ["แม่กา", "แม่อิง", "เชียงราย", "แม่จัน", "เชียงของ", "เขตตรวจ เวียงป่าเป้า"]},
-    "56": {"province": "แพร่", "units": ["อุตรดิตถ์", "เด่นชัย", "แม่คำมี", "น่าน"]},
+    "50": {"province": "ฝอ.กก.5", "units": ["ฝอ.กก.5"], "chartImageUrl": "https://lh3.googleusercontent.com/d/1ss_a5spePbN1Z5zvuPp9lB8ANmjkY5bY"},
+    "51": {"province": "ตาก", "units": ["คลองขลุง", "นครชุม", "สามเงา", "แม่สอด", "เขตตรวจ 3"], "chartImageUrl": "https://lh3.googleusercontent.com/d/17YQ3DeX9VHotoAefjXc1zZ-VCMW-fuDL"},
+    "52": {"province": "ลำปาง", "units": ["เถิน", "เกาะคา", "ห้างฉัตร", "งาว", "ลำพูน", "ลี้"], "chartImageUrl": "https://lh3.googleusercontent.com/d/1IK9O5BzVsT1wc7igQXdWSChd9gBjfAtS"},
+    "53": {"province": "พิษณุโลก", "units": ["บ้านป่า", "สีหราชเดโชชัย", "ทรัพย์ไพรวัลย์", "สุโขทัย", "ศรีสัชนาลัย"], "chartImageUrl": "https://lh3.googleusercontent.com/d/1lTQeEC56yJTZ_jiAyJNrXHDeALqfOWee"},
+    "54": {"province": "เชียงใหม่", "units": ["สารภี", "ฮอด", "แม่สะเรียง", "ดอยสะเก็ด", "แม่แตง", "เขตครวจฝาง"], "chartImageUrl": "https://lh3.googleusercontent.com/d/1jUDlXAzK6kj-Obzc2deEJLheTxrDJmkf"},
+    "55": {"province": "พะเยา", "units": ["แม่กา", "แม่อิง", "เชียงราย", "แม่จัน", "เชียงของ", "เขตตรวจ เวียงป่าเป้า"], "chartImageUrl": "https://lh3.googleusercontent.com/d/1u-NwzC4nyoZBXnvbpnJ6JARFoZrBb6R-"},
+    "56": {"province": "แพร่", "units": ["อุตรดิตถ์", "เด่นชัย", "แม่คำมี", "น่าน"], "chartImageUrl": "https://lh3.googleusercontent.com/d/1D9R2DX6nmwPlQ2WgHwXXePT4ywsZCNSc"},
 
     # กก.6
     "60": {"province": "ฝอ.กก.6", "units": ["ฝอ.กก.6"]},
@@ -217,6 +217,10 @@ def get_station_data(station_id: str) -> Dict[str, Any]:
         "units": default_units,
         "folderId": "",
         "lineGroupId": "",
+        # ลิงก์รูปผังทำเนียบกำลังพลที่หน่วยทำไว้เอง (รูปสแกน/ออกแบบเอง) หน้า ฝอ. มีปุ่ม
+        # เปิดดู ตั้งเพิ่มได้ผ่าน STATION_SECRETS_JSON โดยไม่ต้อง deploy ใหม่ ต่างจาก
+        # ของเดิมที่ฮาร์ดโค้ด STATION_CHART_IMAGES ไว้ในหน้าเว็บ
+        "chartImageUrl": "",
     }
     data.update(get_station_config().get(st_id, {}))
 

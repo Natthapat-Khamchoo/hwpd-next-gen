@@ -11,6 +11,7 @@ import { MissionCalendar } from './hq/MissionCalendar';
 import { EvidencePanel } from './hq/EvidencePanel';
 import { EscortPanel } from './hq/EscortPanel';
 import { TextSummaryModal } from './hq/TextSummaryModal';
+import { captureToImage } from './hq/captureImage';
 import Swal from 'sweetalert2';
 
 
@@ -59,6 +60,17 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
 
   const t = data?.totals || {};
   const bs = data?.byStation || [];
+
+  /** แคปหน้า Dashboard ทั้งหน้าเป็นรูปเดียว ส่งเข้า LINE ได้ทันที */
+  const saveAsImage = () => {
+    const content = document.querySelector('.main-content') as HTMLElement | null;
+    if (!content) return;
+    captureToImage({
+      target: content,
+      filename: `HWPD_กก${div}_Executive_Report_${new Date().toISOString().split('T')[0]}`,
+      hide: [content.querySelector('.btn-outline-warning.d-md-none') as HTMLElement | null],
+    });
+  };
 
   const sendOrder = async () => {
     if (!msg.trim()) return Swal.fire('แจ้งเตือน', 'กรุณาพิมพ์ข้อความก่อน', 'warning');
@@ -142,6 +154,9 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
             <span className="text-white-50 fw-bold">-</span>
             <input type="date" className="form-control form-control-sm bg-dark text-white border-warning" style={{ width: 150 }} value={end} onChange={(e) => setEnd(e.target.value)} />
             <button className="btn btn-warning fw-bold px-3" onClick={load}><i className="fa-solid fa-rotate"></i></button>
+            <button className="btn btn-outline-light fw-bold px-3" onClick={saveAsImage} title="บันทึกหน้านี้เป็นรูปภาพ">
+              <i className="fa-solid fa-image"></i>
+            </button>
             <button className="btn btn-success fw-bold px-3" onClick={() => setSummaryOpen(true)}>
               <i className="fa-solid fa-file-lines"></i> Export สรุปรายงาน
             </button>

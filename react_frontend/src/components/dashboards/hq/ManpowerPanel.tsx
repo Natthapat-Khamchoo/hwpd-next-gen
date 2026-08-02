@@ -45,6 +45,7 @@ export const ManpowerPanel: React.FC<{ station: string; canEdit: boolean }> = ({
   const [chartStation, setChartStation] = useState('');
   const [chart, setChart] = useState<any | null>(null);
   const [chartBusy, setChartBusy] = useState(false);
+  const [imageOpen, setImageOpen] = useState(false);
 
   const loadOverview = async () => {
     setBusy(true);
@@ -65,6 +66,24 @@ export const ManpowerPanel: React.FC<{ station: string; canEdit: boolean }> = ({
     setChartBusy(false);
     if (res.status === 'success') setChart(res.data.station);
     else Swal.fire('โหลดผังไม่สำเร็จ', res.message || '', 'error');
+  };
+
+  /**
+   * ผังทำเนียบกำลังพลที่หน่วยทำไว้เป็นรูป (สแกน/ออกแบบเอง) คนละอย่างกับผังที่ระบบ
+   * สร้างจาก tb_Users — ของเดิมเก็บลิงก์ไว้ในตัวแปร STATION_CHART_IMAGES ในหน้าเว็บ
+   * ที่นี่อ่านจาก config ฝั่ง server จึงเพิ่มสถานีใหม่ได้โดยไม่ต้อง deploy หน้าเว็บใหม่
+   */
+  const openImage = () => {
+    if (chart?.chartImageUrl) return setImageOpen(true);
+    Swal.fire({
+      icon: 'info',
+      title: 'ยังไม่มีรูปภาพ',
+      html: 'ยังไม่ได้ตั้งลิงก์รูปผังของสถานีนี้ในระบบครับ<br><br>' +
+        '<small style="color:#9ca3af">วิธีเพิ่ม: อัปโหลดรูปลง Google Drive ตั้งเป็นแชร์แบบสาธารณะ ' +
+        'แล้วนำลิงก์รูปแบบ <code>https://lh3.googleusercontent.com/d/รหัสไฟล์</code> ' +
+        'ไปใส่เป็น <code>chartImageUrl</code> ของสถานีนั้นใน <code>STATION_SECRETS_JSON</code></small>',
+      confirmButtonText: 'เข้าใจแล้ว',
+    });
   };
 
   const editPerson = async (p: Person) => {
@@ -235,6 +254,9 @@ export const ManpowerPanel: React.FC<{ station: string; canEdit: boolean }> = ({
                   ปฏิบัติจริง <span className="text-info fw-bold">{chart.stats.net}</span>
                 </div>
               )}
+              <button className="btn btn-sm btn-outline-info" onClick={openImage}>
+                <i className="fa-solid fa-image"></i> ดูผังรูปภาพต้นฉบับ
+              </button>
               <button className="btn btn-sm btn-outline-secondary" onClick={() => { setChartStation(''); setChart(null); }}>
                 <i className="fa-solid fa-xmark"></i> ปิดผัง
               </button>
@@ -284,6 +306,31 @@ export const ManpowerPanel: React.FC<{ station: string; canEdit: boolean }> = ({
               )}
             </>
           )}
+        </div>
+      )}
+
+      {imageOpen && chart?.chartImageUrl && (
+        <div className="modal d-block" style={{ background: 'rgba(0,0,0,0.85)' }} onClick={() => setImageOpen(false)}>
+          <div className="modal-dialog modal-xl modal-dialog-centered" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-content bg-dark border border-secondary">
+              <div className="modal-header border-secondary">
+                <h6 className="modal-title text-info">
+                  <i className="fa-solid fa-image"></i> ผังทำเนียบกำลังพล: {overview[chartStation]?.name || chartStation}
+                </h6>
+                <button className="btn-close btn-close-white" onClick={() => setImageOpen(false)}></button>
+              </div>
+              <div className="modal-body text-center">
+                <img src={chart.chartImageUrl} alt="ผังทำเนียบกำลังพล"
+                     style={{ maxWidth: '100%', borderRadius: 8 }} />
+              </div>
+              <div className="modal-footer border-secondary">
+                <a className="btn btn-outline-info btn-sm" href={chart.chartImageUrl} target="_blank" rel="noreferrer">
+                  <i className="fa-solid fa-up-right-from-square"></i> เปิดในแท็บใหม่
+                </a>
+                <button className="btn btn-secondary btn-sm" onClick={() => setImageOpen(false)}>ปิด</button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </>

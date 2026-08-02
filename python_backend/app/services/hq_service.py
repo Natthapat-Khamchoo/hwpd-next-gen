@@ -344,7 +344,12 @@ def manpower_data(station_id: str) -> Dict[str, Any]:
 
     stats["in"] = len(chart["incoming"])
     stats["net"] = stats["base"] - stats["out"] + stats["in"]
-    return {"stats": stats, "chart": chart}
+    return {
+        "stats": stats,
+        "chart": chart,
+        # หน้า ฝอ. มีปุ่ม "ดูผังรูปภาพต้นฉบับ" ซึ่งโชว์เฉพาะสถานีที่ตั้งลิงก์ไว้แล้ว
+        "chartImageUrl": get_station_data(target).get("chartImageUrl", ""),
+    }
 
 
 def manpower_overview(station_id: str) -> Dict[str, Dict[str, Any]]:
