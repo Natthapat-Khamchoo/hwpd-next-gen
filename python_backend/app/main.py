@@ -1244,13 +1244,17 @@ def _require_division(session: Dict[str, Any]) -> None:
 
 def _require_division_admin(session: Dict[str, Any]) -> None:
     """
-    งานธุรการของ ฝอ. — ตั้งโควตาน้ำมัน แก้สถานะกำลังพล จัดหมวดของกลาง บันทึกนำขบวน
+    งานธุรการในหน้า ฝอ.กก. — ตั้งโควตาน้ำมัน แก้สถานะกำลังพล จัดหมวดของกลาง นำขบวน
 
-    ผู้กำกับการดูได้ทุกหน้าแต่ไม่ได้เป็นคนกรอก จึงตัดออกจากฝั่งเขียน ตรงกับที่ของเดิม
-    วางปุ่มบันทึกไว้ใน hq_dashboard เท่านั้น ไม่มีใน commander_dashboard
+    ผู้กำกับการรวมอยู่ด้วย เพราะ cmdSwitchToHQ ของเดิมเปิด hqDashboard ตัวเดียวกัน
+    กับที่ ฝอ. ใช้ โดยไม่เช็ค role เลยสักจุด (ทั้งไฟล์ hq_dashboard.html มีคำว่า role
+    อยู่ที่เดียวคือ role="group" ของ Bootstrap) ผกก. จึงได้ปุ่มบันทึกครบเหมือนกัน
+
+    ที่กันออกคือระดับสถานีกับผู้ปฏิบัติ ซึ่งเข้าหน้านี้ไม่ได้ตั้งแต่ต้นอยู่แล้ว
     """
-    if str(session.get("r") or "") not in {"Division_Admin", "HQ_Admin", "Super_Commander"}:
-        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์แก้ไขข้อมูลส่วนนี้ (เฉพาะ ฝอ.)")
+    allowed = {"Division_Admin", "Division_Commander", "HQ_Admin", "Super_Commander"}
+    if str(session.get("r") or "") not in allowed:
+        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์แก้ไขข้อมูลระดับกองกำกับการ")
 
 
 def _current_month() -> str:

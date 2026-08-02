@@ -76,6 +76,9 @@ const MainContent: React.FC = () => {
   // เก็บเป็น stack เพราะเจาะได้สองชั้น (ผบก. -> กก. -> สถานี) กดกลับจากสถานีต้องได้ กก.
   // ที่กำลังดูอยู่ ไม่ใช่ กก. ของตัวเอง
   const [viewStack, setViewStack] = useState<ViewAs[]>([]);
+  // ผู้กำกับการกดเข้าหน้า ฝอ. จากเมนูตัวเอง ต้องมีทางกลับ ของเดิมสลับป้ายปุ่มในเมนูข้าง
+  // ของหน้า ฝอ. เป็น "กลับหน้าผู้กำกับการ" ระหว่างที่อยู่ในโหมดนี้
+  const [hqFromCommander, setHqFromCommander] = useState(false);
   const viewAs = viewStack.length ? viewStack[viewStack.length - 1] : null;
 
   const drillTo = (view: string, station: string, label: string) => {
@@ -123,11 +126,18 @@ const MainContent: React.FC = () => {
           onExitView={viewAs ? exitView : undefined}
         />
       );
-      case 'hq': return <HqDashboard onBack={back} />;
+      case 'hq': return (
+        <HqDashboard
+          onBack={back}
+          onBackToCommander={hqFromCommander
+            ? () => { setHqFromCommander(false); setCurrentView('commander'); }
+            : undefined}
+        />
+      );
       case 'commander': return (
         <CommanderDashboard
           onBack={back}
-          onSwitchHQ={() => setCurrentView('hq')}
+          onSwitchHQ={() => { setHqFromCommander(true); setCurrentView('hq'); }}
           viewStation={viewAs?.station}
           viewLabel={viewAs?.label}
           onExitView={viewAs ? exitView : undefined}

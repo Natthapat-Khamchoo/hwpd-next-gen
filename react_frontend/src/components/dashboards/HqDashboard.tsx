@@ -24,7 +24,16 @@ const VIEW_TITLES: Record<string, string> = {
   escort: 'ระบบจัดการการนำขบวน (ฝอ.)',
 };
 
-export const HqDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+interface HqDashboardProps {
+  onBack: () => void;
+  /**
+   * ส่งมาเมื่อผู้กำกับการกดเข้ามาจากหน้าตัวเอง — ของเดิมสลับป้ายปุ่มในเมนูข้างเป็น
+   * "กลับหน้าผู้กำกับการ" แล้วคืนค่าเดิมตอนออก (cmdSwitchToHQ)
+   */
+  onBackToCommander?: () => void;
+}
+
+export const HqDashboard: React.FC<HqDashboardProps> = ({ onBack, onBackToCommander }) => {
   const { user, logout } = useAuth();
   const div = String(user?.station || '5').charAt(0);
   const [view, setView] = useState('overview');
@@ -34,9 +43,9 @@ export const HqDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [reports, setReports] = useState<{ reportKey: string; title: string; cadence: string }[]>([]);
   const station = user?.station || '';
 
-  // ฝอ.กก. กรอกรายงานเองได้ ผู้กำกับการดูอย่างเดียว ตรงกับที่ของเดิมวางปุ่มบันทึกไว้
-  // ใน hq_dashboard เท่านั้น ฝั่ง API บังคับซ้ำอีกชั้นที่ _require_division_admin
-  const canEdit = user?.role !== 'Division_Commander';
+  // ผกก. ได้หน้านี้เต็มรูปแบบเหมือน ฝอ. เพราะ cmdSwitchToHQ ของเดิมเปิด hqDashboard
+  // ตัวเดียวกันโดยไม่เช็ค role เลย ที่กันออกคือระดับสถานีซึ่งเข้าหน้านี้ไม่ได้อยู่แล้ว
+  const canEdit = true;
   // ตัวออก Excel รวมยอดทั้ง 8 กก. ไว้ในไฟล์เดียว ระดับ กก. จึงเรียกไม่ได้ (API ตอบ 403)
   // ถ้าไม่กันไว้ตรงนี้ หน้าจะขึ้นว่า "ยังไม่มีแบบฟอร์ม" ซึ่งอ่านเหมือนระบบเสีย
   const canExport = user?.role === 'HQ_Admin' || user?.role === 'Super_Commander';
@@ -83,7 +92,15 @@ export const HqDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <SideItem icon="fa-motorcycle" cls="text-info" active={view === 'escort'} onClick={() => nav('escort', close)}>ระบบจัดการการนำขบวน</SideItem>
           </div>
           <div className="mt-auto border-top border-secondary p-3">
-            <div className="sidebar-item text-warning" onClick={onBack}><i className="fa-solid fa-rotate"></i> กลับเมนูหลัก</div>
+            {onBackToCommander ? (
+              <div className="sidebar-item text-warning" onClick={onBackToCommander}>
+                <i className="fa-solid fa-star"></i> กลับหน้าผู้กำกับการ
+              </div>
+            ) : (
+              <div className="sidebar-item text-warning" onClick={onBack}>
+                <i className="fa-solid fa-rotate"></i> กลับเมนูหลัก
+              </div>
+            )}
             <div className="sidebar-item text-danger" onClick={logout}><i className="fa-solid fa-power-off"></i> ออกจากระบบ</div>
           </div>
         </>
