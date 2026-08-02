@@ -1608,3 +1608,20 @@ def hq_comparison(payload: Dict[str, Any], session: Dict[str, Any] = Depends(cur
     except SheetWriteError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {"status": "success", "data": data}
+
+
+@app.get("/api/commander/summary")
+def commander_summary(
+    station: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    session: Dict[str, Any] = Depends(current_session),
+):
+    """ตัวเลขทั้งหมดสำหรับประกอบรายงานสรุปส่งผู้บังคับบัญชา"""
+    station_id = authorized_station_id(station, session)
+    _require_division(session)
+    try:
+        data = hq_service.commander_text_summary(station_id, start or "", end or "")
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"status": "success", "data": data}

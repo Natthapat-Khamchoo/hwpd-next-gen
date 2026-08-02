@@ -10,6 +10,7 @@ import { WorkloadPanel } from './hq/WorkloadPanel';
 import { MissionCalendar } from './hq/MissionCalendar';
 import { EvidencePanel } from './hq/EvidencePanel';
 import { EscortPanel } from './hq/EscortPanel';
+import { TextSummaryModal } from './hq/TextSummaryModal';
 import Swal from 'sweetalert2';
 
 
@@ -38,15 +39,20 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
   const [sending, setSending] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [view, setView] = useState<'overview' | 'evidence' | 'escort'>('overview');
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  // กราฟนำขบวนกับโดนัทกำลังพลของเดิมอ่านจากสองชุดนี้ ดึงมาพร้อมภาพรวมในรอบเดียว
+  const [escort, setEscort] = useState<any | null>(null);
 
   const load = async () => {
     // ยิงคู่กัน หน้านี้เปิดครั้งเดียวแล้วดูยาว การรอทีละคำขอทำให้ช้าขึ้นเปล่า ๆ
-    const [summary, overview] = await Promise.all([
+    const [summary, overview, escortRes] = await Promise.all([
       api.getDivisionSummary(station, start, end, user?.token),
       api.commanderOverview(station, start, end, user?.token),
+      api.hqEscort(station, start, end, user?.token),
     ]);
     if (summary.status === 'success') setData(summary.data);
     if (overview.status === 'success') setExec(overview.data);
+    if (escortRes.status === 'success') setEscort(escortRes.data);
   };
   // โหลดใหม่เมื่อสลับไปดู กก. อื่น ไม่งั้นหัวเปลี่ยนแต่ตัวเลขยังเป็นของหน่วยเดิม
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [station]);
@@ -136,6 +142,9 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
             <span className="text-white-50 fw-bold">-</span>
             <input type="date" className="form-control form-control-sm bg-dark text-white border-warning" style={{ width: 150 }} value={end} onChange={(e) => setEnd(e.target.value)} />
             <button className="btn btn-warning fw-bold px-3" onClick={load}><i className="fa-solid fa-rotate"></i></button>
+            <button className="btn btn-success fw-bold px-3" onClick={() => setSummaryOpen(true)}>
+              <i className="fa-solid fa-file-lines"></i> Export สรุปรายงาน
+            </button>
             <button className="btn btn-info fw-bold px-3" onClick={() => setSearchOpen(true)}><i className="fa-solid fa-user-secret"></i> แกะรอยผลงาน</button>
           </div>
         </div>
@@ -183,6 +192,61 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
               <div className="col-12 col-lg-6"><div className="glass-card h-100"><h5 className="text-warning mb-1"><i className="fa-solid fa-boxes-packing"></i> สถิติหมวดหมู่ของกลาง</h5><p className="small text-white-50 mb-3">สัดส่วนประเภทของกลางที่ตรวจยึดได้</p><ReactApexChart type="donut" height={320} options={donutOptions(Object.keys(data.seizedBreakdown))} series={Object.values(data.seizedBreakdown) as number[]} /></div></div>
               <div className="col-12 col-lg-6"><div className="glass-card h-100"><h5 className="text-info mb-1"><i className="fa-solid fa-gavel"></i> สัดส่วนข้อหา</h5><p className="small text-white-50 mb-3">ข้อหาที่พบบ่อยในกองกำกับการ</p><ReactApexChart type="donut" height={320} options={donutOptions(Object.keys(data.chargeBreakdown))} series={Object.values(data.chargeBreakdown) as number[]} /></div></div>
             </div>
+
+            <div className="row g-4 mb-4">
+              <div className="col-12 col-lg-6">
+                <div className="glass-card h-100">
+                  <h5 className="text-info mb-1"><i className="fa-solid fa-motorcycle"></i> สถิติภารกิจนำขบวน</h5>
+                  <p className="small text-white-50 mb-3">แยกบุคคลสำคัญกับทั่วไป ในช่วงวันที่ที่เลือก</p>
+                  {escort && escort.summary.total ? (
+                    <>
+                      <ReactApexChart type="donut" height={280}
+                        options={donutOptions(['บุคคลสำคัญ (VIP)', 'ทั่วไป'], ['#ef4444', '#20c997'])}
+                        series={[escort.summary.vip, escort.summary.general]} />
+                      <table className="table table-sc table-bordered text-center align-middle small mb-0 mt-3">
+                        <thead><tr><th>บุคคลสำคัญ</th><th>ทั่วไป</th><th className="text-warning">รวม</th></tr></thead>
+                        <tbody><tr>
+                          <td className="text-danger fw-bold">{escort.summary.vip}</td>
+                          <td className="text-success fw-bold">{escort.summary.general}</td>
+                          <td className="text-warning fw-bold">{escort.summary.total}</td>
+                        </tr></tbody>
+                      </table>
+                    </>
+                  ) : (
+                    <p className="text-white-50 small mb-0 py-4 text-center">ไม่มีภารกิจนำขบวนในช่วงวันที่ที่เลือก</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="col-12 col-lg-6">
+                <div className="glass-card h-100">
+                  <h5 className="text-primary mb-1"><i className="fa-solid fa-users"></i> สถานภาพกำลังพล กก.{div}</h5>
+                  <p className="small text-white-50 mb-3">สัดส่วนกำลังพลที่อยู่ปฏิบัติจริง เทียบกับที่ไปช่วยราชการ</p>
+                  {exec?.manpower?.total ? (
+                    <>
+                      <ReactApexChart type="donut" height={280}
+                        options={donutOptions(['อยู่ปฏิบัติจริง', 'ไปช่วยราชการ', 'มาช่วยราชการ'], ['#0dcaf0', '#ef4444', '#20c997'])}
+                        series={[
+                          Math.max(0, exec.manpower.total.base - exec.manpower.total.out),
+                          exec.manpower.total.out,
+                          exec.manpower.total.in,
+                        ]} />
+                      <table className="table table-sc table-bordered text-center align-middle small mb-0 mt-3">
+                        <thead><tr><th>อัตรา</th><th>ไปช่วย</th><th>มาช่วย</th><th className="text-info">ปฏิบัติจริง</th></tr></thead>
+                        <tbody><tr>
+                          <td>{exec.manpower.total.base}</td>
+                          <td className="text-danger">{exec.manpower.total.out}</td>
+                          <td className="text-success">{exec.manpower.total.in}</td>
+                          <td className="text-info fw-bold">{exec.manpower.total.net}</td>
+                        </tr></tbody>
+                      </table>
+                    </>
+                  ) : (
+                    <p className="text-white-50 small mb-0 py-4 text-center">ยังไม่มีข้อมูลกำลังพล</p>
+                  )}
+                </div>
+              </div>
+            </div>
           </>
         )}
 
@@ -193,6 +257,9 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
         <MissionCalendar station={station} />
         </>)}
         {searchOpen && <DeepSearchModal scope="division" station={station} onClose={() => setSearchOpen(false)} />}
+        {summaryOpen && (
+          <TextSummaryModal station={station} start={start} end={end} onClose={() => setSummaryOpen(false)} />
+        )}
     </DashboardLayout>
   );
 };

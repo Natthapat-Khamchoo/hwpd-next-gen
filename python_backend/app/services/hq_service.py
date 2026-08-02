@@ -937,3 +937,127 @@ def comparison_chart(
             for (start, end), bucket in zip(ranges, buckets)
         ],
     }
+
+
+# ------------------------------------------ สรุปรายงานเป็นข้อความ
+
+
+# "ตาย: 2, เจ็บ: 3" ในช่องผู้เสียชีวิต/บาดเจ็บ เก็บเป็นข้อความไม่ใช่ตัวเลขแยกช่อง
+_DEAD = re.compile(r"ตาย:\s*(\d+)")
+_INJURED = re.compile(r"เจ็บ:\s*(\d+)")
+
+
+def commander_text_summary(station_id: str, start: str, end: str) -> Dict[str, Any]:
+    """
+    ตัวเลขทั้งหมดที่ใช้ประกอบรายงานสรุปส่งผู้บังคับบัญชา (พอร์ตจาก getCommanderTextSummary)
+
+    ผู้กำกับการกดปุ่มเดียวแล้วได้ข้อความพร้อมวางลง LINE — เป็นงานที่ทำทุกวัน จึงต้อง
+    รวบยอดจาก 6 ตารางในรอบเดียว ไม่ใช่ให้ไปไล่อ่านทีละหน้าแล้วพิมพ์เอง
+
+    คืนเป็นตัวเลขดิบ ส่วนการประกอบเป็นประโยคทำที่ฝั่งหน้าเว็บ เพราะถ้อยคำเป็นเรื่อง
+    การนำเสนอ ไม่ใช่ข้อมูล และแก้ที่ฝั่งนั้นได้โดยไม่ต้อง deploy หลังบ้านใหม่
+    """
+    spreadsheet_id = get_target_db_id(station_id)
+    arrests_by_cat: Dict[str, int] = {}
+    arrests_by_type: Dict[str, int] = {}
+    evidence: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    charges: Dict[str, int] = {}
+    accidents: Dict[str, Dict[str, Any]] = {}
+    totals = {"arrests": 0, "v20": 0, "service": 0, "volunteer": 0,
+              "escortRoyal": 0, "escortGeneral": 0, "accidents": 0}
+
+    def counted(record: Dict[str, Any]) -> bool:
+        return (
+            record.get(query_service.COL_STATUS) == query_service.STATUS_APPROVED
+            and query_service.is_active(record.get(query_service.COL_IS_ACTIVE))
+        )
+
+    for record in query_service.cached_rows(spreadsheet_id, "tb_Arrests"):
+        when = record.get("วันที่เวลาที่รายงาน") or record.get(query_service.COL_TIMESTAMP)
+        if not counted(record) or not _in_range(when, start, end):
+            continue
+        totals["arrests"] += 1
+        category = str(record.get("หัวข้อการจับกุม") or "อื่นๆ").strip() or "อื่นๆ"
+        kind = str(record.get("ประเภทการจับกุม") or "อื่นๆ").strip() or "อื่นๆ"
+        arrests_by_cat[category] = arrests_by_cat.get(category, 0) + 1
+        arrests_by_type[kind] = arrests_by_type.get(kind, 0) + 1
+
+        raw = str(record.get("ของกลาง (JSON มีโครงสร้าง)", "")).strip()
+        if len(raw) <= 5:
+            continue
+        try:
+            items = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        for item in items if isinstance(items, list) else []:
+            if not isinstance(item, dict):
+                continue
+            cat = str(item.get("cat", "")).strip()
+            if not cat or cat == "ไม่มีของกลาง":
+                continue
+            kind = str(item.get("type", "")).strip() or cat
+            bucket = evidence.setdefault(cat, {}).setdefault(kind, {"qty": 0.0, "unit": item.get("unit", "")})
+            bucket["qty"] += _to_float(item.get("qty"))
+
+    for record in query_service.cached_rows(spreadsheet_id, "tb_DailyResult"):
+        when = record.get("วันที่เวลาที่รายงาน") or record.get(query_service.COL_TIMESTAMP)
+        if not counted(record) or not _in_range(when, start, end):
+            continue
+        totals["v20"] += query_service._to_int(record.get("ยอด ว.20"))
+        totals["service"] += query_service._to_int(record.get("ยอด บริการ"))
+        raw = str(record.get("Charges_Detail", "")).strip()
+        if not raw or raw == "-":
+            continue
+        for part in raw.split("|"):
+            match = _CHARGE_WITH_COUNT.match(part.strip())
+            if match:
+                charges[match.group(1).strip()] = charges.get(match.group(1).strip(), 0) + int(match.group(2))
+
+    for record in query_service.cached_rows(spreadsheet_id, "tb_RoyalGuard"):
+        when = record.get("วันเวลาที่กรอกในฟอร์ม") or record.get(query_service.COL_ACTUAL_DATE)
+        if not counted(record) or not _in_range(when, start, end):
+            continue
+        if record.get("prep=ปล่อยแถว, complete=เสร็จสิ้น") != "complete":
+            continue
+        totals["escortRoyal"] += max(1, query_service._to_int(record.get("จำนวนที่หมาย")))
+
+    for record in query_service.cached_rows(spreadsheet_id, ESCORT_TABLE):
+        when = record.get(query_service.COL_ACTUAL_DATE) or record.get(query_service.COL_TIMESTAMP)
+        if counted(record) and _in_range(when, start, end):
+            totals["escortGeneral"] += 1
+
+    for record in query_service.cached_rows(spreadsheet_id, "tb_Accidents"):
+        when = record.get(query_service.COL_ACTUAL_DATE) or record.get(query_service.COL_TIMESTAMP)
+        if not counted(record) or not _in_range(when, start, end):
+            continue
+        totals["accidents"] += 1
+        key = _station_key(record.get(query_service.COL_STATION_ID, ""))
+        bucket = accidents.setdefault(key, {"name": _station_name(key), "incidents": 0, "dead": 0, "injured": 0, "damages": []})
+        bucket["incidents"] += 1
+
+        casualties = str(record.get("ผู้เสียชีวิต / บาดเจ็บ / รพ.", ""))
+        dead, injured = _DEAD.search(casualties), _INJURED.search(casualties)
+        bucket["dead"] += int(dead.group(1)) if dead else 0
+        bucket["injured"] += int(injured.group(1)) if injured else 0
+
+        damage = str(record.get("ความเสียหายของราชการ", "")).strip()
+        if damage and damage not in {"-", "0", "ไม่มี"}:
+            bucket["damages"].append(damage)
+
+    for record in query_service.cached_rows(spreadsheet_id, "tb_OtherDuties"):
+        when = record.get("วันที่เวลา") or record.get(query_service.COL_ACTUAL_DATE)
+        if not counted(record) or not _in_range(when, start, end):
+            continue
+        if "จิตอาสา" in str(record.get("การปฏิบัติ", "")):
+            totals["volunteer"] += 1
+
+    return {
+        "division": station_id[:1],
+        "totals": totals,
+        # เรียงมากไปน้อยตั้งแต่ฝั่ง server ข้อความที่ออกมาจะได้ไล่จากข้อหาที่ออกเยอะสุด
+        "arrestsByCategory": dict(sorted(arrests_by_cat.items(), key=lambda kv: -kv[1])),
+        "arrestsByType": dict(sorted(arrests_by_type.items(), key=lambda kv: -kv[1])),
+        "charges": dict(sorted(charges.items(), key=lambda kv: -kv[1])),
+        "evidence": evidence,
+        "accidentsByStation": [accidents[k] for k in sorted(accidents)],
+    }

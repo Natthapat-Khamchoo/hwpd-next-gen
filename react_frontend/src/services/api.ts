@@ -553,4 +553,7 @@ export const api = {
   hqComparison: (body: Record<string, unknown>, token?: string) =>
     hqPost('/hq/comparison', body, token),
 
+  commanderSummary: (station: string, start: string, end: string, token?: string) =>
+    hqGet('/commander/summary', { station, start, end }, token),
+
 };

@@ -23,7 +23,8 @@ interface Mission {
 }
 
 const DAY_LABELS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
-const timeOf = (iso: string) => (iso || '').slice(11, 16) || '--:--';
+/** ภารกิจที่กรอกมาแต่วันที่ไม่มีเวลา ให้ขึ้นว่า "ทั้งวัน" ไม่ใช่ --:-- ซึ่งอ่านเหมือนข้อมูลเสีย */
+const timeOf = (iso: string) => (iso || '').slice(11, 16);
 
 export const MissionCalendar: React.FC<{ station: string }> = ({ station }) => {
   const { user } = useAuth();
@@ -44,6 +45,13 @@ export const MissionCalendar: React.FC<{ station: string }> = ({ station }) => {
   };
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [station, month]);
+
+  /** เลื่อนเดือนไปข้างหน้า/ถอยหลัง โดยไม่ให้เดือน 13 หรือ 0 หลุดออกไป */
+  const shiftMonth = (step: number) => {
+    const [y, m] = month.split('-').map(Number);
+    const d = new Date(y, m - 1 + step, 1);
+    setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  };
 
   const byDay = useMemo(() => {
     const map = new Map<string, Mission[]>();
@@ -72,8 +80,15 @@ export const MissionCalendar: React.FC<{ station: string }> = ({ station }) => {
         <h5 className="text-white m-0"><i className="fa-solid fa-calendar-days text-warning"></i> ปฏิทินภารกิจประจำเดือน</h5>
         <div className="d-flex align-items-center gap-2">
           <span className="small text-white-50">{missions.length} ภารกิจ</span>
+          {/* ปุ่มเลื่อนเดือนตามของเดิม (changeCalMonth) เร็วกว่าเปิดตัวเลือกเดือนทุกครั้ง */}
+          <button className="btn btn-sm btn-outline-warning px-2" title="เดือนก่อนหน้า" onClick={() => shiftMonth(-1)}>
+            <i className="fa-solid fa-chevron-left"></i>
+          </button>
           <input type="month" className="form-control form-control-sm bg-dark text-white border-warning"
-                 style={{ width: 175 }} value={month} onChange={(e) => setMonth(e.target.value)} />
+                 style={{ width: 165 }} value={month} onChange={(e) => setMonth(e.target.value)} />
+          <button className="btn btn-sm btn-outline-warning px-2" title="เดือนถัดไป" onClick={() => shiftMonth(1)}>
+            <i className="fa-solid fa-chevron-right"></i>
+          </button>
         </div>
       </div>
 
@@ -127,7 +142,11 @@ export const MissionCalendar: React.FC<{ station: string }> = ({ station }) => {
                   <tbody>
                     {selectedMissions.map((m) => (
                       <tr key={m.recordId}>
-                        <td className="text-nowrap">{timeOf(m.startTime)}{m.endTime && ` - ${timeOf(m.endTime)}`}</td>
+                        <td className="text-nowrap">
+                          {timeOf(m.startTime)
+                            ? `${timeOf(m.startTime)}${timeOf(m.endTime || '') ? ` - ${timeOf(m.endTime || '')}` : ''}`
+                            : 'ทั้งวัน'}
+                        </td>
                         <td className="text-start">{m.stationName}<div className="text-white-50" style={{ fontSize: '.72rem' }}>{m.unitId}</div></td>
                         <td className="text-start text-white-50" style={{ whiteSpace: 'pre-wrap' }}>{m.details || '-'}</td>
                         <td className="text-start text-white-50">{m.location || '-'}</td>
