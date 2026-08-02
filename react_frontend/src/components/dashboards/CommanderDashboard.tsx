@@ -47,11 +47,17 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
 
   const load = async () => {
     // ยิงคู่กัน หน้านี้เปิดครั้งเดียวแล้วดูยาว การรอทีละคำขอทำให้ช้าขึ้นเปล่า ๆ
-    const [summary, overview, escortRes] = await Promise.all([
-      api.getDivisionSummary(station, start, end, user?.token),
+    //
+    // เคยยิงสามตัวโดยมี division-summary แยกอีกคำขอ ทั้งที่ commander/overview
+    // คำนวณสรุปก้อนเดียวกันอยู่แล้ว ตอนนี้เอามาจาก overview.summary แทน เพราะทุกคำขอ
+    // ที่อ่านชีตพร้อมกันไปกินโควตา 60 ครั้ง/นาทีของ Google ซึ่งคิดรวมทั้งระบบ
+    const [overview, escortRes] = await Promise.all([
       api.commanderOverview(station, start, end, user?.token),
       api.hqEscort(station, start, end, user?.token),
     ]);
+    const summary = overview.status === 'success'
+      ? { status: 'success', data: overview.data.summary }
+      : overview;
     // โหลดล้มต้องบอกให้รู้ ไม่ใช่ปล่อยให้ KPI ขึ้น 0 ซึ่งอ่านว่า "ไม่มีผลงาน" — ผู้บังคับ
     // บัญชีแยกไม่ออกว่าเป็นเพราะไม่มีข้อมูลจริงหรือเรียกข้อมูลไม่สำเร็จ
     if (summary.status === 'success') { setData(summary.data); setLoadError(''); }

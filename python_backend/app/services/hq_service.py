@@ -689,6 +689,10 @@ def executive_overview(station_id: str, start: str, end: str) -> Dict[str, Any]:
         "totals": performance.get("totals", {}),
         "stations": per_station,
         "manpower": manpower,
+        # แนบสรุประดับ กก. ทั้งก้อนไปด้วย หน้าผู้กำกับการจะได้ไม่ต้องยิง
+        # /api/division-summary ซ้ำอีกคำขอ ทั้งที่ตรงนี้คำนวณมาแล้ว — ลดคำขอที่อ่าน
+        # ชีตพร้อมกันจาก 4 เหลือ 3 ซึ่งสำคัญมากเพราะโควตาอ่านของ Google คิดรวมทั้งระบบ
+        "summary": performance,
     }
 
 

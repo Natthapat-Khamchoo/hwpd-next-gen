@@ -548,25 +548,51 @@ _ROW_CACHE_TTL_SECONDS = 30
 _row_cache: Dict[Tuple[str, str], Tuple[float, List[Dict[str, Any]]]] = {}
 _row_cache_lock = threading.Lock()
 
+# ล็อกรายตาราง ใช้ให้คำขอที่ต้องการตารางเดียวกันพร้อมกันอ่านจริงแค่ครั้งเดียว
+#
+# แคช TTL อย่างเดียวไม่พอ เพราะหน้าหนึ่งยิงหลายคำขอพร้อมกัน (หน้าผู้กำกับการยิง 4 ตัว
+# ที่อ่านชีตทั้งหมด) ทุกตัวจึงพลาดแคชพร้อมกันแล้ววิ่งไปอ่าน Sheets พร้อมกัน กลายเป็น
+# ยิงจริงเท่าจำนวนคำขอคูณจำนวนตาราง ชนเพดาน 60 ครั้ง/นาทีทันที แล้ว backoff วนอยู่
+# ราว 99 วินาทีก่อนยอมแพ้เป็น 502 — หน้าเว็บค้างรอทั้งนั้น (เจอมาแล้วบน production)
+#
+# ล็อกนี้ทำให้ตัวแรกอ่าน ที่เหลือรอแล้วได้ผลเดียวกันจากแคช
+_table_locks: Dict[Tuple[str, str], threading.Lock] = {}
+_table_locks_guard = threading.Lock()
+
+
+def _table_lock(key: Tuple[str, str]) -> threading.Lock:
+    with _table_locks_guard:
+        return _table_locks.setdefault(key, threading.Lock())
+
+
+def _fresh(key: Tuple[str, str]) -> Optional[List[Dict[str, Any]]]:
+    with _row_cache_lock:
+        hit = _row_cache.get(key)
+    return hit[1] if hit and (time.time() - hit[0]) < _ROW_CACHE_TTL_SECONDS else None
+
 
 def cached_rows(spreadsheet_id: str, table_name: str) -> List[Dict[str, Any]]:
     """
-    เหมือน read_rows แต่ใช้ผลเดิมซ้ำได้ภายใน 30 วินาที
+    เหมือน read_rows แต่ใช้ผลเดิมซ้ำได้ภายใน 30 วินาที และรวมคำขอที่ซ้อนกันเป็นครั้งเดียว
 
     ห้ามใช้กับเส้นทางที่จะเอา `_row` ไปเขียน และ **ห้ามแก้ค่าใน dict ที่คืนมา**
     เพราะเป็นตัวเดียวกับที่คนอื่นจะได้ไปในรอบถัดไป
     """
     key = (spreadsheet_id, table_name)
-    now = time.time()
-    with _row_cache_lock:
-        hit = _row_cache.get(key)
-        if hit and (now - hit[0]) < _ROW_CACHE_TTL_SECONDS:
-            return hit[1]
+    rows = _fresh(key)
+    if rows is not None:
+        return rows
 
-    rows = read_rows(spreadsheet_id, table_name)
-    with _row_cache_lock:
-        _row_cache[key] = (time.time(), rows)
-    return rows
+    with _table_lock(key):
+        # เช็คซ้ำหลังได้ล็อก คนที่รออยู่จะเจอผลที่ตัวแรกเพิ่งอ่านมา ไม่ต้องอ่านซ้ำ
+        rows = _fresh(key)
+        if rows is not None:
+            return rows
+
+        rows = read_rows(spreadsheet_id, table_name)
+        with _row_cache_lock:
+            _row_cache[key] = (time.time(), rows)
+        return rows
 
 
 def invalidate_cache(spreadsheet_id: str = "", table_name: str = "") -> None:

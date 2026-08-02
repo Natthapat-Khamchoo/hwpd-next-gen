@@ -11,6 +11,8 @@ Google ให้อ่าน 60 ครั้ง/นาทีต่อบัญ�
 import unittest
 from unittest import mock
 
+from app.core.schema import get_columns
+
 from app.services import query_service as q
 
 ROWS = [
@@ -82,3 +84,62 @@ class TestRowCache(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSingleFlight(unittest.TestCase):
+    """
+    คำขอที่ต้องการตารางเดียวกันพร้อมกันต้องอ่าน Sheets จริงแค่ครั้งเดียว
+
+    แคช TTL อย่างเดียวไม่พอ เพราะหน้าหนึ่งยิงหลายคำขอพร้อมกัน ทุกตัวพลาดแคชพร้อมกัน
+    แล้ววิ่งไปอ่านพร้อมกัน ชนเพดาน 60 ครั้ง/นาทีของ Google จน backoff วนเกือบ 100
+    วินาทีแล้วตอบ 502 — หน้าเว็บค้างรอทั้งนั้น เคยเกิดขึ้นจริงบน production
+    """
+
+    def test_concurrent_readers_trigger_one_read(self):
+        import threading
+        import time
+
+        calls = []
+
+        def slow_read(spreadsheet_id, table_name):
+            calls.append(table_name)
+            time.sleep(0.2)
+            return [get_columns("tb_DailyResult")]
+
+        q.invalidate_cache()
+        with mock.patch.object(q.sheets_service, "read_table", side_effect=slow_read):
+            threads = [
+                threading.Thread(target=q.cached_rows, args=("db", "tb_DailyResult"))
+                for _ in range(8)
+            ]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+        q.invalidate_cache()
+
+        self.assertEqual(len(calls), 1, "8 คำขอพร้อมกันต้องอ่าน Sheets จริงครั้งเดียว")
+
+    def test_different_tables_are_not_serialised_behind_one_lock(self):
+        # ล็อกต้องแยกรายตาราง ไม่งั้นการอ่านตาราง A ไปบล็อกตาราง B โดยไม่จำเป็น
+        import threading
+
+        started = threading.Event()
+        release = threading.Event()
+
+        def blocking_read(spreadsheet_id, table_name):
+            if table_name == "tb_DailyResult":
+                started.set()
+                release.wait(timeout=2)
+            return [get_columns(table_name)]
+
+        q.invalidate_cache()
+        with mock.patch.object(q.sheets_service, "read_table", side_effect=blocking_read):
+            slow = threading.Thread(target=q.cached_rows, args=("db", "tb_DailyResult"))
+            slow.start()
+            self.assertTrue(started.wait(timeout=2))
+            # ตารางอื่นต้องอ่านได้ทันทีระหว่างที่ตัวแรกยังค้างอยู่
+            q.cached_rows("db", "tb_Arrests")
+            release.set()
+            slow.join(timeout=3)
+        q.invalidate_cache()
