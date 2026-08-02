@@ -613,6 +613,10 @@ def _to_int(value: Any) -> int:
         return 0
 
 
+def _unit_totals() -> Dict[str, int]:
+    return {"v43": 0, "v42": 0, "v20": 0, "arrest": 0, "volunteer": 0, "royalGuard": 0}
+
+
 def _accumulate_totals(record: Dict[str, Any], table: str, totals: Dict[str, int]) -> None:
     """
     ยอดสะสมนับเฉพาะแถวที่ผ่านการตรวจแล้วและยัง active
@@ -653,6 +657,9 @@ def station_overview(
     pending: List[Dict[str, Any]] = []
     fuel: List[Dict[str, Any]] = []
     totals = {"v43": 0, "v42": 0, "v20": 0, "arrest": 0, "volunteer": 0, "royalGuard": 0}
+    # ยอดแยกรายหน่วยบริการ หน้า Admin มีตารางเทียบหน่วยอยู่แล้วแต่เคยเป็นตัวเลขสมมติ
+    # ฮาร์ดโค้ดไว้ในหน้าเว็บ นับจากของจริงในรอบเดียวกับ totals ไม่ต้องอ่านชีตเพิ่ม
+    by_unit: Dict[str, Dict[str, int]] = {}
     approved = 0
 
     for table, label, icon in GENERAL_TABLES + FUEL_TABLES:
@@ -675,6 +682,9 @@ def station_overview(
                 continue
 
             _accumulate_totals(record, table, totals)
+            unit = str(record.get(COL_UNIT_ID, "")).strip()
+            if unit:
+                _accumulate_totals(record, table, by_unit.setdefault(unit, _unit_totals()))
 
             # Sys_LastUpdate คือเวลาที่กดอนุมัติ ไม่ใช่เวลาที่ส่งรายงาน
             if record.get(COL_STATUS, "") == STATUS_APPROVED and str(
@@ -688,6 +698,10 @@ def station_overview(
     return {
         "pending": pending,
         "fuel": fuel,
+        "byUnit": [
+            {"unit": unit, **values}
+            for unit, values in sorted(by_unit.items())
+        ],
         "stats": {
             "pendingCount": len(pending),
             "fuelCount": len(fuel),

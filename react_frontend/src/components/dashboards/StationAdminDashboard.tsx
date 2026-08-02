@@ -52,6 +52,7 @@ export const StationAdminDashboard: React.FC<Props> = ({ onBack, viewStation, on
   }, [station]);
 
   const stats = data?.stats || {};
+  const byUnit: any[] = data?.byUnit || [];
   const pending = data?.pending || [];
   const fuel = data?.fuel || [];
 
@@ -133,13 +134,31 @@ export const StationAdminDashboard: React.FC<Props> = ({ onBack, viewStation, on
                   <div className="col-md-2 col-6" key={i}><div className="kpi-card" style={{ background: k.bg, borderColor: k.bd }}><div className="title"><i className={`fa-solid ${k.i}`}></i> {k.t}</div><div className={`value ${k.c}`}>{k.v ?? '-'}</div></div></div>
                 ))}
               </div>
+              {/*
+                ตารางนี้เคยเป็นตัวเลขสมมติที่ฮาร์ดโค้ดไว้ตอนทำโครงหน้า (88/60, 18/13, 7/5)
+                พร้อมชื่อหน่วยที่ไม่มีอยู่จริง วางอยู่ข้างยอดรวมที่เป็นของจริง คนอ่านแยกไม่ออก
+                ตอนนี้อ่านจาก byUnit ที่ backend นับมาให้ในรอบเดียวกับยอดรวม แถวจึงบวกกันได้เสมอ
+              */}
               <div className="table-responsive">
                 <table className="table table-hq table-bordered text-center align-middle">
-                  <thead><tr><th className="text-start">ประเภทการปฏิบัติ</th><th className="text-white-50">หน่วยดอนจาน</th><th className="text-white-50">หน่วยจอมทอง</th><th className="text-warning">รวมทั้งสถานี</th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th className="text-start">ประเภทการปฏิบัติ</th>
+                      {byUnit.map((u: any) => <th key={u.unit} className="text-white-50">{u.unit}</th>)}
+                      <th className="text-warning">รวมทั้งสถานี</th>
+                    </tr>
+                  </thead>
                   <tbody>
-                    {[['ว.43', 88, 60, stats.v43], ['คดีจราจร', 18, 13, stats.v20], ['คดีอาญา', 7, 5, stats.arrest]].map((r, i) => (
-                      <tr key={i}><td className="text-start">{r[0]}</td><td>{r[1]}</td><td>{r[2]}</td><td className="text-warning fw-bold">{r[3] ?? '-'}</td></tr>
+                    {([['ว.43', 'v43'], ['ว.42', 'v42'], ['คดีจราจร', 'v20'], ['คดีอาญา', 'arrest'], ['จิตอาสา', 'volunteer'], ['รับเสด็จ', 'royalGuard']] as const).map(([label, key]) => (
+                      <tr key={key}>
+                        <td className="text-start">{label}</td>
+                        {byUnit.map((u: any) => <td key={u.unit}>{u[key] ?? 0}</td>)}
+                        <td className="text-warning fw-bold">{(stats as any)[key] ?? '-'}</td>
+                      </tr>
                     ))}
+                    {!byUnit.length && (
+                      <tr><td colSpan={2} className="text-white-50 py-3">ยังไม่มีรายงานที่อนุมัติแล้วของหน่วยใดในสถานีนี้</td></tr>
+                    )}
                   </tbody>
                 </table>
               </div>
