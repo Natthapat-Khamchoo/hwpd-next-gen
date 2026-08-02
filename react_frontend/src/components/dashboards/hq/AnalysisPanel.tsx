@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { api } from '../../../services/api';
 import { downloadSheet } from './excel';
+import { ReactApexChart, vBarOptions } from '../chartHelpers';
 import { PanelState } from './panelHelpers';
 
 /**
@@ -35,6 +36,11 @@ export const AnalysisPanel: React.FC<Props> = ({ station, start, end, stations }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [drill, setDrill] = useState<{ label: string; rows: any[] } | null>(null);
+  // เปรียบเทียบสองช่วงเวลาของรายการเดียว — ของเดิมเปิดจากปุ่มข้างชื่อข้อหาในตาราง
+  const [compare, setCompare] = useState<string>('');
+  const [cmpRange, setCmpRange] = useState({ s1: '', e1: '', s2: start, e2: end });
+  const [cmpData, setCmpData] = useState<any | null>(null);
+  const [cmpBusy, setCmpBusy] = useState(false);
 
   useEffect(() => {
     // ข้อหาโหลดจากตารางอ้างอิงเดียวกับที่ฟอร์มใช้ จะได้ไม่ต้องมาไล่แก้สองที่เวลาเพิ่มข้อหา
@@ -87,6 +93,45 @@ export const AnalysisPanel: React.FC<Props> = ({ station, start, end, stations }
     const res = await api.hqRecords({ stationId: station, sheetName: table, recordIds: cell.ids }, user?.token);
     setDrill({ label: `${category} — ${where}`, rows: res.status === 'success' ? res.data : [] });
   };
+
+  const openCompare = (category: string) => {
+    // ตั้งช่วงที่ 1 เป็นเดือนก่อนหน้าช่วงที่กำลังดูอยู่ ซึ่งเป็นการเทียบที่ใช้บ่อยที่สุด
+    const from = new Date(start);
+    const prevEnd = new Date(from.getTime() - 86400000);
+    const prevStart = new Date(prevEnd.getTime() - (new Date(end).getTime() - from.getTime()));
+    const iso = (d: Date) => d.toISOString().split('T')[0];
+    setCmpRange({ s1: iso(prevStart), e1: iso(prevEnd), s2: start, e2: end });
+    setCmpData(null);
+    setCompare(category);
+  };
+
+  const runCompare = async () => {
+    const { s1, e1, s2, e2 } = cmpRange;
+    if (!s1 || !e1 || !s2 || !e2) return;
+    setCmpBusy(true);
+    const res = await api.hqComparison(
+      {
+        stationId: station, mode, category: compare,
+        ranges: [{ start: s1, end: e1 }, { start: s2, end: e2 }],
+      },
+      user?.token,
+    );
+    setCmpBusy(false);
+    setCmpData(res.status === 'success' ? res.data : null);
+  };
+
+  /** % เปลี่ยนแปลงของยอดรวมทั้งกอง (ช่องแรกของทุกชุดคือ total) */
+  const growth = (() => {
+    if (!cmpData) return null;
+    const p1 = cmpData.series[0]?.data[0] || 0;
+    const p2 = cmpData.series[1]?.data[0] || 0;
+    if (!p1 && !p2) return { text: 'ไม่มีข้อมูลในทั้ง 2 ช่วงเวลา', cls: 'text-white-50', icon: 'fa-minus' };
+    if (!p1) return { text: `เพิ่มขึ้น 100% (จาก 0 เป็น ${p2})`, cls: 'text-danger', icon: 'fa-arrow-trend-up' };
+    const pct = ((p2 - p1) / p1) * 100;
+    if (pct > 0) return { text: `เพิ่มขึ้น ${pct.toFixed(1)}%`, cls: 'text-danger', icon: 'fa-arrow-trend-up' };
+    if (pct < 0) return { text: `ลดลง ${Math.abs(pct).toFixed(1)}%`, cls: 'text-success', icon: 'fa-arrow-trend-down' };
+    return { text: 'คงที่ (0%)', cls: 'text-info', icon: 'fa-minus' };
+  })();
 
   // เรียงจากมากไปน้อย เพราะสิ่งที่ต้องเห็นก่อนคือข้อหาที่ออกเยอะที่สุด
   const rows = useMemo(
@@ -180,7 +225,15 @@ export const AnalysisPanel: React.FC<Props> = ({ station, start, end, stations }
               <tbody>
                 {rows.map(({ category, cells }) => (
                   <tr key={category}>
-                    <td className="text-start text-white">{category}</td>
+                    <td className="text-start text-white">
+                      <div className="d-flex justify-content-between align-items-center gap-2">
+                        <span>{category}</span>
+                        <button className="btn btn-sm btn-outline-warning py-0 px-1" title="เปรียบเทียบสองช่วงเวลา"
+                                onClick={() => openCompare(category)}>
+                          <i className="fa-solid fa-chart-line"></i>
+                        </button>
+                      </div>
+                    </td>
                     {stations.map((s) => {
                       const cell = cells[s.station] || { count: 0, ids: [] };
                       return (
@@ -242,6 +295,73 @@ export const AnalysisPanel: React.FC<Props> = ({ station, start, end, stations }
               </div>
               <div className="modal-footer border-secondary">
                 <button className="btn btn-secondary btn-sm" onClick={() => setDrill(null)}>ปิด</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {compare && (
+        <div className="modal d-block" style={{ background: 'rgba(0,0,0,0.7)' }} onClick={() => setCompare('')}>
+          <div className="modal-dialog modal-xl modal-dialog-centered" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-content bg-dark border border-secondary">
+              <div className="modal-header border-secondary">
+                <h6 className="modal-title text-warning">
+                  <i className="fa-solid fa-chart-line"></i> เปรียบเทียบข้อมูล: <span className="text-white">{compare}</span>
+                </h6>
+                <button className="btn-close btn-close-white" onClick={() => setCompare('')}></button>
+              </div>
+              <div className="modal-body">
+                <div className="row g-2 align-items-end mb-3">
+                  <div className="col-6 col-md-3">
+                    <label className="form-label small text-warning">ช่วงที่ 1 ตั้งแต่</label>
+                    <input type="date" className="form-control form-control-sm bg-dark text-white border-secondary"
+                           value={cmpRange.s1} onChange={(e) => setCmpRange({ ...cmpRange, s1: e.target.value })} />
+                  </div>
+                  <div className="col-6 col-md-3">
+                    <label className="form-label small text-warning">ถึง</label>
+                    <input type="date" className="form-control form-control-sm bg-dark text-white border-secondary"
+                           value={cmpRange.e1} onChange={(e) => setCmpRange({ ...cmpRange, e1: e.target.value })} />
+                  </div>
+                  <div className="col-6 col-md-3">
+                    <label className="form-label small text-info">ช่วงที่ 2 ตั้งแต่</label>
+                    <input type="date" className="form-control form-control-sm bg-dark text-white border-secondary"
+                           value={cmpRange.s2} onChange={(e) => setCmpRange({ ...cmpRange, s2: e.target.value })} />
+                  </div>
+                  <div className="col-6 col-md-3">
+                    <label className="form-label small text-info">ถึง</label>
+                    <input type="date" className="form-control form-control-sm bg-dark text-white border-secondary"
+                           value={cmpRange.e2} onChange={(e) => setCmpRange({ ...cmpRange, e2: e.target.value })} />
+                  </div>
+                </div>
+
+                <button className="btn btn-info btn-sm fw-bold mb-3" onClick={runCompare} disabled={cmpBusy}>
+                  <i className="fa-solid fa-chart-column"></i> {cmpBusy ? 'กำลังประมวลผล...' : 'ประมวลผลกราฟ'}
+                </button>
+
+                {growth && (
+                  <div className="mb-3 fw-bold">
+                    <span className="text-white-50">{compare}: </span>
+                    <span className={growth.cls}><i className={`fa-solid ${growth.icon}`}></i> {growth.text}</span>
+                  </div>
+                )}
+
+                {cmpData ? (
+                  <ReactApexChart
+                    type="bar"
+                    height={380}
+                    options={vBarOptions(cmpData.categories, ['#f59e0b', '#0ea5e9'])}
+                    series={cmpData.series.map((s: any) => ({ name: s.label, data: s.data }))}
+                  />
+                ) : (
+                  <div className="text-center py-5 text-white-50">
+                    <i className="fa-solid fa-chart-column mb-3" style={{ fontSize: '2rem' }}></i><br />
+                    กรุณากด "ประมวลผลกราฟ" เพื่อแสดงข้อมูลเปรียบเทียบ
+                  </div>
+                )}
+              </div>
+              <div className="modal-footer border-secondary">
+                <button className="btn btn-secondary btn-sm" onClick={() => setCompare('')}>ปิด</button>
               </div>
             </div>
           </div>

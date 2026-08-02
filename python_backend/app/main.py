@@ -1574,3 +1574,33 @@ def hq_records(payload: Dict[str, Any], session: Dict[str, Any] = Depends(curren
     except SheetWriteError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {"status": "success", "data": data}
+
+
+@app.post("/api/hq/comparison")
+def hq_comparison(payload: Dict[str, Any], session: Dict[str, Any] = Depends(current_session)):
+    """เทียบยอดของข้อหา/หมวดเดียวระหว่างสองช่วงเวลา แยกรายสถานี"""
+    station_id = authorized_station_id(payload.get("stationId"), session)
+    _require_division(session)
+
+    mode = str(payload.get("mode") or "daily_charges")
+    if mode not in {"daily_charges", "arrests"}:
+        raise HTTPException(status_code=400, detail="โหมดวิเคราะห์ไม่ถูกต้อง")
+
+    category = str(payload.get("category") or "").strip()
+    if not category:
+        raise HTTPException(status_code=400, detail="ไม่พบรายการที่ต้องการเปรียบเทียบ")
+
+    raw = payload.get("ranges") or []
+    ranges = [
+        (str(r.get("start") or ""), str(r.get("end") or ""))
+        for r in raw
+        if isinstance(r, dict) and r.get("start") and r.get("end")
+    ]
+    if len(ranges) < 2:
+        raise HTTPException(status_code=400, detail="กรุณาระบุช่วงวันที่ให้ครบทั้ง 2 ช่วง")
+
+    try:
+        data = hq_service.comparison_chart(station_id, ranges, mode, category)
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"status": "success", "data": data}

@@ -868,3 +868,72 @@ def records_summary(station_id: str, table_name: str, record_ids: List[str]) -> 
             })
 
     return results
+
+
+def comparison_chart(
+    station_id: str,
+    ranges: List[Tuple[str, str]],
+    mode: str,
+    category: str,
+) -> Dict[str, Any]:
+    """
+    เทียบยอดของข้อหา/หมวดเดียวระหว่างสองช่วงเวลา แยกรายสถานี
+
+    ใช้ตอบว่า "เดือนนี้เทียบเดือนที่แล้ว ข้อหานี้ขึ้นหรือลง และขึ้นที่สถานีไหน"
+    ซึ่งตารางแจกแจงช่วงเดียวบอกไม่ได้
+
+    รับช่วงเวลาเป็นรายการเพื่อให้เพิ่มช่วงที่สามได้ในอนาคตโดยไม่ต้องแก้สัญญา API
+    (ของเดิมรับเป็นสี่พารามิเตอร์ตายตัว start1/end1/start2/end2)
+    """
+    spreadsheet_id = get_target_db_id(station_id)
+    stations = get_division_stations(station_id, include_hq=False)
+    table = "tb_DailyResult" if mode == "daily_charges" else "tb_Arrests"
+
+    # แต่ละช่วงมีถังของตัวเอง รายสถานี + total
+    buckets: List[Dict[str, int]] = [
+        {key: 0 for key in ["total", *stations]} for _ in ranges
+    ]
+
+    for record in query_service.cached_rows(spreadsheet_id, table):
+        if record.get(query_service.COL_STATUS) != query_service.STATUS_APPROVED:
+            continue
+        if not query_service.is_active(record.get(query_service.COL_IS_ACTIVE)):
+            continue
+
+        when = record.get("วันที่เวลาที่รายงาน") or record.get(query_service.COL_ACTUAL_DATE)
+        hits = [i for i, (start, end) in enumerate(ranges) if _in_range(when, start, end)]
+        if not hits:
+            continue
+
+        key = _station_key(record.get(query_service.COL_STATION_ID, ""))
+        amount = 0
+
+        if mode == "daily_charges":
+            raw = str(record.get("Charges_Detail", "")).strip()
+            if not raw or raw == "-":
+                continue
+            for part in raw.split("|"):
+                match = _CHARGE_WITH_COUNT.match(part.strip())
+                if match and match.group(1).strip() == category:
+                    amount += int(match.group(2))
+        elif str(record.get("หัวข้อการจับกุม", "")).strip() == category:
+            amount = 1
+
+        if not amount:
+            continue
+        for i in hits:
+            if key in buckets[i]:
+                buckets[i][key] += amount
+            buckets[i]["total"] += amount
+
+    # total มาก่อนเสมอ ให้เห็นภาพรวมทั้งกองก่อนแล้วค่อยไล่รายสถานี ตรงกับที่ของเดิม
+    # อ่าน d.period1[0] เป็นยอดรวมเพื่อคำนวณ % เติบโต
+    order = ["total", *stations]
+    return {
+        "category": category,
+        "categories": [f"รวม กก.{station_id[:1]}" if k == "total" else _station_name(k) for k in order],
+        "series": [
+            {"label": f"{start} ถึง {end}", "data": [bucket[k] for k in order]}
+            for (start, end), bucket in zip(ranges, buckets)
+        ],
+    }

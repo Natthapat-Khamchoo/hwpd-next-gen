@@ -550,4 +550,7 @@ export const api = {
   hqRecords: (body: Record<string, unknown>, token?: string) =>
     hqPost('/hq/records', body, token),
 
+  hqComparison: (body: Record<string, unknown>, token?: string) =>
+    hqPost('/hq/comparison', body, token),
+
 };
