@@ -22,6 +22,7 @@ from app.core.config import (
     get_db_router,
     get_session_secret,
     get_station_config,
+    get_division_stations,
     get_station_data,
     get_target_db_id,
 )
@@ -50,6 +51,7 @@ from app.services.report_service import (
 )
 from app.services import (
     docs_service,
+    hq_service,
     national_service,
     query_service,
     reference_admin_service,
@@ -1217,3 +1219,287 @@ def database_health(session: Dict[str, Any] = Depends(current_session)):
         report["divisions"].append(row)
 
     return report
+
+
+# ==========================================================================
+# หน้า ฝอ.กก. และหน้าผู้กำกับการ
+#
+# ทั้งชุดจำกัดที่ DIVISION_VIEW_ROLES เป็นอย่างต่ำ และทุก endpoint บังคับสถานีผ่าน
+# authorized_station_id เสมอ ผู้กำกับการ กก.5 จึงยิงขอข้อมูล กก.3 ไม่ได้แม้แก้ URL
+# ==========================================================================
+
+
+def _require_division(session: Dict[str, Any]) -> None:
+    if str(session.get("r") or "") not in DIVISION_VIEW_ROLES:
+        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์ดูข้อมูลระดับกองกำกับการ")
+
+
+def _require_division_admin(session: Dict[str, Any]) -> None:
+    """
+    งานธุรการของ ฝอ. — ตั้งโควตาน้ำมัน แก้สถานะกำลังพล จัดหมวดของกลาง บันทึกนำขบวน
+
+    ผู้กำกับการดูได้ทุกหน้าแต่ไม่ได้เป็นคนกรอก จึงตัดออกจากฝั่งเขียน ตรงกับที่ของเดิม
+    วางปุ่มบันทึกไว้ใน hq_dashboard เท่านั้น ไม่มีใน commander_dashboard
+    """
+    if str(session.get("r") or "") not in {"Division_Admin", "HQ_Admin", "Super_Commander"}:
+        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์แก้ไขข้อมูลส่วนนี้ (เฉพาะ ฝอ.)")
+
+
+def _current_month() -> str:
+    return datetime.now().strftime("%Y-%m")
+
+
+@app.get("/api/hq/fuel")
+def hq_fuel(
+    station: Optional[str] = None,
+    month: Optional[str] = None,
+    session: Dict[str, Any] = Depends(current_session),
+):
+    """โควตากับยอดใช้น้ำมันรายสถานีของเดือนที่เลือก พร้อมรายการเบิกทีละใบ"""
+    station_id = authorized_station_id(station, session)
+    _require_division(session)
+    try:
+        data = hq_service.fuel_summary(station_id, month or _current_month())
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"status": "success", "data": data}
+
+
+@app.post("/api/hq/fuel/quota")
+def hq_fuel_quota(payload: Dict[str, Any], session: Dict[str, Any] = Depends(current_session)):
+    """ตั้งโควตาน้ำมันประจำเดือนให้ทุกสถานีใน กก. พร้อมกัน"""
+    station_id = authorized_station_id(payload.get("stationId"), session)
+    _require_division_admin(session)
+    month = str(payload.get("monthYear") or "").strip() or _current_month()
+    quotas = payload.get("quotas") or []
+    if not isinstance(quotas, list):
+        raise HTTPException(status_code=400, detail="quotas ต้องเป็นรายการ")
+    try:
+        saved = hq_service.save_fuel_quota(station_id, month, quotas, str(session.get("u") or ""))
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"status": "success", "message": f"บันทึกโควตาน้ำมันเดือน {month} แล้ว {saved} สถานี"}
+
+
+@app.get("/api/hq/manpower")
+def hq_manpower(station: Optional[str] = None, session: Dict[str, Any] = Depends(current_session)):
+    """ยอดกำลังพลรายสถานีทั้ง กก. คู่กับผังกำลังพลของสถานีที่ระบุ"""
+    station_id = authorized_station_id(station, session)
+    _require_division(session)
+    try:
+        return {
+            "status": "success",
+            "data": {
+                "overview": hq_service.manpower_overview(station_id),
+                "station": hq_service.manpower_data(station_id),
+            },
+        }
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/hq/manpower/status")
+def hq_manpower_status(payload: Dict[str, Any], session: Dict[str, Any] = Depends(current_session)):
+    """ตั้งหรือยกเลิกสถานะไปช่วยราชการของเจ้าหน้าที่หนึ่งคน"""
+    _require_division_admin(session)
+    username = str(payload.get("username") or "").strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="ไม่พบชื่อผู้ใช้ที่ต้องการแก้ไข")
+    try:
+        name = hq_service.update_manpower_status(
+            username,
+            str(payload.get("helpStationId") or ""),
+            str(payload.get("startDate") or ""),
+            str(payload.get("endDate") or ""),
+            str(payload.get("remark") or ""),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"status": "success", "message": f"อัปเดตสถานะกำลังพลของ {name} แล้ว"}
+
+
+@app.get("/api/hq/evidence")
+def hq_evidence(
+    station: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    session: Dict[str, Any] = Depends(current_session),
+):
+    """คดีจับกุมที่อนุมัติแล้ว พร้อมสถานะว่าจัดหมวดหมู่ของกลางแล้วหรือยัง"""
+    station_id = authorized_station_id(station, session)
+    _require_division(session)
+    try:
+        data = hq_service.evidence_list(station_id, start or "", end or "")
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"status": "success", "data": data}
+
+
+@app.post("/api/hq/evidence")
+def hq_evidence_save(payload: Dict[str, Any], session: Dict[str, Any] = Depends(current_session)):
+    """บันทึกของกลางที่จัดหมวดหมู่แล้วกลับลงคดี"""
+    station_id = authorized_station_id(payload.get("stationId"), session)
+    _require_division_admin(session)
+    record_id = str(payload.get("recordId") or "").strip()
+    if not record_id:
+        raise HTTPException(status_code=400, detail="ไม่พบรหัสคดีที่ต้องการอัปเดต")
+    try:
+        hq_service.save_evidence(station_id, record_id, payload.get("items"))
+    except RecordNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"status": "success", "message": "จัดหมวดหมู่ของกลางเรียบร้อยแล้ว"}
+
+
+@app.get("/api/hq/escort")
+def hq_escort(
+    station: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    session: Dict[str, Any] = Depends(current_session),
+):
+    """งานนำขบวนในช่วงวันที่ พร้อมยอดแยกบุคคลสำคัญกับทั่วไป"""
+    station_id = authorized_station_id(station, session)
+    _require_division(session)
+    try:
+        data = hq_service.escort_data(station_id, start or "", end or "")
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"status": "success", "data": data}
+
+
+@app.post("/api/hq/escort")
+def hq_escort_save(payload: Dict[str, Any], session: Dict[str, Any] = Depends(current_session)):
+    """บันทึกงานนำขบวนที่ส่วนกลางมอบหมายให้ กก."""
+    station_id = authorized_station_id(payload.get("stationId"), session)
+    _require_division_admin(session)
+    start_at = str(payload.get("startDateTime") or "").strip()
+    if not start_at:
+        raise HTTPException(status_code=400, detail="กรุณาระบุวันเวลาเริ่มนำขบวน")
+
+    files = payload.get("files")
+    record_id = f"ESC-{station_id}-{datetime.now().strftime('%y%m%d-%H%M%S')}"
+    attachments = prepare_attachments(files, station_id, record_id, "นำขบวน") if files else {}
+
+    try:
+        hq_service.save_escort(
+            station_id,
+            str(payload.get("escortType") or ""),
+            start_at,
+            str(payload.get("endDateTime") or ""),
+            str(payload.get("details") or ""),
+            str(session.get("u") or ""),
+            attachments.get("folderUrl", ""),
+        )
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"status": "success", "message": "บันทึกข้อมูลการนำขบวนเรียบร้อยแล้ว"}
+
+
+@app.get("/api/hq/daily-detail")
+def hq_daily_detail(
+    station: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    session: Dict[str, Any] = Depends(current_session),
+):
+    """ทุกรายงานที่อนุมัติแล้วในช่วงวันที่ เรียงตามเวลา สำหรับหน้ารายละเอียดรายวัน"""
+    station_id = authorized_station_id(station, session)
+    _require_division(session)
+    try:
+        data = hq_service.daily_detail(station_id, start or "", end or "")
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"status": "success", "data": data}
+
+
+@app.get("/api/commander/overview")
+def commander_overview(
+    station: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    session: Dict[str, Any] = Depends(current_session),
+):
+    """ผลงานรายสถานีคู่กับกำลังพลที่มีจริง และภารกิจเฉลี่ยต่อคน"""
+    station_id = authorized_station_id(station, session)
+    _require_division(session)
+    try:
+        data = hq_service.executive_overview(station_id, start or "", end or "")
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"status": "success", "data": data}
+
+
+@app.get("/api/commander/calendar")
+def commander_calendar(
+    station: Optional[str] = None,
+    month: Optional[str] = None,
+    session: Dict[str, Any] = Depends(current_session),
+):
+    """ภารกิจที่ยังใช้งานอยู่ของเดือนนั้น สำหรับปฏิทินหน้าผู้กำกับการ"""
+    station_id = authorized_station_id(station, session)
+    _require_division(session)
+    try:
+        data = hq_service.mission_calendar(station_id, month or _current_month())
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"status": "success", "data": data}
+
+
+@app.post("/api/commander/order")
+def commander_order(payload: Dict[str, Any], session: Dict[str, Any] = Depends(current_session)):
+    """
+    ส่งข้อความสั่งการเข้ากลุ่ม LINE ของสถานีในกองกำกับการตัวเอง
+
+    ยึดกองกำกับการจาก session ไม่ใช่จาก payload — ไม่งั้นแก้ค่าใน request ก็สั่งการ
+    ข้ามกองได้ ตรงตามที่ sendCommanderOrder ของเดิมเช็คไว้ (รหัส.js บรรทัด 3990)
+    """
+    if str(session.get("r") or "") not in {"Division_Commander", "Super_Commander"}:
+        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์สั่งการ (เฉพาะระดับผู้บังคับบัญชา)")
+
+    message = str(payload.get("message") or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="กรุณาพิมพ์ข้อความก่อนส่ง")
+
+    own_station = str(session.get("s") or "").strip()
+    allowed = set(get_division_stations(own_station, include_hq=True)) | {"00"}
+    target = str(payload.get("target") or "ALL").strip()
+
+    if target == "ALL":
+        targets = sorted(allowed)
+    elif target in allowed:
+        targets = [target]
+    else:
+        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์ส่งคำสั่งไปยังสถานีนอกกองกำกับการของท่าน")
+
+    stamp = datetime.now().strftime("%d/%m/%Y %H:%M")
+    commander = str(payload.get("commanderName") or session.get("u") or "")
+    text = (
+        f"📢 [ข้อความสั่งการจากผู้บังคับบัญชา]\n"
+        f"วันที่: {stamp}\n"
+        f"ผู้สั่งการ: {commander}\n\n"
+        f'"{message}"\n\n'
+        f"📌 โปรดรับทราบและปฏิบัติตามโดยเคร่งครัด"
+    )
+
+    # นับผลรายสถานี สถานีที่ยังไม่ได้ผูกกลุ่ม LINE จะถูกข้ามและรายงานกลับไปตามจริง
+    # ไม่ใช่ตอบ success รวม ๆ ทั้งที่ไม่มีใครได้รับข้อความ
+    sent, skipped = [], []
+    for station_id in targets:
+        group_id = get_station_data(station_id).get("lineGroupId", "")
+        if not group_id:
+            skipped.append(station_id)
+            continue
+        result = push_line_message(text, group_id)
+        (sent if result.get("status") == "success" else skipped).append(station_id)
+
+    if not sent:
+        raise HTTPException(status_code=502, detail="ส่งไม่สำเร็จ ยังไม่ได้ผูกกลุ่ม LINE ของสถานีปลายทาง")
+
+    note = f" (ข้าม {len(skipped)} สถานีที่ยังไม่ได้ผูกกลุ่ม LINE)" if skipped else ""
+    return {"status": "success", "message": f"ส่งข้อความสั่งการแล้ว {len(sent)} สถานี{note}"}

@@ -2,8 +2,7 @@ import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LoginView } from './components/common/LoginView';
 import { MainMenuGrid } from './components/dashboards/MainMenuGrid';
-import { canUseMainMenu } from './utils/roles';
-import type { UserRole } from './types';
+import { canUseMainMenu, roleHome } from './utils/roles';
 
 // Lazily loaded so the login/menu chunk stays small and ApexCharts only loads
 // when a dashboard is actually opened.
@@ -29,24 +28,6 @@ const CommanderDashboard = named(() => import('./components/dashboards/Commander
 const SuperCommanderDashboard = named(() => import('./components/dashboards/SuperCommanderDashboard'), 'SuperCommanderDashboard');
 const HqAdminDashboard = named(() => import('./components/dashboards/HqAdminDashboard'), 'HqAdminDashboard');
 
-// The landing view for each role, mirroring the original showMainMenu() routing.
-const roleHome = (role?: UserRole): string => {
-  switch (role) {
-    case 'สิบเวร':
-    case 'Station_Admin':
-      return 'station_admin';
-    case 'Division_Admin':
-      return 'hq';
-    case 'Division_Commander':
-      return 'commander';
-    case 'Super_Commander':
-      return 'super_commander';
-    case 'HQ_Admin':
-      return 'hq_admin';
-    default:
-      return 'main';
-  }
-};
 
 const Loading: React.FC = () => (
   <div className="d-flex align-items-center justify-content-center" style={{ minHeight: '100vh' }}>

@@ -4,8 +4,14 @@ import { api } from '../../services/api';
 import { getNowDateLocal } from '../../utils/formHelpers';
 import { ReactApexChart, vBarOptions, donutOptions } from './chartHelpers';
 import { DashboardLayout, SideItem } from './DashboardLayout';
+import { recentStart } from './hq/panelHelpers';
+import { FuelPanel } from './hq/FuelPanel';
+import { ManpowerPanel } from './hq/ManpowerPanel';
+import { EvidencePanel } from './hq/EvidencePanel';
+import { EscortPanel } from './hq/EscortPanel';
+import { DailyDetailPanel } from './hq/DailyDetailPanel';
+import { SearchPanel } from './hq/SearchPanel';
 
-const firstOfMonth = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]; };
 
 const VIEW_TITLES: Record<string, string> = {
   overview: 'ภาพรวมผลการปฏิบัติ',
@@ -21,15 +27,25 @@ export const HqDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { user, logout } = useAuth();
   const div = String(user?.station || '5').charAt(0);
   const [view, setView] = useState('overview');
-  const [start, setStart] = useState(firstOfMonth());
+  const [start, setStart] = useState(recentStart());
   const [end, setEnd] = useState(getNowDateLocal());
   const [data, setData] = useState<any | null>(null);
+  const [reports, setReports] = useState<{ reportKey: string; title: string; cadence: string }[]>([]);
+  const station = user?.station || '';
+
+  // ฝอ.กก. กรอกรายงานเองได้ ผู้กำกับการดูอย่างเดียว ตรงกับที่ของเดิมวางปุ่มบันทึกไว้
+  // ใน hq_dashboard เท่านั้น ฝั่ง API บังคับซ้ำอีกชั้นที่ _require_division_admin
+  const canEdit = user?.role !== 'Division_Commander';
 
   const load = async () => {
-    const res = await api.getDivisionSummary(user?.station || '', start, end, user?.token);
+    const res = await api.getDivisionSummary(station, start, end, user?.token);
     if (res.status === 'success') setData(res.data);
   };
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  useEffect(() => {
+    load();
+    api.getExportableReports(user?.token).then(setReports);
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, []);
 
   const t = data?.totals || {};
   const bs = data?.byStation || [];
@@ -108,13 +124,12 @@ export const HqDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           </>
         )}
 
-        {view !== 'overview' && (
-          <div className="glass-card w-100 p-4 text-center py-5">
-            <i className="fa-solid fa-database text-info mb-3" style={{ fontSize: '2.5rem' }}></i>
-            <h5 className="text-white">{VIEW_TITLES[view]}</h5>
-            <p className="text-white-50 mb-0">โครงหน้าตรงตามต้นฉบับแล้ว — ส่วนนี้พร้อมแสดงผลเมื่อเชื่อมต่อกับ Backend (FastAPI)</p>
-          </div>
-        )}
+        {view === 'search' && <SearchPanel station={station} />}
+        {view === 'fuel' && <FuelPanel station={station} canEdit={canEdit} />}
+        {view === 'daily_detail' && <DailyDetailPanel station={station} reports={reports} />}
+        {view === 'manpower' && <ManpowerPanel station={station} canEdit={canEdit} />}
+        {view === 'evidence' && <EvidencePanel station={station} canEdit={canEdit} />}
+        {view === 'escort' && <EscortPanel station={station} canEdit={canEdit} />}
     </DashboardLayout>
   );
 };

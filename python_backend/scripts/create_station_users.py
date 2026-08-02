@@ -3,9 +3,10 @@
 
 โครงสร้างบัญชี (1 บัญชีต่อ 1 หน่วย) อ่านรายชื่อสถานีจาก STATION_CONFIG โดยตรง
 
-    00       บก.ทล. ส่วนกลาง   Super_Commander   username: hq
-    00       ฝอ.บก.ทล.         HQ_Admin          username: fo0
-    {d}0     ฝอ.กก.{d}         Division_Admin    username: fo{d}
+    00       บก.ทล. ส่วนกลาง   Super_Commander     username: hq
+    00       ฝอ.บก.ทล.         HQ_Admin            username: fo0
+    {d}0     ผกก.กก.{d}        Division_Commander  username: pk{d}
+    {d}0     ฝอ.กก.{d}         Division_Admin      username: fo{d}
     {d}{n}   ส.ทล.{n} กก.{d}   Station_Admin     username: st{d}{n}
 
 รหัสผ่านสุ่มไม่ซ้ำกันต่อบัญชี เก็บลงชีตเป็น `sha256$...` (ดู core/security.py)
@@ -44,7 +45,7 @@ USERS_TABLE = "tb_Users"
 DIVISIONS = range(1, 9)
 
 # ชื่อบัญชีที่สคริปต์นี้เป็นเจ้าของ ใช้กันไม่ให้ --prune ไปลบบัญชีของคนอื่น
-OWNED_USERNAME = re.compile(r"^(hq|fo[0-8]|st[1-8][1-9])$")
+OWNED_USERNAME = re.compile(r"^(hq|fo[0-8]|pk[1-8]|st[1-8][1-9])$")
 
 # ตัดตัวที่อ่านสับสนออก (0/O, 1/l/I) เพราะรหัสนี้ต้องอ่านจากกระดาษแล้วพิมพ์ตาม
 PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghijkmnpqrstuvwxyz"
@@ -88,14 +89,16 @@ def build_accounts() -> List[Dict[str, Any]]:
     config = get_station_config()
     accounts: List[Dict[str, Any]] = []
 
-    def add(station_id: str, username: str, role: str) -> None:
+    def add(station_id: str, username: str, role: str, full_name: str = "") -> None:
         data = get_station_data(station_id)
         units = data.get("units") or []
         accounts.append(
             {
                 "username": username,
                 "password": generate_password(),
-                "fullName": data.get("fullName", ""),
+                # ชื่อหน่วยของสถานี {d}0 ใน STATION_CONFIG คือ "ฝอ.กก.{d}" ซึ่งถูกสำหรับ
+                # บัญชีธุรการ แต่ผิดสำหรับ ผกก. ที่อยู่รหัสสถานีเดียวกัน จึงเปิดให้ระบุทับได้
+                "fullName": full_name or data.get("fullName", ""),
                 "station": station_id,
                 "unit": units[0] if units else "",
                 "role": role,
@@ -113,6 +116,9 @@ def build_accounts() -> List[Dict[str, Any]]:
     for division in DIVISIONS:
         hq_id = f"{division}0"
         if hq_id in config:
+            # ผกก. กับ ฝอ.กก. อยู่รหัสสถานีเดียวกัน คนละบทบาท — ผกก. เห็นภาพรวมทั้งกอง
+            # และเจาะลงสถานีได้ ส่วน ฝอ.กก. ทำงานเอกสารและกรอกรายงานได้ด้วย
+            add(hq_id, f"pk{division}", "Division_Commander", f"ผกก.กก.{division} บก.ทล.")
             add(hq_id, f"fo{division}", "Division_Admin")
         for station_id in get_division_stations(hq_id, include_hq=False):
             add(station_id, f"st{station_id}", "Station_Admin")

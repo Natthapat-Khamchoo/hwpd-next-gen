@@ -18,13 +18,12 @@ interface Props {
   onClose: () => void;
 }
 
-const firstOfMonth = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]; };
-const today = () => new Date().toISOString().split('T')[0];
+import { recentStart, today } from './hq/panelHelpers';
 
 export const DeepSearchModal: React.FC<Props> = ({ scope, station, onClose }) => {
   const { user } = useAuth();
   const [keyword, setKeyword] = useState('');
-  const [start, setStart] = useState(firstOfMonth());
+  const [start, setStart] = useState(recentStart());
   const [end, setEnd] = useState(today());
   const [rows, setRows] = useState<any[] | null>(null);
   const [busy, setBusy] = useState(false);

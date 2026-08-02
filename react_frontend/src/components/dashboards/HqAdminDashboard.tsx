@@ -7,8 +7,8 @@ import { DashboardLayout, SideItem } from './DashboardLayout';
 import { UserDirectory } from './UserDirectory';
 import { ReferenceTableEditor } from './ReferenceTableEditor';
 import { ReportExportPanel } from './ReportExportPanel';
+import { recentStart } from './hq/panelHelpers';
 
-const firstOfMonth = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]; };
 
 const VIEW_TITLES: Record<string, string> = {
   compare: 'เปรียบเทียบผลปฏิบัติระดับประเทศ',
@@ -25,7 +25,7 @@ const VIEW_TITLES: Record<string, string> = {
 export const HqAdminDashboard: React.FC = () => {
   const { user, logout } = useAuth();
   const [view, setView] = useState('compare');
-  const [start, setStart] = useState(firstOfMonth());
+  const [start, setStart] = useState(recentStart());
   const [end, setEnd] = useState(getNowDateLocal());
   const [data, setData] = useState<any | null>(null);
   const [exportable, setExportable] = useState<{ reportKey: string; title: string; cadence: string }[]>([]);

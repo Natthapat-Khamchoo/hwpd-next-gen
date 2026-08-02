@@ -181,6 +181,26 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
         "เลขไมล์ครั้งก่อน",
         "ระยะทางใช้งาน(กม.)",
     ],
+    # โควตาน้ำมันรายเดือนที่ ฝอ.กก. ตั้งให้แต่ละสถานี ไม่ใช่รายงาน จึงไม่มี 9 คอลัมน์
+    # มาตรฐาน — ตรงตามที่ saveHQFuelQuota สร้างแท็บนี้ขึ้นมาเอง (รหัส.js บรรทัด 3603)
+    # QuotaLiters ค้างไว้เป็น 0 เสมอ ของเดิมเลิกใช้แล้วแต่ไม่ได้ลบคอลัมน์ทิ้ง
+    "tb_FuelQuota": [
+        "MonthYear",
+        "StationID",
+        "QuotaLiters",
+        "QuotaBaht",
+        "LastUpdate",
+        "ActionBy",
+        "QuotaOilLiters",
+    ],
+    "tb_HQ_Escorts": SYSTEM_COLUMNS
+    + [
+        "ประเภทการนำขบวน",
+        "วันเวลาเริ่ม",
+        "วันเวลาสิ้นสุด",
+        "รายละเอียด",
+        "Attachment_Folder",
+    ],
     "tb_Documents": SYSTEM_COLUMNS
     + [
         "Report_DateTime",
@@ -211,6 +231,25 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
         "JSON_Charges_Detail",
         "JSON_Accident_Causes",
     ],
+    # บัญชีผู้ใช้ อยู่ในชีตกลางไฟล์เดียว ไม่ใช่รายงาน จึงไม่มี 9 คอลัมน์มาตรฐาน
+    # คอลัมน์ท้าย ๆ ในชีตจริงมีรายการ Role ห้อยไว้เป็นแหล่งข้อมูลของ dropdown
+    # ไม่ใช่ข้อมูลผู้ใช้ — read_rows ข้ามให้เองเพราะคอลัมน์ Username ของแถวนั้นว่าง
+    "tb_Users": [
+        "Username",
+        "Password",
+        "FullName",
+        "Station_ID",
+        "Unit_ID",
+        "Role",
+        "สถานะไปช่วยราชการ",
+        "สถานะมาช่วยราชการ",
+        "หมายเหตุ",
+        "เบอร์โทร",
+        "รหัส",
+        "วันที่เริ่มช่วยราชการ",
+        "วันที่สิ้นสุดช่วยราชการ",
+        "AccountType",
+    ],
     "tb_HQ_Summary": [
         "Sys_RecordID",
         "Sys_Timestamp",
@@ -226,7 +265,12 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
 }
 
 
-NON_STANDARD_TABLES = frozenset({"tb_HQ_Summary"})
+# ตารางที่ไม่ได้ขึ้นต้นด้วย 9 คอลัมน์มาตรฐาน เพราะไม่ใช่รายงานรายใบ
+#   tb_HQ_Summary  ยอดสรุปที่สถานีส่งให้ กก. หนึ่งแถวคือหนึ่งวันของหนึ่งสถานี
+#   tb_FuelQuota   โควตาน้ำมันที่ ฝอ. ตั้งให้ หนึ่งแถวคือหนึ่งสถานีในหนึ่งเดือน
+#   tb_Users       บัญชีผู้ใช้ หนึ่งแถวคือหนึ่งคน
+# ทั้งคู่ไม่มีสถานะรออนุมัติ จึงไม่ต้องมีคอลัมน์ Sys_Status/Sys_IsActive
+NON_STANDARD_TABLES = frozenset({"tb_HQ_Summary", "tb_FuelQuota", "tb_Users"})
 
 
 def get_columns(table_name: str) -> List[str]:

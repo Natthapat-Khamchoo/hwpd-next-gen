@@ -68,6 +68,51 @@ const fetchList = async (
   return DEMO_MODE ? demoFallback : [];
 };
 
+/**
+ * ตัวช่วยของ endpoint ชุด ฝอ.กก./ผู้กำกับการ
+ *
+ * ทุกตัวคืนรูปเดียวกัน { status, data?, message? } และแปลง error ของ FastAPI เป็น
+ * ข้อความไทยให้แล้ว หน้าเรียกจึงเช็ค status ที่เดียวพอ ไม่ต้อง try/catch เอง
+ *
+ * ไม่มีข้อมูลสำรองในโหมดสาธิตเหมือน getDivisionSummary เพราะหน้าพวกนี้เป็นงานธุรการ
+ * ที่ต้องอ่านของจริง ตัวเลขปลอมบนหน้าโควตาน้ำมันหรือกำลังพลอันตรายกว่าการขึ้นว่า
+ * ต่อเซิร์ฟเวอร์ไม่ได้
+ */
+type HqResult<T = any> = { status: string; data?: T; message?: string };
+
+const hqRequest = async (path: string, init: RequestInit, token?: string): Promise<HqResult> => {
+  try {
+    const res = await fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      headers: { ...(init.headers || {}), 'x-token': token || '' },
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 401) {
+      onSessionExpired();
+      return { status: 'error', message: SESSION_EXPIRED_MESSAGE };
+    }
+    if (!res.ok) return { status: 'error', message: errorMessage(body, 'เรียกข้อมูลไม่สำเร็จ') };
+    return body;
+  } catch {
+    return { status: 'error', message: OFFLINE_MESSAGE };
+  }
+};
+
+const hqGet = (path: string, params: Record<string, string>, token?: string): Promise<HqResult> => {
+  // ตัดค่าว่างทิ้งก่อน ไม่งั้น start= จะไปทับค่า default ฝั่ง server ด้วยสตริงว่าง
+  const query = new URLSearchParams(
+    Object.entries(params).filter(([, value]) => value),
+  ).toString();
+  return hqRequest(`${path}${query ? `?${query}` : ''}`, { method: 'GET' }, token);
+};
+
+const hqPost = (path: string, body: Record<string, unknown>, token?: string): Promise<HqResult> =>
+  hqRequest(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }, token);
+
 export const api = {
   login: async (username: string, password: string): Promise<{ status: string; user?: User; message?: string }> => {
     try {
@@ -457,4 +502,43 @@ export const api = {
       return { status: 'error', message: OFFLINE_MESSAGE };
     }
   },
+
+  // ------------------- หน้า ฝอ.กก. และหน้าผู้กำกับการ -------------------
+
+  hqFuel: (station: string, month: string, token?: string) =>
+    hqGet('/hq/fuel', { station, month }, token),
+
+  hqSaveFuelQuota: (body: Record<string, unknown>, token?: string) =>
+    hqPost('/hq/fuel/quota', body, token),
+
+  hqManpower: (station: string, token?: string) =>
+    hqGet('/hq/manpower', { station }, token),
+
+  hqSaveManpowerStatus: (body: Record<string, unknown>, token?: string) =>
+    hqPost('/hq/manpower/status', body, token),
+
+  hqEvidence: (station: string, start: string, end: string, token?: string) =>
+    hqGet('/hq/evidence', { station, start, end }, token),
+
+  hqSaveEvidence: (body: Record<string, unknown>, token?: string) =>
+    hqPost('/hq/evidence', body, token),
+
+  hqEscort: (station: string, start: string, end: string, token?: string) =>
+    hqGet('/hq/escort', { station, start, end }, token),
+
+  hqSaveEscort: (body: Record<string, unknown>, token?: string) =>
+    hqPost('/hq/escort', body, token),
+
+  hqDailyDetail: (station: string, start: string, end: string, token?: string) =>
+    hqGet('/hq/daily-detail', { station, start, end }, token),
+
+  commanderOverview: (station: string, start: string, end: string, token?: string) =>
+    hqGet('/commander/overview', { station, start, end }, token),
+
+  commanderCalendar: (station: string, month: string, token?: string) =>
+    hqGet('/commander/calendar', { station, month }, token),
+
+  commanderOrder: (body: Record<string, unknown>, token?: string) =>
+    hqPost('/commander/order', body, token),
+
 };

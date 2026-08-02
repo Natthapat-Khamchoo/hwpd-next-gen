@@ -9,12 +9,9 @@ import { getNowDateLocal } from '../../utils/formHelpers';
 import { DashboardLayout } from './DashboardLayout';
 import { DeepSearchModal } from './DeepSearchModal';
 import { InvestDashboardPanel } from './InvestDashboardPanel';
+import { recentStart } from './hq/panelHelpers';
 import Swal from 'sweetalert2';
 
-const firstOfMonth = () => {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
-};
 
 const barOptions = (categories: string[]): ApexCharts.ApexOptions => ({
   chart: { type: 'bar', height: 320, toolbar: { show: false }, background: 'transparent' },
@@ -49,7 +46,7 @@ export const SuperCommanderDashboard: React.FC<{ onViewDivision?: (station: stri
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const [start, setStart] = useState(firstOfMonth());
+  const [start, setStart] = useState(recentStart());
   const [end, setEnd] = useState(getNowDateLocal());
   const [data, setData] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);

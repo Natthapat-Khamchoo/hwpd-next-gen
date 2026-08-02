@@ -22,3 +22,27 @@ const MAIN_MENU_ROLES: ReadonlySet<UserRole> = new Set<UserRole>([
 
 export const canUseMainMenu = (role?: UserRole): boolean =>
   MAIN_MENU_ROLES.has((role || 'Unit_Staff') as UserRole);
+
+/**
+ * หน้าแรกหลังล็อกอินของแต่ละบทบาท ตรงกับสาย showMainMenu ใน index.html เดิม
+ *
+ * อยู่ที่นี่แทนที่จะอยู่ใน App.tsx เพราะปุ่ม "กลับแผงควบคุม" ในเมนูผู้ปฏิบัติต้องใช้
+ * ค่าเดียวกัน ก่อนหน้านี้ปุ่มนั้นฮาร์ดโค้ดไปหน้าสถานี ฝอ.กก. กดแล้วจึงไปผิดที่
+ */
+export const roleHome = (role?: UserRole): string => {
+  switch (role) {
+    case 'สิบเวร':
+    case 'Station_Admin':
+      return 'station_admin';
+    case 'Division_Admin':
+      return 'hq';
+    case 'Division_Commander':
+      return 'commander';
+    case 'Super_Commander':
+      return 'super_commander';
+    case 'HQ_Admin':
+      return 'hq_admin';
+    default:
+      return 'main';
+  }
+};

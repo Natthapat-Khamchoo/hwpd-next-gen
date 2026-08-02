@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
-import { canUseMainMenu } from '../../utils/roles';
+import { canUseMainMenu, roleHome } from '../../utils/roles';
 import Swal from 'sweetalert2';
 
 interface MainMenuGridProps {
@@ -26,7 +26,19 @@ const MENU_ITEMS: { id: string; icon: string; label: string }[] = [
 export const MainMenuGrid: React.FC<MainMenuGridProps> = ({ onSelectView }) => {
   const { user, logout } = useAuth();
   const role = user?.role || 'Unit_Staff';
-  const showBackToAdmin = role === 'สิบเวร' || role === 'Station_Admin';
+  // ป้ายปุ่มกลับต่างกันตามบทบาท ตรงกับที่ของเดิมตั้งไว้ — admin_dashboard ใช้
+  // "กลับโหมดผู้ปฏิบัติ" ส่วน hq_dashboard ตั้ง btnBackToAdmin เป็น "แผงควบคุม ฝอ."
+  //
+  // ฝอ.กก. เคยตกหล่นไปจากเงื่อนไขนี้ เข้าเมนูผู้ปฏิบัติแล้วกลับแผงของตัวเองไม่ได้
+  // ต้องออกจากระบบแล้วล็อกอินใหม่
+  const BACK_LABELS: Partial<Record<string, string>> = {
+    'สิบเวร': 'กลับแผงควบคุมสถานี',
+    Station_Admin: 'กลับแผงควบคุมสถานี',
+    Division_Admin: 'กลับแผงควบคุม ฝอ.',
+    Division_Commander: 'กลับหน้าผู้กำกับการ',
+  };
+  const backLabel = BACK_LABELS[role];
+  const showBackToAdmin = Boolean(backLabel);
 
   // App.tsx ไม่ควรพา role ระดับ บก. มาถึงหน้านี้อยู่แล้ว กันไว้ตรงนี้อีกชั้นเผื่อมีทางอื่น
   // ทุกเมนูในนี้อ่านหรือเขียนฐานข้อมูลปฏิบัติการของ กก. ตัวเอง บัญชีสถานี 00 จึงกดแล้วเจอ
@@ -112,10 +124,10 @@ export const MainMenuGrid: React.FC<MainMenuGridProps> = ({ onSelectView }) => {
             {showBackToAdmin && (
               <button
                 className="btn-outline-round btn-outline-warning"
-                onClick={() => onSelectView('station_admin')}
-                title="แผงควบคุม"
+                onClick={() => onSelectView(roleHome(role))}
+                title={backLabel}
               >
-                <i className="fa-solid fa-chart-pie"></i> แผงควบคุม
+                <i className="fa-solid fa-chart-pie"></i> {backLabel}
               </button>
             )}
             <button className="btn-outline-round btn-outline-info" onClick={showChangePasswordModal} title="เปลี่ยนรหัสผ่าน">

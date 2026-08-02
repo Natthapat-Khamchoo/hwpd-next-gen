@@ -401,6 +401,7 @@ def _station_summary(spreadsheet_id: str, station_id: str, start: str, end: str)
                 if record.get("การปฏิบัติ", "") in VOLUNTEER_DUTY_TYPES:
                     totals["volunteer"] += 1
             elif table == "tb_Missions":
+                bucket["mission"] += 1
                 totals["mission"] += 1
             elif table == "tb_Accidents":
                 totals["accident"] += 1
@@ -458,7 +459,7 @@ def division_summary(station_id: str, start: str, end: str) -> Dict[str, Any]:
             "station": sid,
             "name": _station_label(sid),
             "province": get_station_data(sid).get("province", ""),
-            **{key: 0 for key in ("v43", "v42", "v20", "service", "arrest", "volunteer", "royalGuard")},
+            **{key: 0 for key in ("v43", "v42", "v20", "service", "arrest", "volunteer", "royalGuard", "mission")},
         }
         for sid in stations
     }

@@ -4,10 +4,14 @@ import { api } from '../../services/api';
 import { getNowDateLocal } from '../../utils/formHelpers';
 import { ReactApexChart, hBarOptions, vBarOptions, donutOptions } from './chartHelpers';
 import { DashboardLayout } from './DashboardLayout';
+import { recentStart } from './hq/panelHelpers';
 import { DeepSearchModal } from './DeepSearchModal';
+import { WorkloadPanel } from './hq/WorkloadPanel';
+import { MissionCalendar } from './hq/MissionCalendar';
+import { EvidencePanel } from './hq/EvidencePanel';
+import { EscortPanel } from './hq/EscortPanel';
 import Swal from 'sweetalert2';
 
-const firstOfMonth = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]; };
 
 interface Props {
   onBack: () => void;
@@ -25,16 +29,24 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
   // แทน ได้ผลเหมือนกันแต่ไม่ต้องเขียนทับตัวตนของคนที่ล็อกอินอยู่
   const station = viewStation || user?.station || '';
   const div = String(station || '5').charAt(0);
-  const [start, setStart] = useState(firstOfMonth());
+  const [start, setStart] = useState(recentStart());
   const [end, setEnd] = useState(getNowDateLocal());
   const [data, setData] = useState<any | null>(null);
+  const [exec, setExec] = useState<any | null>(null);
   const [msg, setMsg] = useState('');
   const [target, setTarget] = useState('ALL');
+  const [sending, setSending] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [view, setView] = useState<'overview' | 'evidence' | 'escort'>('overview');
 
   const load = async () => {
-    const res = await api.getDivisionSummary(station, start, end, user?.token);
-    if (res.status === 'success') setData(res.data);
+    // ยิงคู่กัน หน้านี้เปิดครั้งเดียวแล้วดูยาว การรอทีละคำขอทำให้ช้าขึ้นเปล่า ๆ
+    const [summary, overview] = await Promise.all([
+      api.getDivisionSummary(station, start, end, user?.token),
+      api.commanderOverview(station, start, end, user?.token),
+    ]);
+    if (summary.status === 'success') setData(summary.data);
+    if (overview.status === 'success') setExec(overview.data);
   };
   // โหลดใหม่เมื่อสลับไปดู กก. อื่น ไม่งั้นหัวเปลี่ยนแต่ตัวเลขยังเป็นของหน่วยเดิม
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [station]);
@@ -44,8 +56,29 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
 
   const sendOrder = async () => {
     if (!msg.trim()) return Swal.fire('แจ้งเตือน', 'กรุณาพิมพ์ข้อความก่อน', 'warning');
-    Swal.fire('ถ่ายทอดคำสั่ง', `ส่งข้อความไปยัง ${target === 'ALL' ? `ทุกสถานี (กก.${div})` : 'ส.ทล.' + target.charAt(1)} (เชื่อมต่อ backend เพื่อส่งจริง)`, 'success');
-    setMsg('');
+
+    // คำสั่งเข้ากลุ่ม LINE ของทุกสถานีทันทีและถอนคืนไม่ได้ จึงถามยืนยันก่อนเสมอ
+    const scope = target === 'ALL' ? `ทุกสถานีใน กก.${div}` : bs.find((s: any) => s.station === target)?.name || target;
+    const confirm = await Swal.fire({
+      title: 'ยืนยันการสั่งการ',
+      html: `ข้อความจะถูกส่งเข้ากลุ่ม LINE ของ <b>${scope}</b> ทันที และเรียกคืนไม่ได้`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'ส่งคำสั่ง',
+      cancelButtonText: 'ยกเลิก',
+      confirmButtonColor: '#0dcaf0',
+    });
+    if (!confirm.isConfirmed) return;
+
+    setSending(true);
+    const res = await api.commanderOrder({ target, message: msg, commanderName: user?.fullName }, user?.token);
+    setSending(false);
+    if (res.status === 'success') {
+      setMsg('');
+      Swal.fire('ส่งคำสั่งแล้ว', res.message || '', 'success');
+    } else {
+      Swal.fire('ส่งไม่สำเร็จ', res.message || '', 'error');
+    }
   };
 
   const kpis = [
@@ -70,7 +103,9 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
             <small className="text-white-50">Executive Command · กก.{div}</small>
           </div>
           <div className="sidebar-menu">
-            <div className="sidebar-item active"><i className="fa-solid fa-chart-line"></i> ภาพรวมระดับบริหาร (Executive)</div>
+            <div className={`sidebar-item ${view === 'overview' ? 'active' : ''}`} onClick={() => { close(); setView('overview'); }}><i className="fa-solid fa-chart-line"></i> ภาพรวมระดับบริหาร (Executive)</div>
+            <div className={`sidebar-item ${view === 'evidence' ? 'active' : ''}`} onClick={() => { close(); setView('evidence'); }}><i className="fa-solid fa-boxes-packing"></i> ของกลางที่ตรวจยึด</div>
+            <div className={`sidebar-item ${view === 'escort' ? 'active' : ''}`} onClick={() => { close(); setView('escort'); }}><i className="fa-solid fa-motorcycle"></i> งานนำขบวน</div>
             <h6 className="text-white-50 px-4 mt-4 mb-2 small"><i className="fa-solid fa-sitemap"></i> ทางลัดการเข้าถึงระบบ</h6>
             {onSwitchHQ && <div className="sidebar-item text-info" onClick={() => { close(); onSwitchHQ(); }}><i className="fa-solid fa-building-shield"></i> เข้าสู่หน้า ฝอ. (HQ Dashboard)</div>}
             <div className="px-4 mt-3 mb-2 small text-warning">เจาะลึกรายสถานี:</div>
@@ -105,6 +140,10 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
           </div>
         </div>
 
+        {view === 'evidence' && <EvidencePanel station={station} canEdit={false} />}
+        {view === 'escort' && <EscortPanel station={station} canEdit={false} />}
+
+        {view === 'overview' && (<>
         {/* Command Center */}
         <div className="glass-card mb-4" style={{ borderColor: 'rgba(13,202,240,0.4)' }}>
           <h5 className="text-info mb-3"><i className="fa-solid fa-walkie-talkie"></i> ศูนย์สั่งการผู้บังคับบัญชา (Command Center)</h5>
@@ -116,7 +155,7 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
                 {bs.map((s: any) => <option key={s.station} value={s.station}>เฉพาะ {s.name}</option>)}
               </select>
             </div>
-            <div className="col-12 col-md-2"><button className="btn btn-info w-100 fw-bold h-100" onClick={sendOrder}><i className="fa-solid fa-paper-plane"></i> ถ่ายทอดคำสั่ง</button></div>
+            <div className="col-12 col-md-2"><button className="btn btn-info w-100 fw-bold h-100" onClick={sendOrder} disabled={sending}><i className="fa-solid fa-paper-plane"></i> {sending ? 'กำลังส่ง...' : 'ถ่ายทอดคำสั่ง'}</button></div>
           </div>
         </div>
 
@@ -146,6 +185,13 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
             </div>
           </>
         )}
+
+        {exec && !!exec.categories?.length && (
+          <WorkloadPanel categories={exec.categories} staff={exec.staff} ratio={exec.ratio} workload={exec.workload} />
+        )}
+
+        <MissionCalendar station={station} />
+        </>)}
         {searchOpen && <DeepSearchModal scope="division" station={station} onClose={() => setSearchOpen(false)} />}
     </DashboardLayout>
   );
