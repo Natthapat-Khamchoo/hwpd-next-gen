@@ -6,7 +6,6 @@ import { ReactApexChart, hBarOptions, vBarOptions, donutOptions } from './chartH
 import { DashboardLayout } from './DashboardLayout';
 import { recentStart } from './hq/panelHelpers';
 import { DeepSearchModal } from './DeepSearchModal';
-import { WorkloadPanel } from './hq/WorkloadPanel';
 import { MissionCalendar } from './hq/MissionCalendar';
 import { EvidencePanel } from './hq/EvidencePanel';
 import { EscortPanel } from './hq/EscortPanel';
@@ -109,15 +108,14 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
     }
   };
 
+  // ห้าใบ เรียงตามที่ renderCommanderKPIs ของต้นฉบับสร้าง ใบสุดท้ายคือกำลังพลที่
+  // ปฏิบัติงานจริง ไม่ใช่ยอดผลงาน — ผู้กำกับการต้องเห็นคู่กันว่างานเท่านี้ทำด้วยคนเท่าไหร่
   const kpis = [
-    // สองตัวนี้คนละเรื่อง: arrest นับใบรายงานจับกุม (คดีอาญา) ส่วน v20 คือยอดคดีจราจร
-    // ที่เจ้าหน้าที่กรอกในผลการปฏิบัติประจำวัน ใช้คำเดียวกับข้อความ LINE ของระบบเดิม
-    { c: 'text-danger', i: 'fa-handcuffs', v: t.arrest, l: 'จับกุมคดีอาญา' },
-    { c: 'text-warning', i: 'fa-file-invoice', v: t.v20, l: 'คดีจราจร (ว.20)' },
-    { c: 'text-primary', i: 'fa-road', v: t.v43, l: 'ว.43' },
-    { c: 'text-info', i: 'fa-hands-holding-child', v: t.volunteer, l: 'จิตอาสา' },
+    { c: 'text-info', i: 'fa-file-invoice', v: t.v20, l: 'รวม ว.20' },
+    { c: 'text-danger', i: 'fa-handcuffs', v: t.arrest, l: 'ยอดจับกุม' },
     { c: 'text-success', i: 'fa-shield-halved', v: t.royalGuard, l: 'รับเสด็จ' },
-    { c: 'text-secondary', i: 'fa-bullseye', v: t.mission, l: 'ภารกิจ' },
+    { c: 'text-primary', i: 'fa-hands-holding-child', v: t.volunteer, l: 'จิตอาสา' },
+    { c: 'text-warning', i: 'fa-users', v: exec?.manpower?.total?.net, l: 'ปฏิบัติงานจริง' },
   ];
 
   return (
@@ -211,25 +209,57 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
           <>
             <div className="row g-4 mb-4">
               <div className="col-12">
-                <div className="glass-card"><h5 className="text-white mb-1"><i className="fa-solid fa-layer-group text-info"></i> ผลการปฏิบัติงานทั่วไปและจิตอาสา</h5><p className="small text-white-50 mb-3">เปรียบเทียบคดีจราจร (ว.20) · บริการ · จิตอาสา แยกตามสถานี</p>
-                  <ReactApexChart type="bar" height={320} options={vBarOptions(bs.map((s: any) => s.name), ['#ffc107', '#0dcaf0', '#20c997'])} series={[{ name: 'คดีจราจร', data: bs.map((s: any) => s.v20) }, { name: 'บริการ', data: bs.map((s: any) => s.service) }, { name: 'จิตอาสา', data: bs.map((s: any) => s.volunteer) }]} />
+                <div className="glass-card"><h5 className="text-white mb-1"><i className="fa-solid fa-layer-group text-info"></i> ผลการปฏิบัติงานทั่วไปและจิตอาสา</h5><p className="small text-white-50 mb-3">เปรียบเทียบ ว.20 · ว.42 · จิตอาสา แยกตามสถานี</p>
+                  <ReactApexChart type="bar" height={320}
+                    options={{ ...vBarOptions(bs.map((s: any) => s.name), ['#ffc107', '#6c757d', '#0dcaf0']),
+                               chart: { type: 'bar', height: 320, stacked: true, toolbar: { show: false }, background: 'transparent' } }}
+                    series={[{ name: 'ว.20', data: bs.map((s: any) => s.v20) }, { name: 'ว.42', data: bs.map((s: any) => s.v42) }, { name: 'จิตอาสา', data: bs.map((s: any) => s.volunteer) }]} />
                 </div>
               </div>
             </div>
             <div className="row g-4 mb-4">
-              <div className="col-12 col-lg-6"><div className="glass-card h-100"><h5 className="text-danger mb-1"><i className="fa-solid fa-handcuffs"></i> สถิติการจับกุมคดีอาญาแยกตามสถานี</h5><p className="small text-white-50 mb-3">เปรียบเทียบผลงานการจับกุมคดีอาญาของแต่ละสถานี</p><ReactApexChart type="bar" height={300} options={hBarOptions(bs.map((s: any) => s.name), '#ef4444')} series={[{ name: 'คดีอาญา', data: bs.map((s: any) => s.arrest) }]} /></div></div>
+              <div className="col-12 col-lg-6"><div className="glass-card h-100"><h5 className="text-danger mb-1"><i className="fa-solid fa-handcuffs"></i> สถิติการจับกุมแยกตามสถานี</h5><p className="small text-white-50 mb-3">เปรียบเทียบผลงานการจับกุมคดีอาญาของแต่ละสถานี</p><ReactApexChart type="bar" height={300} options={hBarOptions(bs.map((s: any) => s.name), '#ef4444')} series={[{ name: 'คดีอาญา', data: bs.map((s: any) => s.arrest) }]} /></div></div>
               <div className="col-12 col-lg-6"><div className="glass-card h-100"><h5 className="text-success mb-1"><i className="fa-solid fa-shield-halved text-warning"></i> ภารกิจรับเสด็จแยกตามสถานี</h5><p className="small text-white-50 mb-3">เปรียบเทียบจำนวนครั้งการปฏิบัติภารกิจรับเสด็จ</p><ReactApexChart type="bar" height={300} options={hBarOptions(bs.map((s: any) => s.name), '#20c997')} series={[{ name: 'รับเสด็จ', data: bs.map((s: any) => s.royalGuard) }]} /></div></div>
             </div>
             <div className="row g-4 mb-4">
-              <div className="col-12 col-lg-6"><div className="glass-card h-100"><h5 className="text-warning mb-1"><i className="fa-solid fa-boxes-packing"></i> สถิติหมวดหมู่ของกลาง</h5><p className="small text-white-50 mb-3">สัดส่วนประเภทของกลางที่ตรวจยึดได้</p><ReactApexChart type="donut" height={320} options={donutOptions(Object.keys(data.seizedBreakdown))} series={Object.values(data.seizedBreakdown) as number[]} /></div></div>
-              <div className="col-12 col-lg-6"><div className="glass-card h-100"><h5 className="text-info mb-1"><i className="fa-solid fa-gavel"></i> สัดส่วนข้อหา</h5><p className="small text-white-50 mb-3">ข้อหาที่พบบ่อยในกองกำกับการ</p><ReactApexChart type="donut" height={320} options={donutOptions(Object.keys(data.chargeBreakdown))} series={Object.values(data.chargeBreakdown) as number[]} /></div></div>
-            </div>
+              <div className="col-12 col-lg-6">
+                <div className="glass-card h-100">
+                  <h5 className="text-warning mb-1"><i className="fa-solid fa-boxes-packing"></i> สถิติหมวดหมู่ของกลาง</h5>
+                  <p className="small text-white-50 mb-3">สัดส่วนประเภทของกลางที่ทำการตรวจยึดได้เข้าคลังข้อมูล</p>
+                  <div className="row align-items-center">
+                    <div className="col-12 col-md-7">
+                      <ReactApexChart type="donut" height={280}
+                        options={donutOptions(Object.keys(data.seizedBreakdown))}
+                        series={Object.values(data.seizedBreakdown) as number[]} />
+                    </div>
+                    <div className="col-12 col-md-5">
+                      {/* ต้นฉบับวางรายการสรุปไว้ข้างกราฟ เพราะโดนัทบอกสัดส่วนแต่ไม่บอกจำนวนจริง */}
+                      <div className="p-3 rounded border border-secondary h-100" style={{ background: 'rgba(255,255,255,0.02)' }}>
+                        <h6 className="text-warning border-bottom border-secondary pb-2 mb-2">
+                          <i className="fa-solid fa-list-ul"></i> สรุปยอดของกลาง
+                        </h6>
+                        <ul className="list-unstyled mb-0 small" style={{ maxHeight: 220, overflowY: 'auto' }}>
+                          {Object.entries(data.seizedBreakdown).length ? (
+                            Object.entries(data.seizedBreakdown).map(([name, qty]) => (
+                              <li key={name} className="d-flex justify-content-between border-bottom border-secondary py-1">
+                                <span className="text-white-50 text-truncate" title={name}>{name}</span>
+                                <span className="text-white fw-bold ms-2">{String(qty)}</span>
+                              </li>
+                            ))
+                          ) : (
+                            <li className="text-white-50 py-2">ไม่มีของกลางที่จัดหมวดหมู่แล้วในช่วงนี้</li>
+                          )}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
-            <div className="row g-4 mb-4">
               <div className="col-12 col-lg-6">
                 <div className="glass-card h-100">
                   <h5 className="text-info mb-1"><i className="fa-solid fa-motorcycle"></i> สถิติภารกิจนำขบวน</h5>
-                  <p className="small text-white-50 mb-3">แยกบุคคลสำคัญกับทั่วไป ในช่วงวันที่ที่เลือก</p>
+                  <p className="small text-white-50 mb-3">เปรียบเทียบภาระงานนำขบวนแยกระดับสถานี (VIP และ ทั่วไป)</p>
                   {escort && escort.summary.total ? (
                     <>
                       <ReactApexChart type="donut" height={280}
@@ -252,27 +282,43 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
 
               <div className="col-12 col-lg-6">
                 <div className="glass-card h-100">
-                  <h5 className="text-primary mb-1"><i className="fa-solid fa-users"></i> สถานภาพกำลังพล กก.{div}</h5>
-                  <p className="small text-white-50 mb-3">สัดส่วนกำลังพลที่อยู่ปฏิบัติจริง เทียบกับที่ไปช่วยราชการ</p>
+                  <h5 className="text-white mb-1">สถานภาพกำลังพล กก.{div}</h5>
+                  <p className="small text-white-50 mb-3">สัดส่วนกำลังพลภาพรวมทั้งกองกำกับการ และแยกตามสถานี</p>
                   {exec?.manpower?.total ? (
-                    <>
-                      <ReactApexChart type="donut" height={280}
-                        options={donutOptions(['อยู่ปฏิบัติจริง', 'ไปช่วยราชการ', 'มาช่วยราชการ'], ['#0dcaf0', '#ef4444', '#20c997'])}
-                        series={[
-                          Math.max(0, exec.manpower.total.base - exec.manpower.total.out),
-                          exec.manpower.total.out,
-                          exec.manpower.total.in,
-                        ]} />
-                      <table className="table table-sc table-bordered text-center align-middle small mb-0 mt-3">
-                        <thead><tr><th>อัตรา</th><th>ไปช่วย</th><th>มาช่วย</th><th className="text-info">ปฏิบัติจริง</th></tr></thead>
-                        <tbody><tr>
-                          <td>{exec.manpower.total.base}</td>
-                          <td className="text-danger">{exec.manpower.total.out}</td>
-                          <td className="text-success">{exec.manpower.total.in}</td>
-                          <td className="text-info fw-bold">{exec.manpower.total.net}</td>
-                        </tr></tbody>
-                      </table>
-                    </>
+                    <div className="row align-items-center">
+                      <div className="col-12 col-lg-4">
+                        <ReactApexChart type="donut" height={300}
+                          options={donutOptions(['อยู่ปฏิบัติจริง', 'ไปช่วยราชการ', 'มาช่วยราชการ'], ['#0dcaf0', '#ef4444', '#20c997'])}
+                          series={[
+                            Math.max(0, exec.manpower.total.base - exec.manpower.total.out),
+                            exec.manpower.total.out,
+                            exec.manpower.total.in,
+                          ]} />
+                      </div>
+                      {/*
+                        ต้นฉบับวางการ์ดรายสถานีไว้ข้างโดนัท (manpowerStationList) เพราะโดนัท
+                        บอกภาพรวมทั้งกองแต่ไม่บอกว่าสถานีไหนขาดคน ซึ่งเป็นสิ่งที่ผู้กำกับการ
+                        ต้องเห็นเพื่อสั่งเกลี่ยกำลัง
+                      */}
+                      <div className="col-12 col-lg-8">
+                        <div className="row g-3">
+                          {Object.entries(exec.manpower)
+                            .filter(([id]) => id !== 'total')
+                            .map(([id, m]: [string, any]) => (
+                              <div className="col-md-4 col-6" key={id}>
+                                <div className="p-2 rounded h-100"
+                                     style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                                  <div className="text-white small text-truncate" title={m.name}>{m.name}</div>
+                                  <div className="text-info fw-bold" style={{ fontSize: '1.4rem' }}>{m.net}</div>
+                                  <div className="text-white-50" style={{ fontSize: '.72rem' }}>
+                                    อัตรา {m.base} · ไป <span className="text-danger">{m.out}</span> · มา <span className="text-success">{m.in}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    </div>
                   ) : (
                     <p className="text-white-50 small mb-0 py-4 text-center">ยังไม่มีข้อมูลกำลังพล</p>
                   )}
@@ -280,10 +326,6 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
               </div>
             </div>
           </>
-        )}
-
-        {exec && !!exec.categories?.length && (
-          <WorkloadPanel categories={exec.categories} staff={exec.staff} ratio={exec.ratio} workload={exec.workload} />
         )}
 
         <MissionCalendar station={station} />

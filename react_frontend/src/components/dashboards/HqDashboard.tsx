@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { getNowDateLocal } from '../../utils/formHelpers';
-import { ReactApexChart, vBarOptions, donutOptions } from './chartHelpers';
 import { DashboardLayout, SideItem } from './DashboardLayout';
 import { recentStart } from './hq/panelHelpers';
 import { FuelPanel } from './hq/FuelPanel';
@@ -14,14 +13,28 @@ import { SearchPanel } from './hq/SearchPanel';
 import { AnalysisPanel } from './hq/AnalysisPanel';
 
 
+/**
+ * แถวในตารางภาพรวม ตรงกับ createRow ใน loadHQOverview ของต้นฉบับทั้งลำดับ ป้าย และสี
+ * ยอดรวมท้ายแถวอ่านจาก totals ไม่ใช่บวกจากรายสถานีเอง เพราะสองค่านี้ต้องมาจากการนับ
+ * ชุดเดียวกัน ไม่งั้นถ้ามีรายงานของสถานีที่ไม่อยู่ในรายการ ตัวเลขจะไม่ตรงกัน
+ */
+const OVERVIEW_ROWS = [
+  { label: 'ว.43 (ครั้ง)', icon: 'fa-road', key: 'v43', cls: 'text-primary' },
+  { label: 'ว.20 (ครั้ง)', icon: 'fa-file-invoice', key: 'v20', cls: 'text-warning' },
+  { label: 'รายงานจับกุม (คดี)', icon: 'fa-handcuffs', key: 'arrest', cls: 'text-danger' },
+  { label: 'จิตอาสา (ครั้ง)', icon: 'fa-hands-holding-child', key: 'volunteer', cls: 'text-info' },
+  { label: 'รับเสด็จ (ครั้ง)', icon: 'fa-shield-halved', key: 'royalGuard', cls: 'text-success' },
+] as const;
+
+// ตรงกับตัวแปร titles ใน loadHqView ของต้นฉบับ
 const VIEW_TITLES: Record<string, string> = {
   overview: 'ภาพรวมผลการปฏิบัติ',
-  search: 'ระบบสืบค้นฐานข้อมูล',
-  fuel: 'ระบบควบคุมโควตาน้ำมัน/น้ำมันเครื่อง',
-  daily_detail: 'แฟ้มข้อมูล / ส่งออก Excel',
-  manpower: 'ภาพรวมกำลังพลระดับกองกำกับการ',
-  evidence: 'ตารางจัดหมวดหมู่ของกลาง (ฝอ.)',
-  escort: 'ระบบจัดการการนำขบวน (ฝอ.)',
+  search: 'ระบบสืบค้นข้อมูลเชิงลึก',
+  fuel: 'ระบบจัดการน้ำมัน/น้ำมันเครื่อง',
+  daily_detail: 'แฟ้มข้อมูลและส่งออก Excel',
+  manpower: 'ระบบจัดการกำลังพลส่วนกลาง',
+  evidence: 'ระบบจัดหมวดหมู่ของกลาง',
+  escort: 'ระบบจัดการการนำขบวน',
 };
 
 interface HqDashboardProps {
@@ -68,15 +81,16 @@ export const HqDashboard: React.FC<HqDashboardProps> = ({ onBack, onBackToComman
 
   const nav = (id: string, close: () => void) => { setView(id); close(); };
 
+  // ห้าใบ เรียงตามต้นฉบับ (kpi-v43 / v20 / arrest / volunteer / royalGuard)
+  // ของเดิมไม่มีการ์ด "บริการ" ในหน้านี้ ยอดบริการไปอยู่ในรายงานสรุปแทน
   const kpis = [
     { c: 'text-primary', i: 'fa-road', v: t.v43, l: 'รวม ว.43' },
     // v20 คือยอดคดีจราจรที่กรอกในผลการปฏิบัติประจำวัน ส่วน arrest นับใบรายงานจับกุม
     // (คดีอาญา) ใช้คำเดียวกับข้อความ LINE ของระบบเดิมเพื่อไม่ให้อ่านสับสน
-    { c: 'text-warning', i: 'fa-file-invoice', v: t.v20, l: 'คดีจราจร (ว.20)' },
-    { c: 'text-danger', i: 'fa-handcuffs', v: t.arrest, l: 'จับกุมคดีอาญา' },
-    { c: 'text-info', i: 'fa-hands-holding-child', v: t.volunteer, l: 'จิตอาสา' },
-    { c: 'text-success', i: 'fa-shield-halved', v: t.royalGuard, l: 'รับเสด็จ' },
-    { c: 'text-secondary', i: 'fa-car-side', v: t.service, l: 'บริการ' },
+    { c: 'text-warning', i: 'fa-file-invoice', v: t.v20, l: 'รวม ว.20' },
+    { c: 'text-danger', i: 'fa-handcuffs', v: t.arrest, l: 'รายงานจับกุม' },
+    { c: 'text-info', i: 'fa-hands-holding-child', v: t.volunteer, l: 'รวม จิตอาสา' },
+    { c: 'text-success', i: 'fa-shield-halved', v: t.royalGuard, l: 'รวม รับเสด็จ' },
   ];
 
   return (
@@ -137,10 +151,20 @@ export const HqDashboard: React.FC<HqDashboardProps> = ({ onBack, onBackToComman
               </div>
               <div className="table-responsive">
                 <table className="table table-hq table-bordered text-center align-middle">
-                  <thead><tr><th className="text-start">ประเภทการปฏิบัติ</th>{bs.map((s: any) => <th key={s.station} className="text-white-50">{s.name}</th>)}<th className="text-warning">รวม</th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th className="text-start" style={{ width: '16%' }}>ประเภทการปฏิบัติ</th>
+                      {bs.map((s: any) => <th key={s.station} className="text-white-50">{s.name}</th>)}
+                      <th style={{ color: '#facc15' }}>รวม กก.{div}</th>
+                    </tr>
+                  </thead>
                   <tbody>
-                    {([['ว.43', 'v43'], ['คดีจราจร', 'v20'], ['คดีอาญา', 'arrest'], ['บริการ', 'service'], ['รับเสด็จ', 'royalGuard']] as const).map(([label, key]) => (
-                      <tr key={key}><td className="text-start">{label}</td>{bs.map((s: any) => <td key={s.station}>{s[key]}</td>)}<td className="text-warning fw-bold">{bs.reduce((a: number, s: any) => a + s[key], 0)}</td></tr>
+                    {OVERVIEW_ROWS.map(({ label, icon, key, cls }) => (
+                      <tr key={key} className={`text-center ${cls}`}>
+                        <td className="text-start fw-bold"><i className={`fa-solid ${icon}`}></i> {label}</td>
+                        {bs.map((s: any) => <td key={s.station}>{s[key] ?? 0}</td>)}
+                        <td className="fw-bold" style={{ color: '#facc15' }}>{t[key] ?? 0}</td>
+                      </tr>
                     ))}
                   </tbody>
                 </table>
@@ -149,12 +173,6 @@ export const HqDashboard: React.FC<HqDashboardProps> = ({ onBack, onBackToComman
             <AnalysisPanel station={station} start={start} end={end}
                            stations={bs.map((s: any) => ({ station: String(s.station), name: s.name }))} />
 
-            <div className="row g-4">
-              <div className="col-12 col-lg-7"><div className="glass-card h-100"><h5 className="text-white mb-3"><i className="fa-solid fa-chart-column text-info"></i> เปรียบเทียบผลปฏิบัติรายสถานี</h5>
-                <ReactApexChart type="bar" height={320} options={vBarOptions(bs.map((s: any) => s.name), ['#ef4444', '#ffc107', '#20c997'])} series={[{ name: 'คดีอาญา', data: bs.map((s: any) => s.arrest) }, { name: 'คดีจราจร', data: bs.map((s: any) => s.v20) }, { name: 'รับเสด็จ', data: bs.map((s: any) => s.royalGuard) }]} /></div></div>
-              <div className="col-12 col-lg-5"><div className="glass-card h-100"><h5 className="text-white mb-3"><i className="fa-solid fa-boxes-packing text-warning"></i> หมวดหมู่ของกลาง</h5>
-                <ReactApexChart type="donut" height={320} options={donutOptions(Object.keys(data.seizedBreakdown))} series={Object.values(data.seizedBreakdown) as number[]} /></div></div>
-            </div>
           </>
         )}
 
