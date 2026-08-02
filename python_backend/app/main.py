@@ -578,6 +578,11 @@ def national_summary(
     return {"status": "success", "data": data}
 
 
+# ตารางที่อยู่ในชีตกลางไฟล์เดียว ไม่ได้อยู่ในชีตของแต่ละ กก. จึงไม่ควรถูกรายงานว่า
+# "ขาด" ตอนตรวจสุขภาพฐานข้อมูลราย กก. — ไม่งั้นทุกกองจะขึ้นว่าขาดตารางตลอดเวลา
+MASTER_ONLY_TABLES = {"tb_Users", "tb_National_Summary"}
+
+
 def _cron_authorized(secret: Optional[str]) -> bool:
     """
     ให้ตัวตั้งเวลาภายนอกเรียกได้ด้วย shared secret แทน session
@@ -1209,7 +1214,10 @@ def database_health(session: Dict[str, Any] = Depends(current_session)):
                     status="ok",
                     title=spreadsheet.title,
                     tabs=existing,
-                    missingTables=[t for t in sorted(TABLE_COLUMNS) if t not in existing],
+                    missingTables=[
+                        t for t in sorted(TABLE_COLUMNS)
+                        if t not in existing and t not in MASTER_ONLY_TABLES
+                    ],
                 )
             except (SheetNotConfigured, SheetWriteError) as exc:
                 row.update(status="error", message=str(exc))

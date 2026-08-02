@@ -6,8 +6,33 @@ import { canUseMainMenu, roleHome } from './utils/roles';
 
 // Lazily loaded so the login/menu chunk stays small and ApexCharts only loads
 // when a dashboard is actually opened.
+//
+// ทุกครั้งที่ deploy ใหม่ ชื่อไฟล์ chunk เปลี่ยน (มี hash ต่อท้าย) ของเก่าถูกลบจาก CDN
+// เจ้าหน้าที่ที่เปิดหน้าค้างไว้ตั้งแต่ก่อน deploy จะยังถือรายชื่อ chunk ชุดเก่าอยู่ พอกด
+// เข้าหน้าที่ยังไม่เคยโหลด จะได้ 404 แล้วเจอจอขาวเปล่า ๆ โดยไม่มีข้อความอะไรเลย
+// (เจอมาแล้วตอนไล่ทดสอบ — หน้า ผบก. ขาวทั้งหน้า console ขึ้น "Failed to fetch
+// dynamically imported module")
+//
+// โหลดใหม่หนึ่งครั้งก็ได้ไฟล์ชุดใหม่ครบ ใช้ sessionStorage กันไม่ให้วนซ้ำถ้าโหลดแล้ว
+// ยังพัง ซึ่งแปลว่าเป็นปัญหาอื่นและควรปล่อยให้ error ขึ้นตามจริง
+const RELOAD_FLAG = 'hwpd:chunk-reloaded';
+
 const named = <T extends Record<string, any>, K extends keyof T>(loader: () => Promise<T>, key: K) =>
-  lazy(() => loader().then((m) => ({ default: m[key] })));
+  lazy(() =>
+    loader()
+      .then((m) => {
+        sessionStorage.removeItem(RELOAD_FLAG);
+        return { default: m[key] };
+      })
+      .catch((error) => {
+        if (sessionStorage.getItem(RELOAD_FLAG)) throw error;
+        sessionStorage.setItem(RELOAD_FLAG, '1');
+        window.location.reload();
+        // คืน promise ที่ไม่ resolve เพื่อให้ Suspense ค้างที่ spinner ระหว่างรอโหลดใหม่
+        // ถ้า throw ตรงนี้ผู้ใช้จะเห็นจอ error แวบหนึ่งก่อนหน้าจะรีเฟรช
+        return new Promise<never>(() => {});
+      }),
+  );
 
 const DailyReportForm = named(() => import('./components/forms/DailyReportForm'), 'DailyReportForm');
 const CheckpointForm = named(() => import('./components/forms/CheckpointForm'), 'CheckpointForm');

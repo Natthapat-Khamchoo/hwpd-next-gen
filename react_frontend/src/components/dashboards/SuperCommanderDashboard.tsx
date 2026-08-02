@@ -101,6 +101,10 @@ export const SuperCommanderDashboard: React.FC<{ onViewDivision?: (station: stri
             </div>
             <div className="px-4 mt-3 mb-2 small text-warning">เจาะลึกรายกองกำกับ:</div>
             {[1, 2, 3, 4, 5, 6, 7, 8].map((d) => {
+              // ตรวจสุขภาพฐานข้อมูลต้องเปิด 8 สเปรดชีต ใช้เวลาหลายวินาที ระหว่างนั้น
+              // ยังไม่รู้ผล ต้องแยกจาก "ตรวจแล้วไม่พร้อม" ไม่งั้นผู้บังคับการเปิดหน้ามา
+              // จะเห็นว่าทุกกองยังไม่ได้ตั้งค่าฐานข้อมูล ทั้งที่แค่ยังโหลดไม่เสร็จ
+              const checking = !Object.keys(dbHealth).length;
               const ready = dbHealth[String(d)] === 'ok';
               // รหัสสถานีของ ฝอ.กก. คือเลข กก. ตามด้วย 0 (กก.7 -> "70") ตรงกับที่ของเดิมส่ง
               return ready ? (
@@ -108,8 +112,9 @@ export const SuperCommanderDashboard: React.FC<{ onViewDivision?: (station: stri
                      onClick={() => { close(); onViewDivision?.(`${d}0`, `กก.${d}`); }}> กก.{d}</div>
               ) : (
                 <div className="sidebar-item text-secondary py-1 opacity-50" key={d}
-                     style={{ cursor: 'not-allowed' }} title={`ยังไม่ได้ตั้งค่าฐานข้อมูลของ กก.${d}`}>
-                  {' '}กก.{d} <small>(ยังไม่พร้อม)</small>
+                     style={{ cursor: checking ? 'progress' : 'not-allowed' }}
+                     title={checking ? 'กำลังตรวจสอบฐานข้อมูล' : `ยังไม่ได้ตั้งค่าฐานข้อมูลของ กก.${d}`}>
+                  {' '}กก.{d} <small>({checking ? 'กำลังตรวจสอบ' : 'ยังไม่พร้อม'})</small>
                 </div>
               );
             })}
