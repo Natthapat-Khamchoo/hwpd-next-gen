@@ -137,10 +137,11 @@ export const EvidencePanel: React.FC<{ station: string; canEdit: boolean }> = ({
                 <button className="btn-close btn-close-white" onClick={() => setEditing(null)}></button>
               </div>
               <div className="modal-body">
-                <div className="alert alert-secondary py-2 small" style={{ whiteSpace: 'pre-wrap' }}>
-                  <strong>ที่เจ้าหน้าที่กรอกมา:</strong><br />{editing.rawItems || '(ไม่ได้ระบุ)'}
+                <div className="py-2 px-3 mb-3 small rounded"
+                     style={{ whiteSpace: 'pre-wrap', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#cbd5e1' }}>
+                  <strong className="text-white">ที่เจ้าหน้าที่กรอกมา:</strong><br />{editing.rawItems || '(ไม่ได้ระบุ)'}
                 </div>
-                <table className="table table-sm align-middle mb-2">
+                <table className="table table-sm table-dark table-borderless align-middle mb-2" style={{ background: 'transparent' }}>
                   <thead><tr className="text-white-50 small"><th>ชื่อของกลาง</th><th style={{ width: 110 }}>จำนวน</th><th style={{ width: 110 }}>หน่วย</th><th style={{ width: 44 }}></th></tr></thead>
                   <tbody>
                     {items.map((it, i) => (

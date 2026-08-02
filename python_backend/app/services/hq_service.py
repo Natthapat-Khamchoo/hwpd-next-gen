@@ -99,10 +99,20 @@ def _sort_key(value: str) -> str:
 
 
 def _display_datetime(value: str) -> str:
-    """แปลงเป็น dd/MM/yyyy HH:mm ให้ตรงกับที่ของเดิมส่งไปหน้าเว็บ"""
+    """
+    แปลงเป็น dd/MM/yyyy HH:mm ให้ตรงกับที่ของเดิมส่งไปหน้าเว็บ
+
+    Sys_Timestamp ที่ฝั่ง Python เขียนมีเศษวินาทีติดมาด้วย (2026-07-31T17:30:41.626967)
+    ซึ่ง strptime แบบระบุรูปแบบตายตัวแปลงไม่ได้ แล้วหน้าเว็บจะโชว์สตริงดิบทั้งก้อน
+    fromisoformat รับได้ทั้งมีและไม่มีเศษวินาที จึงใช้เป็นตัวแรก
+    """
     text = str(value or "").strip()
     if not text:
         return "-"
+    try:
+        return datetime.fromisoformat(text.replace(" ", "T")).strftime("%d/%m/%Y %H:%M")
+    except ValueError:
+        pass
     for pattern in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
         try:
             return datetime.strptime(text, pattern).strftime("%d/%m/%Y %H:%M")
@@ -191,7 +201,10 @@ def fuel_summary(station_id: str, month_year: str) -> Dict[str, Any]:
                 "station": summary[key]["name"] if key in summary else f"ส.ทล.{key}",
                 "unit": record.get(query_service.COL_UNIT_ID, ""),
                 "type": kind,
-                "person": names.get(operator) or names.get(action_by) or operator,
+                # ช่อง "ผู้ดำเนินการ" กรอกได้ทั้งชื่อผู้ใช้และชื่อคนแบบพิมพ์เอง ถ้าเป็นชื่อผู้ใช้
+                # ก็แปลงเป็นชื่อเต็ม ถ้าเป็นชื่อที่พิมพ์มาก็แสดงตามนั้น — ห้ามตกไปใช้ชื่อบัญชี
+                # ที่กดส่ง เพราะบัญชีเป็นของสถานี คนอ่านจะเห็น "ส.ทล.1 กก.5" แทนชื่อคนจริง
+                "person": names.get(operator) or operator or names.get(action_by) or action_by,
                 "car": record.get("ทะเบียนรถ", ""),
                 "currentMileage": record.get("เลขไมล์ปัจจุบัน") or "-",
                 "liters": liters,
