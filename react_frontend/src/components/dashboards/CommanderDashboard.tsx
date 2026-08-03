@@ -70,6 +70,23 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
   const t = data?.totals || {};
   const bs = data?.byStation || [];
 
+  // ต้นฉบับนับนำขบวนรายสถานีจากรายการดิบ เพราะ summary บอกแค่ยอดรวมทั้งกอง ไม่บอกว่า
+  // สถานีไหนรับภาระหนัก ซึ่งเป็นสิ่งที่กราฟแท่งซ้อนกับบรรทัด "สถานีที่รับภาระสูงสุด" ใช้
+  const escortByStation = bs.map((s: any) => {
+    const bucket = { name: s.name, vip: 0, gen: 0 };
+    (escort?.records || []).forEach((r: any) => {
+      // ฝั่งนำขบวนส่งชื่อเต็มมาแบบ "ส.ทล.1 (สระบุรี)" ส่วนแกนกราฟใช้ชื่อสั้น ตัดวงเล็บทิ้งก่อนเทียบ
+      if (String(r.station || '').split('(')[0].trim() !== s.name) return;
+      if (String(r.type || '').includes('สำคัญ')) bucket.vip++;
+      else bucket.gen++;
+    });
+    return bucket;
+  });
+  const escortTop = escortByStation.reduce(
+    (best: any, cur: any) => (cur.vip + cur.gen > best.vip + best.gen ? cur : best),
+    { name: '', vip: 0, gen: 0 },
+  );
+
   /** แคปหน้า Dashboard ทั้งหน้าเป็นรูปเดียว ส่งเข้า LINE ได้ทันที */
   const saveAsImage = () => {
     const content = document.querySelector('.main-content') as HTMLElement | null;
@@ -261,19 +278,47 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
                   <h5 className="text-info mb-1"><i className="fa-solid fa-motorcycle"></i> สถิติภารกิจนำขบวน</h5>
                   <p className="small text-white-50 mb-3">เปรียบเทียบภาระงานนำขบวนแยกระดับสถานี (VIP และ ทั่วไป)</p>
                   {escort && escort.summary.total ? (
-                    <>
-                      <ReactApexChart type="donut" height={280}
-                        options={donutOptions(['บุคคลสำคัญ (VIP)', 'ทั่วไป'], ['#ef4444', '#20c997'])}
-                        series={[escort.summary.vip, escort.summary.general]} />
-                      <table className="table table-sc table-bordered text-center align-middle small mb-0 mt-3">
-                        <thead><tr><th>บุคคลสำคัญ</th><th>ทั่วไป</th><th className="text-warning">รวม</th></tr></thead>
-                        <tbody><tr>
-                          <td className="text-danger fw-bold">{escort.summary.vip}</td>
-                          <td className="text-success fw-bold">{escort.summary.general}</td>
-                          <td className="text-warning fw-bold">{escort.summary.total}</td>
-                        </tr></tbody>
-                      </table>
-                    </>
+                    <div className="row align-items-center">
+                      <div className="col-12 col-md-7">
+                        <ReactApexChart type="bar" height={260}
+                          options={{ ...vBarOptions(escortByStation.map((s: any) => s.name), ['#ef4444', '#10b981']),
+                                     chart: { type: 'bar', height: 260, stacked: true, toolbar: { show: false }, background: 'transparent' },
+                                     plotOptions: { bar: { borderRadius: 2, columnWidth: '50%' } },
+                                     legend: { position: 'bottom', labels: { colors: '#8b949e' } } }}
+                          series={[
+                            { name: 'บุคคลสำคัญ', data: escortByStation.map((s: any) => s.vip) },
+                            { name: 'ทั่วไป', data: escortByStation.map((s: any) => s.gen) },
+                          ]} />
+                      </div>
+                      <div className="col-12 col-md-5">
+                        {/* ต้นฉบับวางสรุปยอดไว้ข้างกราฟ เพราะกราฟบอกการกระจายรายสถานีแต่ไม่บอกยอดรวม */}
+                        <div className="p-3 rounded border border-secondary h-100" style={{ background: 'rgba(255,255,255,0.02)' }}>
+                          <h6 className="text-info border-bottom border-secondary pb-2 mb-3">
+                            <i className="fa-solid fa-list-ul"></i> สรุปยอดนำขบวน
+                          </h6>
+                          <ul className="list-unstyled mb-0 small">
+                            <li className="d-flex justify-content-between mb-2 pb-1 border-bottom border-secondary">
+                              <span className="text-white-50">รวมภารกิจทั้งหมด:</span>
+                              <span className="text-info fw-bold fs-5">{escort.summary.total} ครั้ง</span>
+                            </li>
+                            <li className="d-flex justify-content-between mb-2">
+                              <span className="text-danger"><i className="fa-solid fa-star"></i> นำขบวน VIP:</span>
+                              <span className="text-white">{escort.summary.vip} ครั้ง</span>
+                            </li>
+                            <li className="d-flex justify-content-between mb-3 border-bottom border-secondary pb-2">
+                              <span className="text-success"><i className="fa-solid fa-motorcycle"></i> นำขบวนทั่วไป:</span>
+                              <span className="text-white">{escort.summary.general} ครั้ง</span>
+                            </li>
+                            {escortTop.vip + escortTop.gen > 0 && (
+                              <li className="d-flex justify-content-between mt-2 pt-1">
+                                <span className="text-info small">สถานีที่รับภาระสูงสุด:</span>
+                                <span className="text-warning fw-bold">{escortTop.name} ({escortTop.vip + escortTop.gen})</span>
+                              </li>
+                            )}
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
                   ) : (
                     <p className="text-white-50 small mb-0 py-4 text-center">ไม่มีภารกิจนำขบวนในช่วงวันที่ที่เลือก</p>
                   )}
