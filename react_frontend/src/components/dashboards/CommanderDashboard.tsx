@@ -279,8 +279,11 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
                   )}
                 </div>
               </div>
+            </div>
 
-              <div className="col-12 col-lg-6">
+            {/* แถวของตัวเองแบบเต็มความกว้าง ตามที่ต้นฉบับแยกไว้เป็น "แถวที่ 3.5" */}
+            <div className="row g-4 mb-4">
+              <div className="col-12">
                 <div className="cmd-card h-100">
                   <h5 className="text-white mb-1">สถานภาพกำลังพล กก.{div}</h5>
                   <p className="small text-white-50 mb-3">สัดส่วนกำลังพลภาพรวมทั้งกองกำกับการ และแยกตามสถานี</p>
@@ -305,7 +308,7 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
                           {Object.entries(exec.manpower)
                             .filter(([id]) => id !== 'total')
                             .map(([id, m]: [string, any]) => (
-                              <div className="col-md-4 col-6" key={id}>
+                              <div className="col-lg-3 col-md-4 col-6" key={id}>
                                 <div className="p-2 rounded h-100"
                                      style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
                                   <div className="text-white small text-truncate" title={m.name}>{m.name}</div>
