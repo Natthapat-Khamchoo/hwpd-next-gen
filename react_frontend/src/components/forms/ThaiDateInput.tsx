@@ -77,5 +77,19 @@ export const ThaiDateInput: React.FC<Props> = ({ type = 'date', value, onChange,
   if (!desktop.current) {
     return <input id={id} type={type} className={className} value={value} onChange={(e) => onChange(e.target.value)} />;
   }
-  return <input id={id} ref={ref} className={className} defaultValue={value} />;
+
+  /*
+   * บนเดสก์ท็อป flatpickr สร้างช่องภาษาไทย (altInput) ขึ้นมาอีกช่องแล้วซ่อนช่องนี้ไว้
+   * เก็บค่า ISO — แต่มันซ่อนด้วยการสั่ง `input.type = "hidden"` ใส่ DOM ตรง ๆ
+   *
+   * React เป็นเจ้าของ element นี้และเขียน `type` ทับทุกครั้งที่ re-render ช่องที่ควร
+   * ซ่อนจึงกลับมาแสดงพร้อมค่าดิบ "2026-08-04T21:11" คู่กับช่องไทย เห็นเป็นสองช่อง
+   *
+   * อาการโผล่ช้าราวหนึ่งวินาทีหลังเปิดฟอร์ม เพราะต้องรอ re-render รอบแรกซึ่งมาจาก
+   * useStationData โหลด dropdown เสร็จ ตอนกดเข้าหน้าใหม่ ๆ จึงยังดูปกติอยู่
+   *
+   * ประกาศ type="hidden" ตรงนี้เลย ให้ React เป็นคนยืนยันค่าซ่อนทุกรอบ แทนที่จะ
+   * ปล่อยให้สองฝ่ายแย่งกันเขียน — flatpickr ตั้งค่าเดิมซ้ำก็ไม่มีผลอะไร
+   */
+  return <input id={id} ref={ref} type="hidden" className={className} defaultValue={value} />;
 };
