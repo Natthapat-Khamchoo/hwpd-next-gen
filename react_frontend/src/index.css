@@ -183,6 +183,24 @@ body {
 .btn-outline-danger { color: #ff5b6e; }
 .btn-outline-warning { color: #ffc107; }
 
+/*
+ * คืนสีตัวอักษรของปุ่ม btn-check ตอนถูกเลือก
+ *
+ * สามบรรทัดข้างบนตั้งใจไว้ให้ปุ่มกลมเล็กในแถบโปรไฟล์ แต่เขียนเป็น selector ลอย ๆ
+ * จึงมีผลกับปุ่ม .btn-outline-* ทุกตัวในระบบ และเพราะอยู่นอก @layer จึงชนะกฎของ
+ * Bootstrap เสมอ ไม่ว่าจะเทียบ specificity อย่างไร
+ *
+ * ผลคือแท็บที่ถูกเลือกในหมวดรายงานรับเสด็จมีพื้นหลังทึบสีเหลืองแต่ตัวอักษรยังเป็น
+ * สีเหลืองเดิม กลายเป็นแถบเปล่าที่อ่านไม่ออกว่าเป็นแท็บอะไร
+ *
+ * แก้เฉพาะสถานะ checked เพื่อไม่ให้สีปุ่มตอนปกติเปลี่ยนไปจากที่หน่วยคุ้นเคย
+ * เลือกสีตัวอักษรตามความสว่างของพื้นหลังที่ Bootstrap ใช้ตอน checked
+ */
+.btn-check:checked + .btn-outline-info,
+.btn-check:checked + .btn-outline-warning { color: #0b1120; }
+.btn-check:checked + .btn-outline-danger,
+.btn-check:checked + .btn-outline-success { color: #fff; }
+
 /* ---- LINE preview <pre> used in Swal modals ---- */
 .line-preview {
   text-align: left;
