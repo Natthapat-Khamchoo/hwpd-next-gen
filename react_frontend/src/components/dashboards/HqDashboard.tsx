@@ -11,6 +11,8 @@ import { EscortPanel } from './hq/EscortPanel';
 import { DailyDetailPanel } from './hq/DailyDetailPanel';
 import { SearchPanel } from './hq/SearchPanel';
 import { AnalysisPanel } from './hq/AnalysisPanel';
+import { MapPanelLazy } from './hq/MapPanelLazy';
+import { PrPanel } from './hq/PrPanel';
 
 
 /**
@@ -35,6 +37,8 @@ const VIEW_TITLES: Record<string, string> = {
   manpower: 'ระบบจัดการกำลังพลส่วนกลาง',
   evidence: 'ระบบจัดหมวดหมู่ของกลาง',
   escort: 'ระบบจัดการการนำขบวน',
+  map: 'แผนที่ผลการปฏิบัติ',
+  pr: 'งานประชาสัมพันธ์',
 };
 
 interface HqDashboardProps {
@@ -102,11 +106,13 @@ export const HqDashboard: React.FC<HqDashboardProps> = ({ onBack, onBackToComman
           <div className="sidebar-menu">
             <SideItem icon="fa-chart-line" active={view === 'overview'} onClick={() => nav('overview', close)}>ภาพรวมผลการปฏิบัติ</SideItem>
             <SideItem icon="fa-magnifying-glass" active={view === 'search'} onClick={() => nav('search', close)}>ระบบสืบค้นฐานข้อมูล</SideItem>
+            <SideItem icon="fa-map-location-dot" cls="text-danger" active={view === 'map'} onClick={() => nav('map', close)}>แผนที่ผลการปฏิบัติ</SideItem>
             <SideItem icon="fa-gas-pump" active={view === 'fuel'} onClick={() => nav('fuel', close)}>ระบบจัดการน้ำมัน</SideItem>
             <SideItem icon="fa-folder-open" cls="text-success" active={view === 'daily_detail'} onClick={() => nav('daily_detail', close)}>แฟ้มข้อมูล / ส่งออก Excel</SideItem>
             <SideItem icon="fa-users" cls="text-primary" active={view === 'manpower'} onClick={() => nav('manpower', close)}>ระบบจัดการกำลังพล</SideItem>
             <SideItem icon="fa-boxes-packing" cls="text-warning" active={view === 'evidence'} onClick={() => nav('evidence', close)}>จัดหมวดหมู่ของกลาง</SideItem>
             <SideItem icon="fa-motorcycle" cls="text-info" active={view === 'escort'} onClick={() => nav('escort', close)}>ระบบจัดการการนำขบวน</SideItem>
+            <SideItem icon="fa-bullhorn" cls="text-warning" active={view === 'pr'} onClick={() => nav('pr', close)}>งานประชาสัมพันธ์</SideItem>
           </div>
           <div className="mt-auto border-top border-secondary p-3">
             {onBackToCommander ? (
@@ -177,11 +183,15 @@ export const HqDashboard: React.FC<HqDashboardProps> = ({ onBack, onBackToComman
         )}
 
         {view === 'search' && <SearchPanel station={station} />}
+        {view === 'map' && (
+          <MapPanelLazy station={station} stations={bs.map((s: any) => ({ station: String(s.station), name: s.name }))} />
+        )}
         {view === 'fuel' && <FuelPanel station={station} canEdit={canEdit} />}
         {view === 'daily_detail' && <DailyDetailPanel station={station} reports={reports} canExport={canExport} />}
         {view === 'manpower' && <ManpowerPanel station={station} canEdit={canEdit} />}
         {view === 'evidence' && <EvidencePanel station={station} canEdit={canEdit} />}
         {view === 'escort' && <EscortPanel station={station} canEdit={canEdit} />}
+        {view === 'pr' && <PrPanel station={station} canDecide={canEdit} />}
     </DashboardLayout>
   );
 };

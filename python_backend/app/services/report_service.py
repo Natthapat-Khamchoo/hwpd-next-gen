@@ -6,7 +6,7 @@ Ported from JS (saveDailyReport, saveDailyResult, saveCheckpointReport, saveArre
 import json
 import secrets
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from app.core.config import get_station_data, get_target_db_id
 from app.core.sanitization import sanitize_form_data
 from app.services.line_service import push_line_message
@@ -42,14 +42,38 @@ def generate_record_id(prefix: str) -> str:
     return f"{prefix}-{timestamp_str}-{rand_suffix:06d}"
 
 
+def _extra_officers_json(officers: Optional[List[Any]]) -> str:
+    """
+    รายชื่อผู้ร่วมออก ว.4 นอกเหนือจากสามตำแหน่งประจำ เก็บเป็น JSON เพราะจำนวนไม่คงที่
+
+    รับได้ทั้งข้อความเปล่า (ชื่ออย่างเดียว) และ dict ที่มีตำแหน่ง เพื่อให้ฟอร์มเดิมที่ยัง
+    ส่งมาเป็นรายชื่อล้วนไม่พัง แถวที่ไม่มีชื่อถูกตัดทิ้ง ไม่เก็บช่องว่างลงชีต
+    """
+    cleaned: List[Dict[str, str]] = []
+    for item in officers or []:
+        if isinstance(item, dict):
+            name = str(item.get("name") or "").strip()
+            role = str(item.get("role") or "").strip()
+        else:
+            name, role = str(item or "").strip(), ""
+        if name:
+            cleaned.append({"name": name, "role": role})
+
+    return json.dumps(cleaned, ensure_ascii=False, separators=(",", ":")) if cleaned else ""
+
+
 def prepare_daily_report(
     form_data: Dict[str, Any],
     folder_url: str = "ไม่มีไฟล์แนบ",
     record_id: Optional[str] = None,
+    extra_officers: Optional[List[Any]] = None,
 ) -> Dict[str, Any]:
     """
     เตรียมข้อมูลบันทึกและสร้างข้อความส่ง LINE สำหรับ รายงานประจำวัน (OP)
     เทียบเท่า saveDailyReport ใน JS
+
+    `extra_officers` คือผู้ร่วมออก ว.4 ที่เพิ่มเข้ามาได้ไม่จำกัดจำนวน ของเดิมล็อกไว้
+    สามตำแหน่ง (ผู้ปฏิบัติประจำหน่วย พลขับ พงว.) ตามคอลัมน์ในชีต
     """
     form = sanitize_form_data(form_data)
     record_id = record_id or generate_record_id("OP")
@@ -80,9 +104,19 @@ def prepare_daily_report(
         form.get("camReady", 0),
         form.get("camBroken", 0),
         folder_url,
+        _extra_officers_json(extra_officers),
     ]
 
     time_part = str(form.get("reportDateTime", "")).split("T")[1] if "T" in str(form.get("reportDateTime", "")) else "08.00"
+
+    # ผู้ร่วมออก ว.4 ขึ้นบรรทัดต่อจาก พงว. เฉพาะเมื่อมีคนเพิ่ม ถ้าไม่มีข้อความ LINE
+    # ต้องหน้าตาเหมือนของเดิมเป๊ะ ไม่มีบรรทัดว่างโผล่มา
+    parsed_extra = json.loads(row_data[-1]) if row_data[-1] else []
+    extra_officer_lines = ""
+    for officer in parsed_extra:
+        role_suffix = " ({})".format(officer["role"]) if officer["role"] else ""
+        extra_officer_lines += "ผู้ร่วมปฏิบัติ {}{}\n".format(officer["name"], role_suffix)
+
     message = (
         f"หน่วยบริการ {unit_name}\n"
         f"วันที่ {format_thai_date(form.get('reportDateTime', ''))}\n"
@@ -94,6 +128,7 @@ def prepare_daily_report(
         f"โทร {form.get('driverPhone', '')}\n"
         f"พงว. ยศ ชื่อ สกุล {form.get('radioOpName', '')}\n"
         f"โทร {form.get('radioOpPhone', '')}\n"
+        f"{extra_officer_lines}"
         f"ปฏิบัติหน้าที่ตั้งแต่เวลา 08.00 น. ของวันที่ {format_thai_date(form.get('startTime', ''))} "
         f"ถึง 08.00 น. ของวันที่ {format_thai_date(form.get('endTime', ''))}\n\n"
         f"รายงานสถานะการใช้งานกล้องประจำตัว body worn\n"
@@ -147,6 +182,8 @@ def prepare_checkpoint_report(
         form.get("carNumber", ""),
         location,
         folder_url,
+        form.get("lat", ""),
+        form.get("lng", ""),
     ]
 
     message = (
@@ -405,6 +442,8 @@ def prepare_daily_result(
         form.get("camBroken2", 0),
         folder_url,
         extra_json,
+        _int_or_zero(form.get("v20Warrant")),
+        _int_or_zero(form.get("v20Flagrante")),
     ]
 
     message = (
@@ -712,6 +751,7 @@ def prepare_royal_guard_report(
 def prepare_fuel_record(
     form_data: Dict[str, Any],
     record_id: Optional[str] = None,
+    folder_url: str = "ไม่มีไฟล์แนบ",
 ) -> Dict[str, Any]:
     """
     บันทึกน้ำมันเชื้อเพลิง / น้ำมันเครื่อง (FUEL) เทียบเท่า saveFuelAndOilRecord ใน JS
@@ -738,6 +778,7 @@ def prepare_fuel_record(
         form.get("receiptNumber", "") if is_refuel else "",
         "" if is_refuel else form.get("prevMileage", ""),
         "" if is_refuel else form.get("distanceUsed", ""),
+        folder_url,
     ]
 
     row_data = _system_columns(record_id, form, "Pending", _date_part(form.get("actionDateTime"))) + detail
@@ -870,5 +911,114 @@ def build_mission_summary(form_data: Dict[str, Any], missions: List[Dict[str, An
         "lineMessage": message,
         "lineGroupId": st_data.get("lineGroupId", ""),
         "missionCount": len(lines),
+        "stationName": st_data.get("fullName", ""),
+    }
+
+
+# น้ำหนักที่กฎหมายกำหนดตามจำนวนเพลา (กก.) อิงประกาศผู้อำนวยการทางหลวงแผ่นดิน
+# เรื่องพิกัดน้ำหนักของยานพาหนะ ตัวเลขนี้เปลี่ยนได้ตามประกาศ จึงรวมไว้ที่เดียว
+# **ให้ฝ่ายกฎหมายของหน่วยตรวจก่อนใช้งานจริง** โค้ดคำนวณส่วนเกินจากค่าที่ผู้ตรวจกรอก
+# เป็นหลักอยู่แล้ว ค่าชุดนี้เป็นแค่ตัวช่วยเติมให้อัตโนมัติ
+LEGAL_WEIGHT_BY_AXLE: Dict[str, int] = {
+    "2": 15000,
+    "3": 25000,
+    "4": 30000,
+    "5": 37000,
+    "6": 45000,
+    "7": 47000,
+}
+
+
+def _weight_excess(actual: Any, legal: Any) -> Tuple[int, int, float]:
+    """
+    คืน (น้ำหนักที่ชั่งได้, พิกัดตามกฎหมาย, ส่วนเกินเป็นร้อยละ) จากค่าที่กรอก
+
+    ทั้งสองค่ามาจากที่ผู้ตรวจกรอกเอง ไม่ได้คำนวณจากตารางเพลาให้เงียบ ๆ เพราะน้ำหนัก
+    ตามกฎหมายขึ้นกับทั้งจำนวนเพลาและลักษณะรถ การเดาแทนเจ้าหน้าที่แล้วเขียนลงรายงาน
+    ที่ใช้ดำเนินคดีเป็นความเสี่ยงที่ไม่คุ้ม
+    """
+    actual_kg = _int_or_zero(actual)
+    legal_kg = _int_or_zero(legal)
+    excess = max(0, actual_kg - legal_kg)
+    percent = round(excess * 100 / legal_kg, 2) if legal_kg > 0 else 0.0
+    return actual_kg, legal_kg, percent
+
+
+def prepare_overweight_report(
+    form_data: Dict[str, Any],
+    folder_url: str = "ไม่มีไฟล์แนบ",
+    record_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    รายงานการตรวจสอบรถบรรทุกน้ำหนักเกิน (OWT) — requirement ข้อ 8
+
+    แทนที่ฟังก์ชัน "บันทึกข้อความ" เดิมในเมนูผู้ปฏิบัติ แต่เขียนลงตารางใหม่
+    `tb_OverweightTrucks` ไม่ใช่ทับ `tb_Documents` เพื่อไม่ให้เอกสารเก่าอ่านไม่ได้
+    """
+    form = sanitize_form_data(form_data)
+    record_id = record_id or generate_record_id("OWT")
+    st_data = get_station_data(form.get("stationId", "51"))
+
+    actual_kg, legal_kg, percent = _weight_excess(
+        form.get("actualWeight"), form.get("legalWeight")
+    )
+    excess_kg = max(0, actual_kg - legal_kg)
+
+    row_data = _system_columns(record_id, form, "Pending", _date_part(form.get("reportDateTime"))) + [
+        form.get("reportDateTime", ""),
+        form.get("inspectorName", ""),
+        form.get("plateNumber", ""),
+        form.get("plateProvince", ""),
+        form.get("vehicleType", ""),
+        form.get("axleCount", ""),
+        form.get("driverName", ""),
+        form.get("company", ""),
+        form.get("cargoType", ""),
+        actual_kg,
+        legal_kg,
+        excess_kg,
+        percent,
+        form.get("location", ""),
+        form.get("lat", ""),
+        form.get("lng", ""),
+        form.get("weighMethod", ""),
+        form.get("action", ""),
+        form.get("charge", ""),
+        form.get("caseNumber", ""),
+        form.get("remark", ""),
+        folder_url,
+    ]
+
+    over_text = (
+        f"เกินพิกัด {excess_kg:,} กก. ({percent}%)" if excess_kg > 0 else "ไม่เกินพิกัด"
+    )
+    message = (
+        f"เรียน ผู้บังคับบัญชา\n{st_data.get('fullName', '')}\n"
+        f"รายงานการตรวจสอบรถบรรทุกน้ำหนักเกิน\n"
+        f"วันที่ {format_thai_date(form.get('reportDateTime', ''))}\n\n"
+        f"ผู้ตรวจ {form.get('inspectorName', '')}\n"
+        f"ทะเบียนรถ {form.get('plateNumber', '')} {form.get('plateProvince', '')}\n"
+        f"ประเภทรถ {form.get('vehicleType', '')} จำนวน {form.get('axleCount', '-')} เพลา\n"
+        f"ผู้ขับขี่ {form.get('driverName', '')}\n"
+        f"ผู้ประกอบการ {form.get('company', '-')}\n"
+        f"สินค้าที่บรรทุก {form.get('cargoType', '-')}\n\n"
+        f"น้ำหนักที่ชั่งได้ {actual_kg:,} กก.\n"
+        f"พิกัดตามกฎหมาย {legal_kg:,} กก.\n"
+        f"{over_text}\n\n"
+        f"สถานที่ตรวจ {form.get('location', '')}\n"
+        f"วิธีการชั่ง {form.get('weighMethod', '-')}\n"
+        f"ผลการดำเนินการ {form.get('action', '-')}\n"
+        f"ข้อหา {form.get('charge', '-')}\n\n"
+        f"จึงเรียนมาเพื่อโปรดทราบ\nไฟล์หลักฐาน: {folder_url}"
+    )
+
+    return {
+        "status": "success",
+        "recordId": record_id,
+        "targetDbId": get_target_db_id(form.get("stationId", "51")),
+        "tableName": "tb_OverweightTrucks",
+        "rowData": row_data,
+        "lineMessage": message,
+        "lineGroupId": st_data.get("lineGroupId", ""),
         "stationName": st_data.get("fullName", ""),
     }

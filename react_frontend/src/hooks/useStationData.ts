@@ -2,10 +2,17 @@ import { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
+export interface ChargeGroup {
+  group: string;
+  charges: string[];
+}
+
 export interface StationData {
   units: string[];
   users: string[];
   charges: string[];
+  /** ข้อหาที่จัดกลุ่มตาม พ.ร.บ. แล้ว (requirement ข้อ 14) ว่างได้ถ้าโหลดไม่สำเร็จ */
+  chargeGroups: ChargeGroup[];
   phoneMap: Record<string, string>;
   loading: boolean;
 }
@@ -18,6 +25,7 @@ export const useStationData = (opts: { charges?: boolean } = {}): StationData =>
   const [units, setUnits] = useState<string[]>([]);
   const [users, setUsers] = useState<string[]>([]);
   const [charges, setCharges] = useState<string[]>([]);
+  const [chargeGroups, setChargeGroups] = useState<ChargeGroup[]>([]);
   const [phoneMap, setPhoneMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
@@ -29,7 +37,16 @@ export const useStationData = (opts: { charges?: boolean } = {}): StationData =>
       api.getUserDropdown(station, token).then((u) => { if (alive) setUsers(u); }),
       api.getUserPhoneMapping(station, token).then((m) => { if (alive) setPhoneMap(m); }),
     ];
-    if (opts.charges) jobs.push(api.getChargeDropdown(token).then((c) => { if (alive) setCharges(c); }));
+    if (opts.charges) {
+      // ยิงตัวเดียวได้ทั้งรายชื่อล้วนและแบบจัดกลุ่ม ไม่ต้องเรียก getChargeDropdown ซ้ำ
+      jobs.push(
+        api.getChargeGroups(token).then((res) => {
+          if (!alive) return;
+          setChargeGroups(res.groups);
+          setCharges(res.flat);
+        }),
+      );
+    }
     Promise.all(jobs).finally(() => alive && setLoading(false));
     return () => {
       alive = false;
@@ -37,5 +54,5 @@ export const useStationData = (opts: { charges?: boolean } = {}): StationData =>
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [station, token]);
 
-  return { units, users, charges, phoneMap, loading };
+  return { units, users, charges, chargeGroups, phoneMap, loading };
 };

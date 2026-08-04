@@ -62,49 +62,58 @@ RANGE = ("2026-07-25", "2026-07-31")
 
 
 class TestNationalSummaryRead(unittest.TestCase):
+    """
+    คณิตศาสตร์ของการรวมยอด — กันนับซ้ำ ตัดนอกช่วงวันที่ รวม JSON และการเรียง
+
+    ทุกเทสในคลาสนี้เรียกด้วย `include_archived=True` เพราะกำลังตรวจการรวมยอด
+    ไม่ใช่ตัวกรองของ requirement ข้อ 3 ซึ่งมีคลาส TestDashboardCountsOnlyDivisionEight
+    ตรวจแยกไว้แล้ว ถ้าไม่ส่งค่านี้ ข้อมูลทดสอบที่เป็น กก.1 กับ กก.5 จะถูกกรองทิ้งหมด
+    และเทสจะผ่านด้วยศูนย์ ซึ่งไม่ได้พิสูจน์อะไรเลย
+    """
+
     def test_totals_sum_across_divisions_and_days(self):
         with stub_summary():
-            data = national_service.national_summary(*RANGE)
+            data = national_service.national_summary(*RANGE, include_archived=True)
         self.assertEqual(data["totals"]["arrestsCount"], 15)   # 5 + 8 + 2
         self.assertEqual(data["totals"]["v20Count"], 300)
         self.assertEqual(data["totals"]["accCount"], 5)
 
     def test_inactive_duplicate_rows_are_not_counted_twice(self):
         with stub_summary():
-            data = national_service.national_summary(*RANGE)
+            data = national_service.national_summary(*RANGE, include_archived=True)
         self.assertNotIn(999, [d["arrestsCount"] for d in data["byDivision"]])
         self.assertLess(data["totals"]["arrestsCount"], 999)
 
     def test_active_duplicates_of_one_day_keep_only_the_last_row(self):
         rows = SUMMARY_ROWS + [summary_row("S1-dup", "1", "2026-07-27", Sum_Arrests=6, Sum_V20=120)]
         with stub_summary(rows):
-            data = national_service.national_summary(*RANGE)
+            data = national_service.national_summary(*RANGE, include_archived=True)
         # กก.1 = 6 (แถวล่างสุดของวันที่ 27) + 2 (วันที่ 28) ไม่ใช่ 5 + 6 + 2
         division = {d["div"]: d for d in data["byDivision"]}["1"]
         self.assertEqual(division["arrestsCount"], 8)
 
     def test_dates_outside_the_range_are_excluded(self):
         with stub_summary():
-            data = national_service.national_summary(*RANGE)
+            data = national_service.national_summary(*RANGE, include_archived=True)
         self.assertNotIn("2026-06-01", [point["date"] for point in data["trend"]])
         self.assertEqual(data["totals"]["arrestsCount"], 15)   # ไม่รวม 777
 
     def test_by_division_is_ordered_and_named(self):
         with stub_summary():
-            data = national_service.national_summary(*RANGE)
+            data = national_service.national_summary(*RANGE, include_archived=True)
         self.assertEqual([d["div"] for d in data["byDivision"]], ["1", "5"])
         self.assertEqual(data["byDivision"][0]["divName"], "กก.1")
 
     def test_trend_is_sorted_by_date(self):
         with stub_summary():
-            trend = national_service.national_summary(*RANGE)["trend"]
+            trend = national_service.national_summary(*RANGE, include_archived=True)["trend"]
         self.assertEqual([p["date"] for p in trend], ["2026-07-27", "2026-07-28"])
         self.assertEqual(trend[0]["arrestsCount"], 13)   # กก.1 + กก.5
         self.assertEqual(trend[1]["arrestsCount"], 2)
 
     def test_json_breakdowns_are_merged_across_divisions(self):
         with stub_summary():
-            data = national_service.national_summary(*RANGE)
+            data = national_service.national_summary(*RANGE, include_archived=True)
         self.assertEqual(data["chargeBreakdown"]["ขับเร็ว"], 30)   # 20 + 10
         self.assertEqual(data["arrestTypeBreakdown"], {"จับกุมซึ่งหน้า": 5, "จับตามหมาย": 8})
         self.assertEqual(data["accCauseBreakdown"], {"human": 90, "vehicle": 40, "road": 0, "env": 0})
@@ -116,19 +125,19 @@ class TestNationalSummaryRead(unittest.TestCase):
             "JSON_Charges_Detail": "ไม่ใช่ json", "JSON_Arrests_Category": "[1,2]",
         })]
         with stub_summary(rows):
-            data = national_service.national_summary(*RANGE)
+            data = national_service.national_summary(*RANGE, include_archived=True)
         self.assertEqual(data["chargeBreakdown"], {})
         self.assertEqual(data["arrestTypeBreakdown"], {})
         self.assertEqual(data["totals"]["arrestsCount"], 3)
 
     def test_reads_one_table_only(self):
         with stub_summary() as stub:
-            national_service.national_summary(*RANGE)
+            national_service.national_summary(*RANGE, include_archived=True)
         self.assertEqual(stub.call_count, 1)
 
     def test_returns_every_key_the_dashboard_reads(self):
         with stub_summary():
-            data = national_service.national_summary(*RANGE)
+            data = national_service.national_summary(*RANGE, include_archived=True)
         for key in ("totals", "byDivision", "trend", "arrestTypeBreakdown", "chargeBreakdown", "accCauseBreakdown"):
             self.assertIn(key, data)
         for key in ("arrestsCount", "v20Count", "accCount", "royalCount", "missionCount"):
@@ -140,10 +149,75 @@ class TestNationalSummaryRead(unittest.TestCase):
 
     def test_empty_table_returns_zeroes_not_an_error(self):
         with stub_summary([get_columns(SUMMARY_TABLE)]):
-            data = national_service.national_summary(*RANGE)
+            data = national_service.national_summary(*RANGE, include_archived=True)
         self.assertEqual(data["totals"]["arrestsCount"], 0)
         self.assertEqual(data["byDivision"], [])
         self.assertEqual(data["trend"], [])
+
+
+class TestDashboardCountsOnlyDivisionEight(unittest.TestCase):
+    """
+    requirement ข้อ 3 — Dashboard ของ บก.ทล. นับเฉพาะ กก.8
+
+    กก.1-7 ยังถูกรวมยอดและเก็บครบทุกวันเหมือนเดิม เพียงแต่ไม่ถูกนำขึ้นภาพรวมนี้
+    ข้อมูลต้องยัง**เรียกดูได้**ผ่าน include_archived ไม่ใช่หายไปเฉย ๆ
+    """
+
+    ROWS = [
+        get_columns(SUMMARY_TABLE),
+        summary_row("D8", "8", "2026-07-27", Sum_Arrests=4, Sum_V20=40),
+        summary_row("D1", "1", "2026-07-27", Sum_Arrests=5, Sum_V20=100),
+        summary_row("D5", "5", "2026-07-27", Sum_Arrests=8, Sum_V20=150),
+    ]
+
+    def test_only_division_eight_is_counted_by_default(self):
+        with stub_summary(self.ROWS):
+            data = national_service.national_summary(*RANGE)
+        self.assertEqual([d["div"] for d in data["byDivision"]], ["8"])
+        self.assertEqual(data["totals"]["arrestsCount"], 4)
+        self.assertEqual(data["totals"]["v20Count"], 40)
+
+    def test_the_page_is_told_which_divisions_were_left_out(self):
+        # ถ้าไม่บอก ผู้บริหารจะอ่านตัวเลข กก.8 ว่าเป็นยอดทั้งประเทศ ซึ่งผิดทันที
+        with stub_summary(self.ROWS):
+            data = national_service.national_summary(*RANGE)
+        self.assertEqual(data["archivedDivisions"], ["1", "5"])
+        self.assertEqual(data["dashboardDivision"], "8")
+        self.assertFalse(data["includesArchived"])
+
+    def test_archived_data_is_still_retrievable_on_request(self):
+        with stub_summary(self.ROWS):
+            data = national_service.national_summary(*RANGE, include_archived=True)
+        self.assertEqual([d["div"] for d in data["byDivision"]], ["1", "5", "8"])
+        self.assertEqual(data["totals"]["arrestsCount"], 17)
+        self.assertTrue(data["includesArchived"])
+
+    def test_an_explicit_true_flag_excludes_a_row_even_if_it_is_division_eight(self):
+        # ถ้ามีคนตั้ง flag ไว้ชัดเจน ให้เชื่อ flag เพราะเป็นค่าที่ตั้งใจเขียน
+        rows = [
+            get_columns(SUMMARY_TABLE),
+            row(SUMMARY_TABLE, **{
+                COL_RECORD_ID: "X8", COL_STATION_ID: "8", COL_ACTUAL_DATE: "2026-07-27",
+                COL_IS_ACTIVE: "TRUE", "Sum_Arrests": "4", "Is_Archived_National": "TRUE",
+            }),
+        ]
+        with stub_summary(rows):
+            data = national_service.national_summary(*RANGE)
+        self.assertEqual(data["byDivision"], [])
+        self.assertEqual(data["archivedDivisions"], ["8"])
+
+    def test_a_blank_flag_means_unknown_and_falls_back_to_the_division_number(self):
+        """
+        ช่องว่างคือ "ยังไม่มีใครเขียนค่านี้" ไม่ใช่ "ยืนยันว่าให้นับ"
+
+        ข้อมูลที่รวมยอดไว้ก่อนเพิ่มคอลัมน์นี้มีเป็นพันแถวและช่องนี้ว่างหมด ถ้าตีความว่า
+        "ให้นับ" ภาพรวม บก.ทล. จะกลับไปนับทั้ง 8 กก. ทันทีที่ deploy ซึ่งตรงข้ามกับข้อ 3
+        การตกกลับไปดูเลข กก. ทำให้ข้อมูลเก่ากับใหม่ให้ผลตรงกันโดยไม่ต้องเขียนย้อนหลัง
+        """
+        self.assertTrue(national_service.is_archived({COL_STATION_ID: "5"}))
+        self.assertTrue(national_service.is_archived({COL_STATION_ID: "3", "Is_Archived_National": ""}))
+        self.assertFalse(national_service.is_archived({COL_STATION_ID: "8"}))
+        self.assertFalse(national_service.is_archived({COL_STATION_ID: "8", "Is_Archived_National": ""}))
 
 
 class TestCasualtyParsing(unittest.TestCase):
@@ -186,7 +260,22 @@ class TestSummaryRowShape(unittest.TestCase):
         self.assertEqual(built[6], "2026-07-27")
         self.assertEqual(built[7], "5")
         self.assertEqual(built[8], "กก.5")
-        self.assertEqual(json.loads(built[-1])["human"], 10)
+        self.assertEqual(json.loads(built[-2])["human"], 10)
+
+    def test_only_the_dashboard_division_is_left_unarchived(self):
+        from collections import Counter
+
+        def build(division):
+            values = {
+                **{field: 0 for field in national_service.COUNT_COLUMNS},
+                "arrestTypes": Counter(), "charges": Counter(), "causes": Counter(),
+            }
+            return national_service._summary_row(division, "2026-07-27", values, "SUM-x")[-1]
+
+        # กก.8 คือ กก. เดียวที่ Dashboard บก.ทล. นับรวม ที่เหลือเก็บไว้เป็นข้อมูลสำรอง
+        self.assertEqual(build("8"), "")
+        for division in ("1", "2", "3", "4", "5", "6", "7"):
+            self.assertEqual(build(division), "TRUE", f"กก.{division} ต้องถูกทำเครื่องหมาย archive")
 
 
 class TestAggregateWrites(unittest.TestCase):

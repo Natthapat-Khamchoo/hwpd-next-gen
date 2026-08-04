@@ -144,7 +144,11 @@ class TestChargeDropdown(unittest.TestCase):
     def test_inactive_and_blank_rows_are_dropped(self):
         with mock.patch.object(reference_service.sheets_service, "read_table", return_value=CHARGE_ROWS):
             charges = reference_service.get_charges(force=True)
-        self.assertEqual(charges, ["ขับรถเร็วเกินกว่าที่กฎหมายกำหนด", "ไม่มีใบอนุญาตขับขี่"])
+        # ข้อหาที่ requirement ข้อ 14 สั่งให้มีในระบบถูกผสมต่อท้ายเสมอแม้ยังไม่มีในชีต
+        self.assertEqual(
+            charges,
+            ["ขับรถเร็วเกินกว่าที่กฎหมายกำหนด", "ไม่มีใบอนุญาตขับขี่", "บุคคลต่างด้าว (ที่เกี่ยวกับ Scammer)"],
+        )
 
     def test_results_are_cached_until_reset(self):
         with mock.patch.object(

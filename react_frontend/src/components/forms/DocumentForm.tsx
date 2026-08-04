@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { useStationData } from '../../hooks/useStationData';
+import { useFormDraft } from '../../hooks/useFormDraft';
 import { FormShell } from './FormShell';
+import { DraftNotice } from './DraftNotice';
 import { ThaiDateInput } from './ThaiDateInput';
 import { getNowDateTimeLocal, filesToBase64, loadingModal } from '../../utils/formHelpers';
 import Swal from 'sweetalert2';
@@ -10,14 +12,20 @@ import Swal from 'sweetalert2';
 export const DocumentForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { user } = useAuth();
   const { users } = useStationData();
-  const [f, setF] = useState<Record<string, string>>({
+  const blank: Record<string, string> = {
     reportDateTime: getNowDateTimeLocal(),
     subject: '',
     docType: 'บันทึกข้อความ',
     senderName: '',
-  });
+  };
+  const [f, setF, draft] = useFormDraft('document', blank, user?.username);
   const [files, setFiles] = useState<FileList | null>(null);
   const set = (k: string, v: string) => setF((p) => ({ ...p, [k]: v }));
+
+  const resetForm = () => {
+    draft.clear();
+    setF({ ...blank, reportDateTime: getNowDateTimeLocal() });
+  };
 
   const submit = async () => {
     if (!f.subject || !f.senderName || !files || files.length === 0) {
@@ -29,6 +37,7 @@ export const DocumentForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const payload = { ...f, unitId: user?.unit, stationId: user?.station, actionBy: user?.username };
     const res = await api.submitReport('document', payload, user?.token, { files: attachments });
     if (res.status === 'success') {
+      draft.clear();
       await Swal.fire('สำเร็จ!', res.message || 'บันทึกเอกสารเข้าสู่ระบบเรียบร้อย', 'success');
       onBack();
     } else {
@@ -39,6 +48,7 @@ export const DocumentForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   return (
     <FormShell title="เซ็นเอกสารออนไลน์" onBack={onBack} maxWidth={620}>
       <div className="glass-card w-100" style={{ borderTop: '4px solid #00f2ff' }}>
+        {draft.restored && <DraftNotice onClear={resetForm} />}
         <div className="row g-3">
           <div className="col-12">
             <label className="form-label small text-white-50">วันที่เวลาที่ส่งเอกสาร</label>

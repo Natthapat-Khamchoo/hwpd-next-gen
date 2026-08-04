@@ -2,7 +2,11 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { useStationData } from '../../hooks/useStationData';
+import { useFormDraft } from '../../hooks/useFormDraft';
 import { FormShell } from './FormShell';
+import { DraftNotice } from './DraftNotice';
+import { LocationPickerButton } from '../common/LocationPickerButton';
+import { ChargeSelect, ChargeGroupToggle } from './ChargeSelect';
 import { ThaiDateInput } from './ThaiDateInput';
 import {
   getNowDateTimeLocal,
@@ -22,23 +26,48 @@ const CATEGORIES = ['ยาเสพติด', 'พ.ร.บ.จราจรท�
 
 export const ArrestForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { user } = useAuth();
-  const { users, charges } = useStationData({ charges: true });
+  const { users, charges, chargeGroups } = useStationData({ charges: true });
+  // requirement ข้อ 14 — เปิดจัดกลุ่มไว้เป็นค่าเริ่มต้น เพราะรายการข้อหายาวจนหายาก
+  const [groupCharges, setGroupCharges] = useState(true);
 
-  const [f, setF] = useState<Record<string, string>>({
+  const blank: Record<string, string> = {
     reportDateTime: getNowDateTimeLocal(),
     category: '', arrestBy: 'จับเอง', arrestType: 'จับกุมซึ่งหน้า', warrantType: 'ไม่ใช่หมายจับ', warrantScope: 'ไม่ใช่หมายจับ',
     actionDateTime: getNowDateTimeLocal(), caseMethod: '', caseNumber: '', suspectCount: '1',
     location: '', lat: '', lng: '', items: '', ecigType: '', relatedUrl: '', damageValue: '', turnoverValue: '',
     circumstances: '', forwarding: '',
-  });
+  };
+  const [f, setF, draft] = useFormDraft('arrest', blank, user?.username);
   const set = (k: string, v: string) => setF((p) => ({ ...p, [k]: v }));
 
-  const [team, setTeam] = useState<string[]>(['']);
-  const [chargeRows, setChargeRows] = useState<{ value: string; other: string }[]>([{ value: '', other: '' }]);
-  const [suspects, setSuspects] = useState<Suspect[]>([{ name: '', idCard: '', nat: '', age: '', address: '' }]);
-  const [seized, setSeized] = useState<Seized[]>([]);
+  // ฟอร์มจับกุมเป็นฟอร์มที่ยาวที่สุดในระบบและมีตารางย่อยสี่ชุด ถ้าเก็บร่างแค่ฟิลด์หลัก
+  // แล้วรายชื่อชุดจับกุมกับผู้ต้องหาหาย จะแย่กว่าไม่เก็บเลย เพราะคนจะเชื่อว่าครบแล้วส่งไป
+  const BLANK_TEAM: string[] = [''];
+  const BLANK_CHARGES = [{ value: '', other: '' }];
+  const BLANK_SUSPECTS: Suspect[] = [{ name: '', idCard: '', nat: '', age: '', address: '' }];
+  const [team, setTeam, teamDraft] = useFormDraft('arrest.team', BLANK_TEAM, user?.username);
+  const [chargeRows, setChargeRows, chargeDraft] = useFormDraft('arrest.charges', BLANK_CHARGES, user?.username);
+  const [suspects, setSuspects, suspectDraft] = useFormDraft('arrest.suspects', BLANK_SUSPECTS, user?.username);
+  const [seized, setSeized, seizedDraft] = useFormDraft('arrest.seized', [] as Seized[], user?.username);
   const [manualItems, setManualItems] = useState(false);
   const [files, setFiles] = useState<FileList | null>(null);
+
+  const clearDraft = () => {
+    draft.clear();
+    teamDraft.clear();
+    chargeDraft.clear();
+    suspectDraft.clear();
+    seizedDraft.clear();
+  };
+
+  const resetForm = () => {
+    clearDraft();
+    setF({ ...blank, reportDateTime: getNowDateTimeLocal(), actionDateTime: getNowDateTimeLocal() });
+    setTeam([...BLANK_TEAM]);
+    setChargeRows(BLANK_CHARGES.map((r) => ({ ...r })));
+    setSuspects(BLANK_SUSPECTS.map((s) => ({ ...s })));
+    setSeized([]);
+  };
 
   // compose seized -> items text unless user edited manually
   const composeItems = (rows: Seized[]) => {
@@ -96,6 +125,7 @@ export const ArrestForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       files: attachments, teamArray: teamArr, suspectArray: suspects, chargeArray: chargeArr, seizedItems: seized,
     });
     if (res.status === 'success') {
+      clearDraft();
       await showLineCopyResult(res.message || 'บันทึกรายงานจับกุมสำเร็จ', res.lineText || previewText, copied);
       onBack();
     } else {
@@ -106,6 +136,7 @@ export const ArrestForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   return (
     <FormShell title="รายงานการจับกุม" onBack={onBack} maxWidth={900}>
       <div className="glass-card w-100" style={{ borderTop: '4px solid #dc3545' }}>
+        {draft.restored && <DraftNotice onClear={resetForm} />}
         <div className="row g-3">
           <div className="col-12 col-md-6"><label className="form-label small text-white-50">วันที่เวลาที่รายงาน</label>
             <div className="d-flex gap-2"><ThaiDateInput type="datetime-local" value={f.reportDateTime} onChange={(v) => set('reportDateTime', v)} /><button type="button" className="btn btn-outline-danger" onClick={() => set('reportDateTime', getNowDateTimeLocal())}><i className="fa-solid fa-clock-rotate-left"></i></button></div>
@@ -160,13 +191,13 @@ export const ArrestForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
           {/* Charges */}
           <div className="col-12" style={{ background: 'rgba(255, 193, 7, 0.1)', padding: 15, borderRadius: 10, marginTop: 15 }}>
-            <div className="d-flex justify-content-between mb-2"><label className="small text-warning fw-bold"><i className="fa-solid fa-gavel"></i> ข้อหา</label><button type="button" className="btn btn-sm btn-warning" onClick={() => setChargeRows((p) => [...p, { value: '', other: '' }])}><i className="fa-solid fa-plus"></i> เพิ่มข้อหา</button></div>
+            <div className="d-flex justify-content-between align-items-center mb-2 gap-2 flex-wrap"><label className="small text-warning fw-bold"><i className="fa-solid fa-gavel"></i> ข้อหา</label><div className="d-flex gap-2"><ChargeGroupToggle grouped={groupCharges} onToggle={() => setGroupCharges((v) => !v)} disabled={!chargeGroups.length} /><button type="button" className="btn btn-sm btn-warning" onClick={() => setChargeRows((p) => [...p, { value: '', other: '' }])}><i className="fa-solid fa-plus"></i> เพิ่มข้อหา</button></div></div>
             {chargeRows.map((c, i) => {
               const cu = (patch: Partial<{ value: string; other: string }>) => setChargeRows((p) => p.map((x, idx) => (idx === i ? { ...x, ...patch } : x)));
               return (
                 <div className="row g-2 mb-2" key={i}>
                   <div className="col-10">
-                    <select className="form-select border-warning" value={c.value} onChange={(e) => cu({ value: e.target.value })}><option value="">-- เลือกข้อหา --</option>{charges.map((ch) => <option key={ch} value={ch}>{ch}</option>)}<option value="__OTHER__">อื่นๆ (พิมพ์ข้อหาเอง)</option></select>
+                    <ChargeSelect value={c.value} onChange={(v) => cu({ value: v })} groups={chargeGroups} flat={charges} grouped={groupCharges} allowOther />
                     {c.value === '__OTHER__' && <input type="text" className="form-control border-warning mt-1" placeholder="พิมพ์ข้อหา..." value={c.other} onChange={(e) => cu({ other: e.target.value })} />}
                   </div>
                   <div className="col-2 text-end"><button type="button" className="btn btn-sm btn-outline-danger w-100" onClick={() => setChargeRows((p) => p.filter((_, idx) => idx !== i))}><i className="fa-solid fa-trash"></i></button></div>
@@ -177,13 +208,24 @@ export const ArrestForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
           <div className="col-12"><hr className="border-secondary" /></div>
           <div className="col-12"><label className="form-label small text-white-50">สถานที่จับกุม/เกิดเหตุ</label><input type="text" className="form-control" value={f.location} onChange={(e) => set('location', e.target.value)} /></div>
-          <div className="col-12 col-md-5"><label className="form-label small text-white-50">ละติจูด (Latitude)</label><input type="text" className="form-control" value={f.lat} onChange={(e) => set('lat', e.target.value)} /></div>
-          <div className="col-12 col-md-5"><label className="form-label small text-white-50">ลองจิจูด (Longitude)</label><input type="text" className="form-control" value={f.lng} onChange={(e) => set('lng', e.target.value)} /></div>
-          <div className="col-12 col-md-2 d-flex align-items-end"><button type="button" className="btn btn-outline-success w-100" onClick={() => {
+          <div className="col-12 col-md-4"><label className="form-label small text-white-50">ละติจูด (Latitude)</label><input type="text" className="form-control" value={f.lat} onChange={(e) => set('lat', e.target.value)} /></div>
+          <div className="col-12 col-md-4"><label className="form-label small text-white-50">ลองจิจูด (Longitude)</label><input type="text" className="form-control" value={f.lng} onChange={(e) => set('lng', e.target.value)} /></div>
+          <div className="col-6 col-md-2 d-flex align-items-end"><button type="button" className="btn btn-outline-success w-100" onClick={() => {
             if (!navigator.geolocation) return;
             loadingModal('กำลังดึงพิกัด...');
             navigator.geolocation.getCurrentPosition((pos) => { setF((p) => ({ ...p, lat: String(pos.coords.latitude), lng: String(pos.coords.longitude) })); Swal.close(); }, () => Swal.fire('ผิดพลาด', 'ดึงพิกัดไม่สำเร็จ', 'error'), { enableHighAccuracy: true });
-          }}><i className="fa-solid fa-map-location-dot"></i> ระบุพิกัด</button></div>
+          }}><i className="fa-solid fa-location-crosshairs"></i> ระบุพิกัด</button></div>
+          {/* จับกุมมักเขียนรายงานย้อนหลังที่หน่วย ไม่ใช่ตรงจุดจับ ปุ่มดึงพิกัดจึงให้ค่าผิดจุด
+              ถ้ากดตอนกลับถึงที่ทำงานแล้ว ต้องมีทางปักหมุดเองคู่กันไว้ */}
+          <div className="col-6 col-md-2 d-flex align-items-end">
+            <LocationPickerButton
+              lat={f.lat}
+              lng={f.lng}
+              title="ปักหมุดจุดจับกุม"
+              label="ปักหมุด"
+              onSelect={(lat, lng) => setF((p) => ({ ...p, lat, lng }))}
+            />
+          </div>
 
           {/* Seized items (structured) */}
           <div className="col-12" style={{ background: 'rgba(25, 135, 84, 0.1)', padding: 15, borderRadius: 10 }}>

@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { useStationData } from '../../hooks/useStationData';
+import { useFormDraft } from '../../hooks/useFormDraft';
 import { FormShell } from './FormShell';
+import { DraftNotice } from './DraftNotice';
 import { ThaiDateInput } from './ThaiDateInput';
 import {
   getNowDateTimeLocal,
@@ -18,16 +20,34 @@ import Swal from 'sweetalert2';
 export const MissionForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { user } = useAuth();
   const { units } = useStationData();
-  const [f, setF] = useState<Record<string, string>>({
+  const blank: Record<string, string> = {
     reportDateTime: getNowDateTimeLocal(),
     startTime: '',
     endTime: '',
     missionDetails: '',
     location: '',
-  });
-  const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
+  };
+  const [f, setF, draft] = useFormDraft('mission', blank, user?.username);
+  // หน่วยที่เลือกไว้เก็บแยกคีย์ เพราะเป็น array การ merge เข้ากับ object ฟอร์มหลัก
+  // จะทำให้โครงสร้างเพี้ยน
+  const [selectedUnits, setSelectedUnits, unitsDraft] = useFormDraft(
+    'mission.units',
+    [] as string[],
+    user?.username,
+  );
   const [files, setFiles] = useState<FileList | null>(null);
   const set = (k: string, v: string) => setF((p) => ({ ...p, [k]: v }));
+
+  const clearDraft = () => {
+    draft.clear();
+    unitsDraft.clear();
+  };
+
+  const resetForm = () => {
+    clearDraft();
+    setF({ ...blank, reportDateTime: getNowDateTimeLocal() });
+    setSelectedUnits([]);
+  };
   const toggleUnit = (u: string) =>
     setSelectedUnits((prev) => (prev.includes(u) ? prev.filter((x) => x !== u) : [...prev, u]));
 
@@ -54,6 +74,7 @@ export const MissionForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const attachments = await filesToBase64(files);
     const res = await api.submitReport('mission', payload, user?.token, { files: attachments, selectedUnits });
     if (res.status === 'success') {
+      clearDraft();
       await showLineCopyResult(res.message || 'แจ้งภารกิจสำเร็จ', res.lineText || previewText, copied);
       onBack();
     } else {
@@ -64,6 +85,7 @@ export const MissionForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   return (
     <FormShell title="แจ้งภารกิจ" onBack={onBack}>
       <div className="glass-card w-100" style={{ borderTop: '4px solid #198754' }}>
+        {draft.restored && <DraftNotice onClear={resetForm} />}
         <div className="row g-3">
           <div className="col-12">
             <label className="form-label small text-white-50">วันที่เวลาที่รายงานแจ้งภารกิจ</label>

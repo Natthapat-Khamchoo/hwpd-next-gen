@@ -335,6 +335,48 @@ def read_tables(spreadsheet_id: str, table_names: List[str]) -> Dict[str, List[L
     return out
 
 
+def append_report_rows(spreadsheet_id: str, table_name: str, rows: List[List[Any]]) -> Dict[str, Any]:
+    """
+    เขียนหลายแถวลงตารางเดียวด้วยคำขอเดียว คืน {'spreadsheetId', 'tableName', 'updatedRange'}
+
+    มีไว้สำหรับ audit log ที่หนึ่ง request อาจสร้างหลายรายการ การเรียก append_report_row
+    วนลูปจะกิน quota เท่าจำนวนแถว ซึ่งเป็นเพดานที่ระบบนี้ชนอยู่แล้ว
+    """
+    columns = get_columns(table_name)
+    for index, row_data in enumerate(rows):
+        if len(row_data) != len(columns):
+            raise SheetWriteError(
+                f"แถวที่ {index + 1} มีข้อมูล {len(row_data)} ช่อง ไม่ตรงกับหัวคอลัมน์ของ "
+                f"{table_name} ({len(columns)} ช่อง)"
+            )
+
+    if not rows:
+        return {"spreadsheetId": spreadsheet_id, "tableName": table_name, "updatedRange": ""}
+
+    import gspread
+
+    worksheet = get_worksheet(spreadsheet_id, table_name)
+    safe_rows = [["" if value is None else value for value in row] for row in rows]
+
+    try:
+        result = with_backoff(worksheet.append_rows, safe_rows, value_input_option="RAW")
+    except gspread.exceptions.APIError as exc:
+        if api_status(exc) in (400, 404):
+            logger.warning("handle ของ %s ใช้ไม่ได้แล้ว ดึงใหม่แล้วลองอีกครั้ง", table_name)
+            worksheet = get_worksheet(spreadsheet_id, table_name, refresh=True)
+            try:
+                result = with_backoff(worksheet.append_rows, safe_rows, value_input_option="RAW")
+            except gspread.exceptions.APIError as retry_exc:
+                raise SheetWriteError(f"บันทึก {len(rows)} แถวลง {table_name} ไม่สำเร็จ: {retry_exc}") from retry_exc
+        else:
+            raise SheetWriteError(f"บันทึก {len(rows)} แถวลง {table_name} ไม่สำเร็จ: {exc}") from exc
+
+    updated_range = (result or {}).get("updates", {}).get("updatedRange", "")
+    logger.info("บันทึก %d แถวลง %s แล้ว (%s)", len(rows), table_name, updated_range or "ไม่ทราบตำแหน่ง")
+
+    return {"spreadsheetId": spreadsheet_id, "tableName": table_name, "updatedRange": updated_range}
+
+
 def append_report_row(spreadsheet_id: str, table_name: str, row_data: List[Any]) -> Dict[str, Any]:
     """
     เขียนหนึ่งแถวลงตารางที่กำหนด คืน {'spreadsheetId', 'tableName', 'updatedRange'}

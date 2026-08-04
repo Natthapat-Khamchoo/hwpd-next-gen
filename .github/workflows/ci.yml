@@ -70,6 +70,15 @@ jobs:
               "/api/reports/auto-arrest",
               "/api/records/approve",
               "/api/records/cancel",
+              "/api/records/detail",
+              "/api/records/update",
+              "/api/map/points",
+              "/api/commander/divisions",
+              "/api/dropdowns/charges-grouped",
+              "/api/reports/overweight",
+              "/api/pr/news",
+              "/api/pr/news/decide",
+              "/api/pr/keywords",
               "/api/health/database",
           }
           missing = sorted(required - routes)
@@ -103,6 +112,9 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: รันชุดทดสอบ
+        run: npm test
 
       - name: Build
         run: npm run build

@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { DashboardLayout, SideItem } from './DashboardLayout';
+import { RecordDetailModal } from './RecordDetailModal';
+import { PrPanel } from './hq/PrPanel';
 import Swal from 'sweetalert2';
 
 const VIEW_TITLES: Record<string, string> = {
@@ -13,6 +15,7 @@ const VIEW_TITLES: Record<string, string> = {
   daily_detail: 'แฟ้มข้อมูล / ส่งออก Excel',
   summary: 'สรุปยอดส่ง',
   manpower: 'ทำเนียบกำลังพลสถานี',
+  pr: 'งานประชาสัมพันธ์',
 };
 
 const stationName = (st?: string) => {
@@ -56,9 +59,11 @@ export const StationAdminDashboard: React.FC<Props> = ({ onBack, viewStation, on
   const pending = data?.pending || [];
   const fuel = data?.fuel || [];
 
-  const approve = async (sheetName: string, recordId: string) => {
-    const r = await Swal.fire({ title: 'ยืนยันการอนุมัติรายงาน?', text: `อนุมัติ ${recordId} เข้าสู่ฐานข้อมูลหลัก`, icon: 'question', showCancelButton: true, confirmButtonText: 'อนุมัติ', cancelButtonText: 'ยกเลิก', confirmButtonColor: '#10b981' });
-    if (!r.isConfirmed) return;
+  // requirement ข้อ 9 — ต้องเปิดดูรายละเอียดก่อนเสมอ ของเดิมกดอนุมัติจากตารางได้เลย
+  // โดยเห็นแค่ประเภทรายงานกับชื่อผู้ส่ง ซึ่งแปลว่าการอนุมัติเป็นการกดผ่านเฉย ๆ
+  const [reviewing, setReviewing] = useState<{ sheetName: string; recordId: string; formType?: string } | null>(null);
+
+  const doApprove = async (sheetName: string, recordId: string) => {
     await api.approveItem(sheetName, recordId, user?.token);
     setData((d: any) => ({ ...d, pending: d.pending.filter((x: any) => x.recordId !== recordId), fuel: d.fuel.filter((x: any) => x.recordId !== recordId) }));
     Swal.fire('สำเร็จ', 'อนุมัติรายการเรียบร้อยแล้ว', 'success');
@@ -87,6 +92,7 @@ export const StationAdminDashboard: React.FC<Props> = ({ onBack, viewStation, on
             <h6 className="text-white-50 px-4 mt-3 mb-2 small"><i className="fa-solid fa-bell"></i> รายการรอตรวจสอบ</h6>
             <SideItem icon="fa-list-check" active={view === 'pending'} badge={pending.length} onClick={() => nav('pending', close)}>ผลปฏิบัติ / รายงาน</SideItem>
             <SideItem icon="fa-gas-pump" active={view === 'fuel_approve'} badge={fuel.length} onClick={() => nav('fuel_approve', close)}>บันทึกเติมน้ำมัน</SideItem>
+            <SideItem icon="fa-bullhorn" cls="text-warning" active={view === 'pr'} onClick={() => nav('pr', close)}>ข่าวประชาสัมพันธ์</SideItem>
             <h6 className="text-white-50 px-4 mt-4 mb-2 small"><i className="fa-solid fa-folder-tree"></i> ข้อมูลส่วนสถานี</h6>
             <SideItem icon="fa-list-check" active={view === 'mission_view'} onClick={() => nav('mission_view', close)}>เรียกดูภารกิจหน่วย</SideItem>
             <SideItem icon="fa-oil-can" cls="text-warning" active={view === 'fuel_stats'} onClick={() => nav('fuel_stats', close)}>โควตาและการใช้น้ำมัน</SideItem>
@@ -185,7 +191,7 @@ export const StationAdminDashboard: React.FC<Props> = ({ onBack, viewStation, on
                       <td className="text-start">{it.reporter}<br /><small className="text-white-50">{it.unit}</small></td>
                       <td className="text-center">
                         <div className="d-flex gap-2 justify-content-center">
-                          <button className="btn btn-sm btn-outline-success" onClick={() => approve(it.sheetName, it.recordId)}><i className="fa-solid fa-check"></i> อนุมัติ</button>
+                          <button className="btn btn-sm btn-outline-success" onClick={() => setReviewing({ sheetName: it.sheetName, recordId: it.recordId, formType: it.formType })}><i className="fa-solid fa-file-magnifying-glass"></i> ตรวจ/อนุมัติ</button>
                           <button className="btn btn-sm btn-outline-danger" onClick={() => reject(it.sheetName, it.recordId)}><i className="fa-solid fa-xmark"></i> ตีกลับ</button>
                         </div>
                       </td>
@@ -214,7 +220,7 @@ export const StationAdminDashboard: React.FC<Props> = ({ onBack, viewStation, on
                       <td className="text-start small text-white-50">{it.timestamp}</td>
                       <td className="text-start">{it.plate}</td>
                       <td className="text-start">{it.details}</td>
-                      <td className="text-center"><div className="d-flex gap-2 justify-content-center"><button className="btn btn-sm btn-outline-success" onClick={() => approve(it.sheetName, it.recordId)}><i className="fa-solid fa-check"></i> อนุมัติ</button><button className="btn btn-sm btn-outline-danger" onClick={() => reject(it.sheetName, it.recordId)}><i className="fa-solid fa-xmark"></i></button></div></td>
+                      <td className="text-center"><div className="d-flex gap-2 justify-content-center"><button className="btn btn-sm btn-outline-success" onClick={() => setReviewing({ sheetName: it.sheetName, recordId: it.recordId, formType: it.formType })}><i className="fa-solid fa-file-magnifying-glass"></i> ตรวจ/อนุมัติ</button><button className="btn btn-sm btn-outline-danger" onClick={() => reject(it.sheetName, it.recordId)}><i className="fa-solid fa-xmark"></i></button></div></td>
                     </tr>
                   ))}
                 </tbody>
@@ -223,6 +229,8 @@ export const StationAdminDashboard: React.FC<Props> = ({ onBack, viewStation, on
           </div>
         )}
 
+        {view === 'pr' && <PrPanel station={station} canDecide />}
+
         {/* Other views — faithful section shell, data pending backend */}
         {['mission_view', 'fuel_stats', 'daily_detail', 'summary', 'manpower'].includes(view) && (
           <div className="glass-card w-100 p-4 text-center py-5">
@@ -230,6 +238,17 @@ export const StationAdminDashboard: React.FC<Props> = ({ onBack, viewStation, on
             <h5 className="text-white">{VIEW_TITLES[view]}</h5>
             <p className="text-white-50 mb-0">ส่วนนี้พร้อมแสดงผลเมื่อเชื่อมต่อกับ Backend (FastAPI) — โครงหน้าตรงตามต้นฉบับแล้ว</p>
           </div>
+        )}
+
+        {reviewing && (
+          <RecordDetailModal
+            sheetName={reviewing.sheetName}
+            recordId={reviewing.recordId}
+            formType={reviewing.formType}
+            mode="approve"
+            onClose={() => setReviewing(null)}
+            onApprove={() => doApprove(reviewing.sheetName, reviewing.recordId)}
+          />
         )}
     </DashboardLayout>
   );

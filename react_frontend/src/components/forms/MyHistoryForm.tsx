@@ -2,12 +2,15 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { FormShell } from './FormShell';
+import { RecordDetailModal } from '../dashboards/RecordDetailModal';
 import { loadingModal } from '../../utils/formHelpers';
 import Swal from 'sweetalert2';
 
 export const MyHistoryForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { user } = useAuth();
   const [items, setItems] = useState<any[] | null>(null);
+  // requirement ข้อ 10 — เปิดดูรายละเอียดแล้วแก้ไขได้จากที่เดียวกัน
+  const [viewing, setViewing] = useState<{ sheetName: string; recordId: string; formType?: string } | null>(null);
 
   const fetchHistory = async () => {
     setItems(null);
@@ -50,7 +53,7 @@ export const MyHistoryForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <button className="btn btn-sm btn-outline-info" onClick={fetchHistory}><i className="fa-solid fa-rotate"></i> รีเฟรช</button>
         </div>
         <div className="alert small mb-3" style={{ background: 'rgba(0, 242, 255, 0.05)', border: '1px solid rgba(0, 242, 255, 0.2)', color: '#a0aec0', borderRadius: 8 }}>
-          <i className="fa-solid fa-circle-info text-info"></i> หากพบว่ากรอกข้อมูลผิดพลาด คุณสามารถกดเข้าไปตรวจสอบและกดปุ่ม <b className="text-danger">"ยกเลิกรายการ"</b> ก่อนที่สิบเวรจะทำการอนุมัติได้ เพื่อนำไปกรอกใหม่
+          <i className="fa-solid fa-circle-info text-info"></i> หากพบว่ากรอกข้อมูลผิดพลาด กด <b className="text-info">"ดู / แก้ไข"</b> เพื่อแก้เฉพาะช่องที่ผิด หรือกด <b className="text-danger">"ยกเลิก"</b> เพื่อกรอกใหม่ทั้งใบ — ทำได้ก่อนที่สิบเวรจะอนุมัติเท่านั้น
         </div>
         <div className="table-responsive">
           <table className="table table-hover align-middle" style={{ color: '#fff' }}>
@@ -76,9 +79,14 @@ export const MyHistoryForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     <small className="text-secondary">Ref: {it.recordId}</small>
                   </td>
                   <td className="text-center">
-                    <button className="btn btn-sm btn-outline-danger w-100" onClick={() => cancelItem(it.sheetName, it.recordId)}>
-                      <i className="fa-solid fa-trash"></i> ยกเลิกรายการ
-                    </button>
+                    <div className="d-flex flex-column flex-sm-row gap-2 justify-content-center">
+                      <button className="btn btn-sm btn-outline-info flex-fill" onClick={() => setViewing({ sheetName: it.sheetName, recordId: it.recordId, formType: it.formType })}>
+                        <i className="fa-solid fa-pen-to-square"></i> ดู / แก้ไข
+                      </button>
+                      <button className="btn btn-sm btn-outline-danger flex-fill" onClick={() => cancelItem(it.sheetName, it.recordId)}>
+                        <i className="fa-solid fa-trash"></i> ยกเลิก
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -86,6 +94,17 @@ export const MyHistoryForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           </table>
         </div>
       </div>
+
+      {viewing && (
+        <RecordDetailModal
+          sheetName={viewing.sheetName}
+          recordId={viewing.recordId}
+          formType={viewing.formType}
+          mode="view"
+          onClose={() => setViewing(null)}
+          onUpdated={fetchHistory}
+        />
+      )}
     </FormShell>
   );
 };

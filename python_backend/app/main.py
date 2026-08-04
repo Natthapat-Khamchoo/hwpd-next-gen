@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict
 from typing import Dict, Any, List, Optional
 
 from app.core.config import (
+    MASTER_SHEET_ID,
     check_station_match,
     get_db_router,
     get_session_secret,
@@ -26,7 +27,8 @@ from app.core.config import (
     get_station_data,
     get_target_db_id,
 )
-from app.core.schema import TABLE_COLUMNS
+from app.core.schema import TABLE_COLUMNS, get_columns
+from app.core.sanitization import sanitize_form_data
 from app.core.security import (
     hash_password,
     verify_password,
@@ -43,6 +45,7 @@ from app.services.report_service import (
     prepare_daily_report,
     prepare_daily_result,
     prepare_document_record,
+    prepare_overweight_report,
     prepare_fuel_record,
     prepare_mission_report,
     prepare_other_duty,
@@ -50,8 +53,12 @@ from app.services.report_service import (
     prepare_station_duty,
 )
 from app.services import (
+    charge_group_service,
+    pr_service,
+    audit_service,
     docs_service,
     hq_service,
+    map_service,
     national_service,
     query_service,
     reference_admin_service,
@@ -67,7 +74,7 @@ from app.services.query_service import RecordNotFound
 from app.services.reference_service import ReferenceDataUnavailable
 from app.services.sheets_service import SheetNotConfigured, SheetWriteError, append_report_row
 from app.services.user_service import UserDirectoryUnavailable
-from app.services.storage_service import AttachmentError, store_attachments
+from app.services.storage_service import AttachmentError, parse_data_url, store_attachments
 from app.services.line_service import push_line_message
 
 logger = logging.getLogger(__name__)
@@ -117,6 +124,31 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def audit_trail_middleware(request: Request, call_next):
+    """
+    เปิดบัฟเฟอร์ audit ตอนเริ่ม request แล้วเขียนทีเดียวตอนจบ
+
+    เขียนเฉพาะเมื่อ response เป็น 2xx เพราะ audit ของ action ที่ล้มเหลว (403, 400,
+    502) คือร่องรอยของสิ่งที่ไม่เคยเกิดขึ้นจริง ถ้าเก็บไว้ ตอนสอบย้อนหลังจะแยกไม่ออก
+    ว่ารายการไหนสำเร็จ ส่วน endpoint ที่อยากเก็บร่องรอยการพยายามที่ถูกปฏิเสธไว้ด้วย
+    ต้องเรียก audit_service.flush() เองก่อนขว้าง HTTPException
+    """
+    audit_service.begin()
+    try:
+        response = await call_next(request)
+    except Exception:
+        audit_service.discard()
+        raise
+
+    if 200 <= response.status_code < 300:
+        audit_service.flush()
+    else:
+        audit_service.discard()
+
+    return response
+
+
 @app.exception_handler(ValueError)
 def handle_value_error(request: Request, exc: ValueError) -> JSONResponse:
     """
@@ -161,6 +193,15 @@ DIVISION_VIEW_ROLES = {"Division_Admin", "Division_Commander", "HQ_Admin", "Supe
 
 # ภาพรวมทั้งประเทศเป็นของระดับ บก. เท่านั้น ฝอ.กก. ใช้ /api/division-summary
 NATIONAL_VIEW_ROLES = {"HQ_Admin", "Super_Commander"}
+
+# บทบาทที่ "อ่าน" สถิติของ กก. อื่นได้ (requirement ข้อ 1)
+#
+# ผู้กำกับการอยู่ในชุดนี้เพื่อดูสถิติเทียบกับกองอื่น แต่ **ไม่ได้แปลว่าสั่งการข้ามกองได้**
+# ทุกเส้นทางที่เขียนข้อมูลยังใช้ authorized_station / authorized_station_id ซึ่งยึด
+# check_station_match ตามเดิม ชุดนี้จึงถูกใช้เฉพาะกับ endpoint ที่อ่านอย่างเดียว
+#
+# ฝอ.กก. ไม่อยู่ในชุดนี้ เพราะ requirement ระบุถึงผู้กำกับการอย่างเดียว
+CROSS_DIVISION_VIEW_ROLES = {"Division_Commander", "HQ_Admin", "Super_Commander"}
 
 # กันไม่ให้รอบรวมยอดสองรอบเขียนทับกันเองเมื่อถูก trigger ซ้อน
 _aggregate_lock = threading.Lock()
@@ -241,6 +282,44 @@ def authorized_station_id(station_id: Optional[str], session: Dict[str, Any]) ->
         raise HTTPException(status_code=403, detail=f"ไม่มีสิทธิ์ดูข้อมูลของสถานี {requested}")
 
     return requested
+
+
+def authorized_station_for_stats(station_id: Optional[str], session: Dict[str, Any]) -> str:
+    """
+    เหมือน `authorized_station_id` แต่ปล่อยให้ระดับผู้กำกับการขึ้นไปอ่านสถิติข้าม กก. ได้
+
+    **ใช้กับ endpoint ที่อ่านอย่างเดียวเท่านั้น ห้ามเอาไปใช้กับเส้นทางที่เขียนข้อมูล**
+    requirement ข้อ 1 ให้ ผกก. ดูสถิติของ กก. อื่นได้แต่สั่งการไม่ได้ ถ้าเอาตัวนี้ไปคุม
+    เส้นทางเขียนด้วย ผกก. จะบันทึก/อนุมัติ/สั่งการข้ามกองได้ทันทีซึ่งตรงข้ามกับที่ขอ
+    เส้นทางเขียนทุกเส้นยังใช้ `authorized_station` / `authorized_station_id` ตามเดิม
+
+    ฝอ.กก. (`Division_Admin`) ไม่ได้อยู่ในชุดนี้ เพราะ requirement พูดถึงผู้กำกับการ
+    อย่างเดียว การเปิดให้ฝ่ายอำนวยการเห็นข้ามกองด้วยเป็นการขยายสิทธิ์ที่ไม่มีใครขอ
+    """
+    own_station = str(session.get("s") or "").strip()
+    requested = str(station_id or "").strip() or own_station
+
+    if not requested:
+        raise HTTPException(status_code=400, detail="ไม่พบรหัสสถานี (station)")
+
+    if str(session.get("r") or "") in CROSS_DIVISION_VIEW_ROLES:
+        return requested
+
+    if not check_station_match(own_station, requested):
+        raise HTTPException(status_code=403, detail=f"ไม่มีสิทธิ์ดูข้อมูลของสถานี {requested}")
+
+    return requested
+
+
+def is_viewing_other_division(station_id: str, session: Dict[str, Any]) -> bool:
+    """
+    กำลังเปิดดูข้อมูลของ กก. อื่นอยู่หรือเปล่า ใช้ติดธง readOnly กลับไปให้หน้าเว็บ
+
+    หน้าเว็บซ่อนปุ่มสั่งการเองอยู่แล้ว แต่การซ่อนปุ่มไม่ใช่การจำกัดสิทธิ์ ตัวจริงที่กัน
+    คือ 403 ฝั่ง API ธงนี้มีไว้ให้ผู้ใช้รู้ตัวว่ากำลังดูของหน่วยอื่น ไม่ใช่กลไกความปลอดภัย
+    """
+    own = str(session.get("s") or "").strip()
+    return bool(own) and bool(station_id) and own[0] != str(station_id)[0]
 
 
 def prepare_attachments(
@@ -444,6 +523,29 @@ def charges_dropdown(_: Dict[str, Any] = Depends(current_session)):
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
+@app.get("/api/dropdowns/charges-grouped")
+def charges_grouped(_: Dict[str, Any] = Depends(current_session)):
+    """
+    ข้อหาที่จัดกลุ่มตาม พ.ร.บ. แล้ว (requirement ข้อ 14)
+
+    คืนทั้งแบบจัดกลุ่มและแบบรายชื่อล้วน เพื่อให้หน้าเว็บสลับเปิด/ปิดการจัดกลุ่มได้
+    โดยไม่ต้องยิงซ้ำ — การอ่านชีตหนึ่งครั้งกินโควตาเท่ากันไม่ว่าจะขอรูปแบบไหน
+    """
+    try:
+        detailed = reference_service.get_charges_detailed()
+    except ReferenceDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return {
+        "status": "success",
+        "data": {
+            "groups": charge_group_service.grouped(detailed),
+            "flat": [item["name"] for item in detailed],
+            "groupOrder": charge_group_service.GROUP_ORDER,
+        },
+    }
+
+
 def _name_lookup() -> Dict[str, str]:
     """username -> ชื่อจริง ไว้แสดงชื่อผู้ส่งในคิวอนุมัติแทนชื่อบัญชี"""
     try:
@@ -529,7 +631,7 @@ def daily_summary(
     session: Dict[str, Any] = Depends(current_session),
 ):
     """ยอดสรุปของสถานีเดียวในช่วงวันที่ ใช้เติมแท็บสรุปยอดส่งของฟอร์มรายงานประจำวัน"""
-    station_id = authorized_station_id(station, session)
+    station_id = authorized_station_for_stats(station, session)
     try:
         data = query_service.daily_summary(station_id, start or "", end or "")
     except SheetWriteError as exc:
@@ -545,7 +647,7 @@ def division_summary(
     session: Dict[str, Any] = Depends(current_session),
 ):
     """ยอดทั้งกองกำกับการแยกรายสถานี สำหรับหน้า ฝอ.กก. และหน้าผู้กำกับการ"""
-    station_id = authorized_station_id(station, session)
+    station_id = authorized_station_for_stats(station, session)
 
     # เห็นภาพรวมทั้ง กก. ได้เฉพาะระดับ ฝอ.กก. ขึ้นไป สถานีเดียวใช้ /api/daily-summary
     if str(session.get("r") or "") not in DIVISION_VIEW_ROLES:
@@ -562,17 +664,22 @@ def division_summary(
 def national_summary(
     start: Optional[str] = None,
     end: Optional[str] = None,
+    includeArchived: bool = False,
     session: Dict[str, Any] = Depends(current_session),
 ):
     """
-    ภาพรวมทั้งประเทศ อ่านจาก tb_National_Summary ที่งาน cron รวมยอดไว้แล้ว
+    ภาพรวมของ บก.ทล. อ่านจาก tb_National_Summary ที่งาน cron รวมยอดไว้แล้ว
     ไม่ได้อ่านชีตของ กก. สด ๆ เพราะ 8 กก. x 6 ตาราง ชนโควตาทันทีที่เปิดพร้อมกันสองคน
+
+    ตาม requirement ข้อ 3 ค่าเริ่มต้นนับเฉพาะ กก.8 ส่วน กก.1-7 ยังถูกรวมยอดและเก็บครบ
+    ทุกวันเหมือนเดิม แต่ไม่นำขึ้นภาพรวมนี้ ส่ง `includeArchived=true` เพื่อเรียกดู
+    ข้อมูลสำรองของทุก กก. ย้อนหลัง
     """
     if str(session.get("r") or "") not in NATIONAL_VIEW_ROLES:
         raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์ดูภาพรวมระดับประเทศ")
 
     try:
-        data = national_service.national_summary(start or "", end or "")
+        data = national_service.national_summary(start or "", end or "", include_archived=includeArchived)
     except SheetWriteError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {"status": "success", "data": data}
@@ -821,6 +928,48 @@ def admin_reference_set_active(
     return {"status": "success", "message": message}
 
 
+@app.get("/api/map/points")
+def map_points(
+    station: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    layers: Optional[str] = None,
+    charge: Optional[str] = None,
+    unit: Optional[str] = None,
+    stationFilter: Optional[str] = None,
+    session: Dict[str, Any] = Depends(current_session),
+):
+    """
+    พิกัดสำหรับหน้าแผนที่ (requirement ข้อ 4)
+
+    `layers` คั่นด้วยลูกน้ำ (crime,checkpoint,accident) ไม่ส่งมา = เอาทั้งสามชั้น
+    หน้าเว็บส่งเฉพาะชั้นที่เปิดอยู่ ชั้นที่ผู้ใช้ปิดไว้จึงไม่ถูกอ่านจากชีตเลย
+
+    ขอบเขตการมองเห็นยึดจาก session ตามกติกาเดียวกับหน้าอื่น สถานีเห็นของตัวเอง
+    ระดับ ฝอ.กก. ขึ้นไปเห็นทุกสถานีในกองตัวเอง
+    """
+    station_id = authorized_station_for_stats(station, session)
+    wanted = [name.strip() for name in (layers or "").split(",") if name.strip()]
+
+    if stationFilter and not check_station_match(station_id, str(stationFilter).strip()):
+        raise HTTPException(status_code=403, detail=f"ไม่มีสิทธิ์ดูข้อมูลของสถานี {stationFilter}")
+
+    try:
+        data = map_service.map_points(
+            station_id,
+            start=start or "",
+            end=end or "",
+            layers=wanted or None,
+            charge=charge or "",
+            unit=unit or "",
+            station_filter=str(stationFilter or "").strip(),
+        )
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return {"status": "success", "data": data}
+
+
 @app.get("/api/search/division")
 def search_division(
     station: Optional[str] = None,
@@ -938,6 +1087,91 @@ def aggregate_status(
         return dict(_last_aggregate)
 
 
+@app.get("/api/records/detail")
+def record_detail(
+    sheetName: str,
+    recordId: str,
+    session: Dict[str, Any] = Depends(current_session),
+):
+    """
+    รายละเอียดเต็มของรายการหนึ่งใบ พร้อมลิงก์ไฟล์แนบ (requirement ข้อ 9)
+
+    ใช้ทั้งฝั่งแอดมินที่ต้องตรวจก่อนอนุมัติ และฝั่งเจ้าของรายการที่จะกดแก้ไข
+    ขอบเขตการมองเห็นยึดจาก `_resolve_record` ตัวเดียวกับที่การอนุมัติใช้
+    """
+    record = _resolve_record(sheetName, recordId, session)
+
+    try:
+        data = query_service.record_detail(
+            str(session.get("s") or ""), sheetName, recordId
+        )
+    except RecordNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    # เจ้าของรายการเท่านั้นที่แก้ได้ และแก้ได้เฉพาะตอนยังรออนุมัติ (ข้อ 10)
+    data["canEdit"] = (
+        record.get(query_service.COL_ACTION_BY, "") == str(session.get("u") or "").strip()
+        and record.get(query_service.COL_STATUS) == query_service.STATUS_PENDING
+    )
+    data["editableFields"] = [
+        column
+        for column in get_columns(sheetName)
+        if column not in query_service.PROTECTED_COLUMNS
+        and column not in query_service.ATTACHMENT_COLUMNS
+    ]
+    return {"status": "success", "data": data}
+
+
+@app.post("/api/records/update")
+def update_record(payload: Dict[str, Any], session: Dict[str, Any] = Depends(current_session)):
+    """
+    แก้ไขรายการของตัวเองที่ยังรออนุมัติ (requirement ข้อ 10)
+
+    **เจ้าของรายการเท่านั้น** แอดมินที่เห็นรายการนี้ก็แก้ไม่ได้ เพราะการที่คนอื่นแก้
+    เนื้อรายงานแล้วชื่อผู้ส่งยังเป็นชื่อเดิม ทำให้ร่องรอยความรับผิดชอบเพี้ยน
+    ถ้าแอดมินเห็นว่าผิดให้ตีกลับ (`/api/records/cancel`) ให้เจ้าตัวส่งใหม่
+    """
+    sheet_name = str(payload.get("sheetName") or "").strip()
+    record_id = str(payload.get("recordId") or "").strip()
+    updates = payload.get("updates")
+
+    if not isinstance(updates, dict) or not updates:
+        raise HTTPException(status_code=400, detail="ไม่มีข้อมูลที่จะแก้ไข")
+
+    record = _resolve_record(sheet_name, record_id, session)
+
+    if record.get(query_service.COL_ACTION_BY, "") != str(session.get("u") or "").strip():
+        raise HTTPException(status_code=403, detail="แก้ไขได้เฉพาะรายการที่ตัวเองส่งเท่านั้น")
+
+    try:
+        diff = query_service.update_record(record, sheet_name, sanitize_form_data(updates))
+    except query_service.NotEditable as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    if not diff:
+        return {"status": "success", "message": "ไม่มีช่องไหนเปลี่ยนแปลง", "changed": 0}
+
+    audit_service.record(
+        session,
+        audit_service.ACTION_UPDATE,
+        sheet_name,
+        record_id,
+        before={key: value["from"] for key, value in diff.items()},
+        after={key: value["to"] for key, value in diff.items()},
+        note="เจ้าของรายการแก้ไขเอง",
+        station_id=record.get(query_service.COL_STATION_ID),
+    )
+    return {"status": "success", "message": f"แก้ไข {len(diff)} ช่องเรียบร้อยแล้ว", "changed": len(diff)}
+
+
 @app.post("/api/records/approve")
 def approve_record(req: RecordActionRequest, session: Dict[str, Any] = Depends(current_session)):
     """อนุมัติรายการ เปลี่ยน Sys_Status เป็น Approved"""
@@ -956,6 +1190,15 @@ def approve_record(req: RecordActionRequest, session: Dict[str, Any] = Depends(c
     except SheetWriteError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+    audit_service.record(
+        session,
+        audit_service.ACTION_APPROVE,
+        req.sheetName,
+        req.recordId,
+        before={query_service.COL_STATUS: query_service.STATUS_PENDING},
+        after={query_service.COL_STATUS: query_service.STATUS_APPROVED},
+        station_id=record.get(query_service.COL_STATION_ID),
+    )
     return {"status": "success", "message": "อนุมัติรายการเรียบร้อย"}
 
 
@@ -983,17 +1226,38 @@ def cancel_record(req: RecordActionRequest, session: Dict[str, Any] = Depends(cu
     except SheetWriteError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+    audit_service.record(
+        session,
+        audit_service.ACTION_CANCEL,
+        req.sheetName,
+        req.recordId,
+        before={query_service.COL_STATUS: record.get(query_service.COL_STATUS)},
+        after={query_service.COL_STATUS: query_service.STATUS_CANCELED},
+        note="เจ้าของรายการยกเลิกเอง" if is_owner else "แอดมินตีกลับ",
+        station_id=record.get(query_service.COL_STATION_ID),
+    )
     return {"status": "success", "message": "ยกเลิกรายการนี้เรียบร้อยแล้ว"}
 
 
 @app.post("/api/reports/daily")
 def submit_daily_report(req: ReportSubmissionRequest, session: Dict[str, Any] = Depends(current_session)):
-    """บันทึกรายงานประจำวัน (OP)"""
+    """
+    บันทึกรายงานประจำวัน (OP)
+
+    `officers` ในคำขอนี้คือ **ผู้ร่วมออก ว.4 ที่เพิ่มเข้ามา** (requirement ข้อ 11)
+    ไม่ใช่รายชื่อทั้งหมดเหมือนที่ `/api/reports/other-duty` ใช้ เพราะสามตำแหน่งประจำ
+    (ผู้ปฏิบัติประจำหน่วย พลขับ พงว.) มีช่องของตัวเองอยู่แล้วใน formData
+    """
     station_id = authorized_station(req.formData, session)
     record_id = generate_record_id("OP")
     attachments = prepare_attachments(req.files, station_id, record_id, str(req.formData.get("unitId", "")))
 
-    prepared = prepare_daily_report(req.formData, folder_url=attachments["folderUrl"], record_id=record_id)
+    prepared = prepare_daily_report(
+        req.formData,
+        folder_url=attachments["folderUrl"],
+        record_id=record_id,
+        extra_officers=req.officers or [],
+    )
     return submit(prepared, attachments, "บันทึกข้อมูลและเตรียมส่งรายงานเรียบร้อยแล้ว")
 
 
@@ -1172,7 +1436,7 @@ def submit_fuel_record(req: ReportSubmissionRequest, session: Dict[str, Any] = D
     """บันทึกการเติมน้ำมัน / เปลี่ยนน้ำมันเครื่อง (FUEL)"""
     return handle_submission(
         req, session, "FUEL",
-        lambda rid, folder: prepare_fuel_record(req.formData, record_id=rid),
+        lambda rid, folder: prepare_fuel_record(req.formData, record_id=rid, folder_url=folder),
         "บันทึกข้อมูลน้ำมันเรียบร้อยแล้ว",
     )
 
@@ -1185,6 +1449,232 @@ def submit_document_record(req: ReportSubmissionRequest, session: Dict[str, Any]
         lambda rid, folder: prepare_document_record(req.formData, folder_url=folder, record_id=rid),
         "ส่งเอกสารเข้าสู่ระบบเรียบร้อยแล้ว",
     )
+
+
+@app.post("/api/reports/overweight")
+def submit_overweight_report(req: ReportSubmissionRequest, session: Dict[str, Any] = Depends(current_session)):
+    """
+    รายงานการตรวจสอบรถบรรทุกน้ำหนักเกิน (OWT) — requirement ข้อ 8
+
+    มาแทนเมนู "บันทึกข้อความ" ของผู้ปฏิบัติ แต่เขียนลงตารางใหม่ `tb_OverweightTrucks`
+    ส่วน `/api/reports/document` ยังอยู่ เพราะเอกสารที่ส่งเข้าระบบสารบรรณไปแล้วต้อง
+    เปิดดูย้อนหลังได้ และงานสารบรรณเป็นคนละเรื่องกับการตรวจน้ำหนักรถ
+    """
+    return handle_submission(
+        req, session, "OWT",
+        lambda rid, folder: prepare_overweight_report(req.formData, folder_url=folder, record_id=rid),
+        "บันทึกรายงานตรวจรถบรรทุกน้ำหนักเกินเรียบร้อยแล้ว",
+    )
+
+
+# ------------------------------------------------------- โมดูลประชาสัมพันธ์ (ข้อ 13)
+
+# สิทธิ์อนุมัติข่าวและจัดการคำค้น (FR-09) — ชุดเดียวกับที่อนุมัติรายงานอื่นระดับสถานีขึ้นไป
+PR_ADMIN_ROLES = {"สิบเวร", "Station_Admin", "Division_Admin", "Division_Commander", "HQ_Admin", "Super_Commander"}
+
+
+def _require_pr_admin(session: Dict[str, Any]) -> None:
+    if str(session.get("r") or "") not in PR_ADMIN_ROLES:
+        raise HTTPException(status_code=403, detail="เฉพาะแอดมินเท่านั้นที่จัดการงานประชาสัมพันธ์ได้")
+
+
+@app.post("/api/pr/news")
+def submit_pr_news(req: ReportSubmissionRequest, session: Dict[str, Any] = Depends(current_session)):
+    """
+    รับข่าวประชาสัมพันธ์จากผู้ปฏิบัติ (FR-01) พร้อมตรวจคุณภาพสื่อ (FR-02/BR-01)
+
+    สื่อที่ต่ำกว่า 1080p **ไม่ทำให้ข่าวถูกปฏิเสธ** แต่ทำให้ข่าวติดธงรอพิจารณา
+    การทิ้งงานของเจ้าหน้าที่เพราะภาพความละเอียดต่ำจะทำให้ไม่มีใครส่งข่าวเข้าระบบ
+    """
+    station_id = authorized_station(req.formData, session)
+    record_id = generate_record_id("PR")
+    attachments = prepare_attachments(req.files, station_id, record_id, str(req.formData.get("unitId", "")))
+
+    # ค่าที่เบราว์เซอร์วัดมาส่งใน formData.mediaMeta ส่วนเนื้อไฟล์อยู่ใน req.files
+    # จับคู่ตามลำดับเดียวกันเพราะทั้งสองชุดสร้างจาก FileList ตัวเดียวกัน
+    meta = req.formData.get("mediaMeta")
+    meta_list = meta if isinstance(meta, list) else []
+    merged: List[Dict[str, Any]] = []
+    for index, item in enumerate(meta_list):
+        entry = dict(item) if isinstance(item, dict) else {}
+        raw_file = (req.files or [])[index] if index < len(req.files or []) else None
+        if raw_file:
+            try:
+                _, content = parse_data_url(str(raw_file.get("data") or ""))
+                entry["_bytes"] = content
+            except AttachmentError:
+                entry["_bytes"] = b""
+        entry.setdefault("url", attachments.get("folderUrl", ""))
+        merged.append(entry)
+
+    media = pr_service.evaluate_media(merged)
+    matched = pr_service.match_keywords(
+        f"{req.formData.get('title', '')} {req.formData.get('content', '')}"
+    )
+
+    try:
+        prepared = pr_service.prepare_news(
+            req.formData, media, matched, folder_url=attachments["folderUrl"], record_id=record_id
+        )
+    except pr_service.PRError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    result = submit(prepared, attachments, "ส่งข่าวประชาสัมพันธ์เข้าคิวตรวจแล้ว")
+
+    # แถวสื่อเขียนหลังข่าวเสมอ ถ้าเขียนก่อนแล้วข่าวเขียนไม่สำเร็จ จะเหลือแถวสื่อลอย
+    # ที่ไม่มีข่าวต้นทาง ซึ่งตามกลับไม่ได้ว่าเป็นของใคร
+    if media:
+        try:
+            sheets_service.append_report_rows(
+                prepared["targetDbId"],
+                pr_service.MEDIA_TABLE,
+                pr_service.prepare_media_rows(record_id, req.formData, media),
+            )
+        except SheetWriteError as exc:
+            logger.error("บันทึกข้อมูลสื่อของข่าว %s ไม่สำเร็จ: %s", record_id, exc)
+
+    audit_service.record(
+        session, audit_service.ACTION_CREATE, pr_service.NEWS_TABLE, record_id,
+        after={"หัวข้อข่าว": req.formData.get("title", ""), "แหล่งที่มา": req.formData.get("source", "internal")},
+        note=f"สื่อ {len(media)} ไฟล์ ผ่านเกณฑ์ {sum(1 for m in media if m['passed'])} ไฟล์",
+        station_id=station_id,
+    )
+
+    result["media"] = [{k: v for k, v in m.items() if k != "_bytes"} for m in media]
+    result["needsMediaReview"] = prepared["needsMediaReview"]
+    result["matchedKeywords"] = matched
+    return result
+
+
+@app.get("/api/pr/news")
+def list_pr_news(
+    station: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    source: Optional[str] = None,
+    newsType: Optional[str] = None,
+    keyword: Optional[str] = None,
+    status: Optional[str] = None,
+    needsReview: bool = False,
+    session: Dict[str, Any] = Depends(current_session),
+):
+    """ตารางรวมข่าวทุกแหล่ง พร้อมตัวกรองและยอดสรุป (FR-04)"""
+    station_id = authorized_station_for_stats(station, session)
+    try:
+        items = pr_service.list_news(
+            station_id,
+            start=start or "", end=end or "", source=source or "",
+            news_type=newsType or "", keyword=keyword or "", status=status or "",
+            only_needs_review=needsReview,
+        )
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return {"status": "success", "data": {"items": items, "summary": pr_service.summarize(items)}}
+
+
+@app.get("/api/pr/news/media")
+def pr_news_media(
+    recordId: str,
+    station: Optional[str] = None,
+    session: Dict[str, Any] = Depends(current_session),
+):
+    """ไฟล์สื่อของข่าวหนึ่งใบ ใช้ในหน้าตรวจก่อนอนุมัติ"""
+    station_id = authorized_station_for_stats(station, session)
+    try:
+        return {"status": "success", "data": pr_service.media_of(station_id, recordId)}
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/pr/news/decide")
+def decide_pr_news(payload: Dict[str, Any], session: Dict[str, Any] = Depends(current_session)):
+    """
+    อนุมัติหรือปฏิเสธข่าว (FR-09) — เฉพาะแอดมิน
+
+    ปฏิเสธใช้ soft delete ตาม FR-05 (Sys_Status = Canceled, Sys_IsActive = FALSE)
+    แถวยังอยู่ในชีตครบ ไม่มีเส้นทางไหนในระบบที่ลบแถวข่าวออกจริง
+    """
+    _require_pr_admin(session)
+
+    record_id = str(payload.get("recordId") or "").strip()
+    approve = bool(payload.get("approve"))
+    note = str(payload.get("note") or "").strip()
+
+    if not record_id:
+        raise HTTPException(status_code=400, detail="ไม่พบรหัสข่าว")
+    if not approve and not note:
+        raise HTTPException(status_code=400, detail="การปฏิเสธข่าวต้องระบุเหตุผล")
+
+    station_id = str(session.get("s") or "").strip()
+    try:
+        record = query_service.find_record(station_id, pr_service.NEWS_TABLE, record_id)
+    except RecordNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    if not check_station_match(station_id, record.get(query_service.COL_STATION_ID, "")):
+        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์จัดการข่าวของสถานีอื่น")
+
+    before = record.get(query_service.COL_STATUS, "")
+    status = query_service.STATUS_APPROVED if approve else query_service.STATUS_CANCELED
+
+    try:
+        query_service.set_status(record, pr_service.NEWS_TABLE, status, approve)
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    audit_service.record(
+        session,
+        audit_service.ACTION_APPROVE if approve else audit_service.ACTION_REJECT,
+        pr_service.NEWS_TABLE, record_id,
+        before={query_service.COL_STATUS: before},
+        after={query_service.COL_STATUS: status},
+        note=note,
+        station_id=record.get(query_service.COL_STATION_ID),
+    )
+    return {"status": "success", "message": "อนุมัติข่าวแล้ว" if approve else "ปฏิเสธข่าวแล้ว"}
+
+
+@app.get("/api/pr/keywords")
+def list_pr_keywords(session: Dict[str, Any] = Depends(current_session)):
+    """คำค้นที่ใช้กรองข่าว (FR-02) ผู้ปฏิบัติดูได้ แต่แก้ไม่ได้"""
+    try:
+        return {"status": "success", "data": pr_service.get_keywords(active_only=False)}
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/pr/keywords")
+def save_pr_keyword(payload: Dict[str, Any], session: Dict[str, Any] = Depends(current_session)):
+    """เพิ่มหรือแก้คำค้น (FR-09) — เฉพาะแอดมิน"""
+    _require_pr_admin(session)
+
+    keyword = str(payload.get("keyword") or "").strip()
+    if not keyword:
+        raise HTTPException(status_code=400, detail="กรุณาระบุคำค้น")
+
+    row = [
+        keyword,
+        str(payload.get("category") or "").strip(),
+        str(payload.get("note") or "").strip(),
+        "FALSE" if payload.get("isActive") is False else "TRUE",
+        datetime.now().isoformat(),
+        str(session.get("u") or ""),
+    ]
+
+    try:
+        sheets_service.append_report_row(MASTER_SHEET_ID, pr_service.KEYWORDS_TABLE, row)
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    query_service.invalidate_cache(MASTER_SHEET_ID, pr_service.KEYWORDS_TABLE)
+    audit_service.record(
+        session, audit_service.ACTION_CREATE, pr_service.KEYWORDS_TABLE, keyword,
+        after={"Keyword": keyword}, note="แอดมินเพิ่มคำค้น",
+    )
+    return {"status": "success", "message": f'เพิ่มคำค้น "{keyword}" แล้ว'}
 
 
 @app.get("/api/health/database")
@@ -1324,7 +1814,13 @@ def hq_manpower_status(payload: Dict[str, Any], session: Dict[str, Any] = Depend
             str(payload.get("startDate") or ""),
             str(payload.get("endDate") or ""),
             str(payload.get("remark") or ""),
+            # tb_Users อยู่ในชีตกลางร่วมกันทั้ง 8 กก. ถ้าไม่ส่งขอบเขตลงไป ฝอ.กก.5
+            # จะแก้สถานะของเจ้าหน้าที่ใน กก.1 ได้ ซึ่งเป็นช่องที่ requirement ข้อ 1
+            # สั่งให้ปิด
+            allowed_station=str(session.get("s") or ""),
         )
+    except hq_service.OutOfScope as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except LookupError as exc:
@@ -1376,7 +1872,7 @@ def hq_escort(
     session: Dict[str, Any] = Depends(current_session),
 ):
     """งานนำขบวนในช่วงวันที่ พร้อมยอดแยกบุคคลสำคัญกับทั่วไป"""
-    station_id = authorized_station_id(station, session)
+    station_id = authorized_station_for_stats(station, session)
     _require_division(session)
     try:
         data = hq_service.escort_data(station_id, start or "", end or "")
@@ -1421,7 +1917,7 @@ def hq_daily_detail(
     session: Dict[str, Any] = Depends(current_session),
 ):
     """ทุกรายงานที่อนุมัติแล้วในช่วงวันที่ เรียงตามเวลา สำหรับหน้ารายละเอียดรายวัน"""
-    station_id = authorized_station_id(station, session)
+    station_id = authorized_station_for_stats(station, session)
     _require_division(session)
     try:
         data = hq_service.daily_detail(station_id, start or "", end or "")
@@ -1437,14 +1933,48 @@ def commander_overview(
     end: Optional[str] = None,
     session: Dict[str, Any] = Depends(current_session),
 ):
-    """ผลงานรายสถานีคู่กับกำลังพลที่มีจริง และภารกิจเฉลี่ยต่อคน"""
-    station_id = authorized_station_id(station, session)
+    """
+    ผลงานรายสถานีคู่กับกำลังพลที่มีจริง และภารกิจเฉลี่ยต่อคน
+
+    ติดธง `readOnly` กลับไปเมื่อกำลังดู กก. อื่น เพื่อให้หน้าเว็บซ่อนกล่องสั่งการ
+    ธงนี้เป็นเรื่องของการบอกผู้ใช้ ไม่ใช่กลไกความปลอดภัย ตัวที่กันจริงคือ 403 ที่
+    `/api/commander/order` และเส้นทางเขียนทุกเส้น
+    """
+    station_id = authorized_station_for_stats(station, session)
     _require_division(session)
     try:
         data = hq_service.executive_overview(station_id, start or "", end or "")
     except SheetWriteError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    data["readOnly"] = is_viewing_other_division(station_id, session)
     return {"status": "success", "data": data}
+
+
+@app.get("/api/commander/divisions")
+def commander_divisions(session: Dict[str, Any] = Depends(current_session)):
+    """
+    รายชื่อ กก. ที่บัญชีนี้เปิดดูสถิติได้ พร้อมธงว่าเป็นกองของตัวเองหรือไม่ (ข้อ 1)
+
+    คืนเฉพาะ กก. ที่ตั้งค่าฐานข้อมูลไว้แล้ว การโชว์กองที่ยังไม่มีฐานข้อมูลคือพาผู้ใช้
+    ไปเจอ error ไม่ใช่พาไปดูข้อมูล
+    """
+    if str(session.get("r") or "") not in CROSS_DIVISION_VIEW_ROLES:
+        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์ดูข้อมูลข้ามกองกำกับการ")
+
+    own_division = str(session.get("s") or "")[:1]
+    divisions = [
+        {
+            "division": division,
+            "name": f"กก.{division}",
+            # สถานีฝ่ายอำนวยการของกองนั้น ใช้เป็น station ที่ส่งกลับมาใน query
+            "station": f"{division}0",
+            "isOwn": division == own_division,
+        }
+        for division, entry in sorted(get_db_router().items())
+        if division != "0" and entry.get("OPS")
+    ]
+    return {"status": "success", "data": divisions}
 
 
 @app.get("/api/commander/calendar")
@@ -1454,7 +1984,7 @@ def commander_calendar(
     session: Dict[str, Any] = Depends(current_session),
 ):
     """ภารกิจที่ยังใช้งานอยู่ของเดือนนั้น สำหรับปฏิทินหน้าผู้กำกับการ"""
-    station_id = authorized_station_id(station, session)
+    station_id = authorized_station_for_stats(station, session)
     _require_division(session)
     try:
         data = hq_service.mission_calendar(station_id, month or _current_month())
@@ -1513,8 +2043,28 @@ def commander_order(payload: Dict[str, Any], session: Dict[str, Any] = Depends(c
     if not sent:
         raise HTTPException(status_code=502, detail="ส่งไม่สำเร็จ ยังไม่ได้ผูกกลุ่ม LINE ของสถานีปลายทาง")
 
+    # requirement ข้อ 2 — คืนเบอร์ติดต่อของหัวหน้าหน่วยที่ได้รับคำสั่ง ให้ผู้สั่งการ
+    # โทรตามได้ทันทีโดยไม่ต้องไปเปิดทำเนียบกำลังพลอีกหน้า
+    #
+    # เฉพาะสถานีที่ส่งสำเร็จจริง สถานีที่ถูกข้ามเพราะไม่มีกลุ่ม LINE ไม่ได้รับคำสั่ง
+    # การให้เบอร์ของหน่วยนั้นมาด้วยจะทำให้เข้าใจผิดว่าสั่งไปแล้ว
+    contacts: List[Dict[str, Any]] = []
+    for station_id in sent:
+        heads = user_service.station_heads(station_id)
+        contacts.append(
+            {
+                "station": station_id,
+                "stationName": get_station_data(station_id).get("fullName", station_id),
+                "heads": heads,
+            }
+        )
+
     note = f" (ข้าม {len(skipped)} สถานีที่ยังไม่ได้ผูกกลุ่ม LINE)" if skipped else ""
-    return {"status": "success", "message": f"ส่งข้อความสั่งการแล้ว {len(sent)} สถานี{note}"}
+    return {
+        "status": "success",
+        "message": f"ส่งข้อความสั่งการแล้ว {len(sent)} สถานี{note}",
+        "contacts": contacts,
+    }
 
 
 @app.get("/api/hq/analysis/categories")
@@ -1618,7 +2168,7 @@ def commander_summary(
     session: Dict[str, Any] = Depends(current_session),
 ):
     """ตัวเลขทั้งหมดสำหรับประกอบรายงานสรุปส่งผู้บังคับบัญชา"""
-    station_id = authorized_station_id(station, session)
+    station_id = authorized_station_for_stats(station, session)
     _require_division(session)
     try:
         data = hq_service.commander_text_summary(station_id, start or "", end or "")

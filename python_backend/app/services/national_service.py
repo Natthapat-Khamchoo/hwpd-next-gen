@@ -55,6 +55,11 @@ COUNT_COLUMNS = {
 
 CAUSE_FIELDS = ("human", "vehicle", "road", "env")
 
+# กก. เดียวที่ Dashboard ระดับ บก.ทล. นับรวม ที่เหลือ (กก.1-7) ยังรวมยอดและเก็บไว้
+# ครบทุกวันเหมือนเดิม แต่ถูกทำเครื่องหมาย Is_Archived_National ไว้เป็นข้อมูลสำรอง
+# ระดับ กก. ไม่ถูกดึงขึ้นมาแสดงที่ภาพรวม บก.ทล.
+DASHBOARD_DIVISION = "8"
+
 
 def _blank_counts() -> Dict[str, int]:
     return {field: 0 for field in COUNT_COLUMNS}
@@ -158,6 +163,7 @@ def _summary_row(division: str, date_key: str, values: Dict[str, Any], record_id
         json.dumps(dict(values["arrestTypes"]), ensure_ascii=False, separators=(",", ":")),
         json.dumps(dict(values["charges"]), ensure_ascii=False, separators=(",", ":")),
         json.dumps(causes, ensure_ascii=False, separators=(",", ":")),
+        "TRUE" if division != DASHBOARD_DIVISION else "",
     ]
 
 
@@ -258,22 +264,48 @@ def aggregate_national(start: str, end: str, divisions: Optional[List[str]] = No
 # ---------------------------------------------------------------------------
 
 
-def national_summary(start: str, end: str) -> Dict[str, Any]:
+def is_archived(record: Dict[str, Any]) -> bool:
+    """
+    แถวนี้เป็นข้อมูลสำรองระดับ กก. ที่ไม่นำขึ้นภาพรวม บก.ทล. หรือไม่ (requirement ข้อ 3)
+
+    อ่านจากคอลัมน์ `Is_Archived_National` ถ้าแถวนั้นยังไม่มีค่า (ข้อมูลเก่าที่รวมยอดไว้
+    ก่อนเพิ่มคอลัมน์นี้) จะตกกลับไปตัดสินจากเลข กก. แทน เพื่อให้ข้อมูลเดิมกับข้อมูลใหม่
+    ให้ผลตรงกันโดยไม่ต้องไล่เขียนค่าย้อนหลังทั้งตาราง
+    """
+    flag = str(record.get("Is_Archived_National", "") or "").strip().upper()
+    if flag:
+        return flag == "TRUE"
+    return str(record.get(COL_STATION_ID, "") or "").strip() != DASHBOARD_DIVISION
+
+
+def national_summary(start: str, end: str, include_archived: bool = False) -> Dict[str, Any]:
     """
     ภาพรวมทั้งประเทศจาก tb_National_Summary — อ่านตารางเดียว ไม่แตะชีตของ กก.
 
     ถ้ามีแถวของ (วันที่, กก.) เดียวกันหลายแถว (ข้อมูลเก่าที่ Apps Script เขียนต่อท้าย
     ไว้ทุกรอบ) จะใช้แถวล่างสุดแถวเดียว ไม่งั้นยอดจะถูกนับซ้ำตามจำนวนรอบที่เคยรัน
+
+    ตามข้อ 3 หน้า Dashboard ของ บก.ทล. นับเฉพาะ กก.8 ส่วน กก.1-7 ยังถูกรวมยอดและ
+    เก็บครบทุกวันเหมือนเดิม เพียงแต่ถูกทำเครื่องหมายเป็นข้อมูลสำรองระดับ กก.
+    ตั้ง `include_archived=True` เพื่อดูข้อมูลสำรองย้อนหลัง ซึ่ง `archivedDivisions`
+    ในผลลัพธ์บอกไว้ว่ามีของกองไหนเก็บอยู่บ้าง
     """
     rows = query_service.read_rows(MASTER_SHEET_ID, SUMMARY_TABLE)
 
     latest: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    archived_divisions: set = set()
     for record in rows:
         if not query_service.is_active(record.get(COL_IS_ACTIVE)):
             continue
         date_key = record.get(COL_ACTUAL_DATE, "")
         if not date_key or (start and date_key < start) or (end and date_key > end):
             continue
+
+        if is_archived(record):
+            archived_divisions.add(str(record.get(COL_STATION_ID, "") or ""))
+            if not include_archived:
+                continue
+
         latest[(date_key, record.get(COL_STATION_ID, ""))] = record
 
     totals = _blank_counts()
@@ -309,6 +341,11 @@ def national_summary(start: str, end: str) -> Dict[str, Any]:
         "arrestTypeBreakdown": dict(arrest_types.most_common(10)),
         "chargeBreakdown": dict(charges.most_common(10)),
         "accCauseBreakdown": {field: causes.get(field, 0) for field in CAUSE_FIELDS},
+        # กก. ที่มีข้อมูลเก็บไว้แต่ไม่ถูกนับในภาพรวมนี้ หน้าเว็บใช้บอกผู้ใช้ว่าตัวเลข
+        # ที่เห็นคือของ กก.8 เท่านั้น ไม่ใช่ทั้งประเทศ ซึ่งถ้าไม่บอกจะอ่านผิดทันที
+        "archivedDivisions": sorted(archived_divisions),
+        "dashboardDivision": DASHBOARD_DIVISION,
+        "includesArchived": include_archived,
     }
 
 

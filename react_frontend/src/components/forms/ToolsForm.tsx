@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
+import { useFormDraft } from '../../hooks/useFormDraft';
 import { FormShell } from './FormShell';
+import { DraftNotice } from './DraftNotice';
 import { ThaiDateInput } from './ThaiDateInput';
 import { getNowDateTimeLocal, loadingModal } from '../../utils/formHelpers';
 import Swal from 'sweetalert2';
@@ -11,13 +13,26 @@ interface AASuspect { name: string; idCard: string; nat: string; age: string; ad
 export const ToolsForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { user } = useAuth();
   const [view, setView] = useState<'dashboard' | 'autoArrest'>('dashboard');
-  const [aa, setAa] = useState<Record<string, string>>({
+  const blank: Record<string, string> = {
     recordDate: getNowDateTimeLocal(), arrestDate: getNowDateTimeLocal(), offense: '', arrestLocation: '',
     detentionLocation: '', circumstances: '', briefCircumstances: '',
     respOfficer: user?.fullName || '', respPhone: '', notifyOfficer: user?.fullName || '', notifyPhone: '',
-  });
+  };
+  const BLANK_SUSPECTS: AASuspect[] = [{ name: '', idCard: '', nat: '', age: '', address: '', phone: '' }];
+  const [aa, setAa, draft] = useFormDraft('tools.auto_arrest', blank, user?.username);
   const set = (k: string, v: string) => setAa((p) => ({ ...p, [k]: v }));
-  const [suspects, setSuspects] = useState<AASuspect[]>([{ name: '', idCard: '', nat: '', age: '', address: '', phone: '' }]);
+  const [suspects, setSuspects, suspectDraft] = useFormDraft(
+    'tools.auto_arrest.suspects',
+    BLANK_SUSPECTS,
+    user?.username,
+  );
+
+  const resetForm = () => {
+    draft.clear();
+    suspectDraft.clear();
+    setAa({ ...blank, recordDate: getNowDateTimeLocal(), arrestDate: getNowDateTimeLocal() });
+    setSuspects(BLANK_SUSPECTS.map((s) => ({ ...s })));
+  };
 
   const combinedText = suspects
     .map((s, i) => `${i + 1}. ${s.name || '...'} อายุ ${s.age || '...'} ปี เลขบัตรประจำตัวประชาชน ${s.idCard || '...'} สัญชาติ${s.nat || '...'} ที่อยู่ ${s.address || '...'} เบอร์โทร ${s.phone || '...'}`)
@@ -28,6 +43,8 @@ export const ToolsForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const payload = { ...aa, allSuspectsText: combinedText };
     const res = await api.submitReport('auto-arrest', payload, user?.token, { suspectArray: suspects });
     if (res.status === 'success') {
+      draft.clear();
+      suspectDraft.clear();
       const links: { url: string; name: string }[] = res.links || [];
       const linksHtml = links.length
         ? `<div class="text-start mt-3">${links.map((l) => `<a href="${l.url}" target="_blank" class="btn btn-outline-success btn-sm w-100 mb-2"><i class="fa-solid fa-download"></i> โหลด: ${l.name}</a>`).join('')}</div>`
@@ -43,6 +60,7 @@ export const ToolsForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     return (
       <FormShell title="ออกเอกสารจับกุมอัตโนมัติ" onBack={() => setView('dashboard')} backLabel="กลับ" maxWidth={900}>
         <div className="glass-card w-100">
+          {draft.restored && <DraftNotice onClear={resetForm} />}
           <h5 className="text-info mt-2"><i className="fa-solid fa-clock"></i> ๑. ข้อมูลวันเวลา</h5>
           <div className="row g-3 mb-4">
             <div className="col-12 col-md-6"><label className="form-label text-light">วันที่เวลาที่บันทึก</label><ThaiDateInput type="datetime-local" value={aa.recordDate} onChange={(v) => set('recordDate', v)} /></div>

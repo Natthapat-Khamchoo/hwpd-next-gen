@@ -107,7 +107,12 @@ class TestSchemaMatchesReportRows(unittest.TestCase):
 
     def test_only_documented_tables_are_exempt_from_the_nine_column_rule(self):
         # กันไม่ให้มีใครเพิ่มตารางนอกมาตรฐานเข้ามาเงียบ ๆ
-        self.assertEqual(NON_STANDARD_TABLES, frozenset({"tb_HQ_Summary", "tb_FuelQuota", "tb_Users"}))
+        self.assertEqual(
+            NON_STANDARD_TABLES,
+            frozenset(
+                {"tb_HQ_Summary", "tb_FuelQuota", "tb_Users", "tb_AuditLog", "tb_PR_Keywords"}
+            ),
+        )
 
     def test_column_names_are_unique_per_table(self):
         for table, columns in TABLE_COLUMNS.items():

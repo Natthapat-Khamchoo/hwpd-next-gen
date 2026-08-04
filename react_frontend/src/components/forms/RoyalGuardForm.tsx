@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { useStationData } from '../../hooks/useStationData';
+import { useFormDraft } from '../../hooks/useFormDraft';
 import { FormShell } from './FormShell';
+import { DraftNotice } from './DraftNotice';
 import { ThaiDateInput } from './ThaiDateInput';
 import {
   getNowDateTimeLocal,
@@ -27,16 +29,28 @@ export const RoyalGuardForm: React.FC<{ onBack: () => void }> = ({ onBack }) => 
   const { user } = useAuth();
   const { users } = useStationData();
   const [type, setType] = useState<'prep' | 'complete'>('prep');
-  const [f, setF] = useState<Record<string, string>>({
+  const blank: Record<string, string> = {
     reportDateTime: getNowDateTimeLocal(),
     missionName: '',
     carNumbers: '',
     targetCount: '',
     details: '',
-  });
-  const [commanders, setCommanders] = useState<string[]>(['']);
+  };
+  const [f, setF, draft] = useFormDraft('royal_guard', blank, user?.username);
+  const [commanders, setCommanders, cmdDraft] = useFormDraft('royal_guard.cmd', [''], user?.username);
   const [files, setFiles] = useState<FileList | null>(null);
   const set = (k: string, v: string) => setF((p) => ({ ...p, [k]: v }));
+
+  const clearDraft = () => {
+    draft.clear();
+    cmdDraft.clear();
+  };
+
+  const resetForm = () => {
+    clearDraft();
+    setF({ ...blank, reportDateTime: getNowDateTimeLocal() });
+    setCommanders(['']);
+  };
   const setCmd = (i: number, v: string) => setCommanders((prev) => prev.map((c, idx) => (idx === i ? v : c)));
   const addCmd = () => setCommanders((prev) => [...prev, '']);
   const removeCmd = (i: number) => setCommanders((prev) => prev.filter((_, idx) => idx !== i));
@@ -81,6 +95,7 @@ export const RoyalGuardForm: React.FC<{ onBack: () => void }> = ({ onBack }) => 
     const attachments = await filesToBase64(files);
     const res = await api.submitReport('royal-guard', payload, user?.token, { files: attachments });
     if (res.status === 'success') {
+      clearDraft();
       await showLineCopyResult(res.message || 'บันทึกรายงานรับเสด็จสำเร็จ', res.lineText || previewText, copied);
       onBack();
     } else {
@@ -91,6 +106,7 @@ export const RoyalGuardForm: React.FC<{ onBack: () => void }> = ({ onBack }) => 
   return (
     <FormShell title="หมวดรายงานรับเสด็จ" onBack={onBack} maxWidth={700}>
       <div className="glass-card w-100">
+        {draft.restored && <DraftNotice onClear={resetForm} />}
         <div className="btn-group w-100 mb-4" role="group">
           <input type="radio" className="btn-check" name="rgType" id="rgTypePrep" checked={type === 'prep'} onChange={() => setType('prep')} />
           <label className="btn btn-outline-warning" htmlFor="rgTypePrep"><i className="fa-solid fa-users"></i> 1. ปล่อยแถวรับเสด็จ</label>

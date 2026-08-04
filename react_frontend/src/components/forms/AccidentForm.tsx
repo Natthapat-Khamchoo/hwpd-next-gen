@@ -2,7 +2,10 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { useStationData } from '../../hooks/useStationData';
+import { useFormDraft } from '../../hooks/useFormDraft';
 import { FormShell } from './FormShell';
+import { DraftNotice } from './DraftNotice';
+import { LocationPickerButton } from '../common/LocationPickerButton';
 import { ThaiDateInput } from './ThaiDateInput';
 import {
   getNowDateTimeLocal,
@@ -17,7 +20,7 @@ import Swal from 'sweetalert2';
 export const AccidentForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { user } = useAuth();
   const { units } = useStationData();
-  const [f, setF] = useState<Record<string, string>>({
+  const blank: Record<string, string> = {
     reportDateTime: getNowDateTimeLocal(),
     unitId: '',
     route: '',
@@ -41,9 +44,15 @@ export const AccidentForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     description: '',
     lat: '',
     lng: '',
-  });
+  };
+  const [f, setF, draft] = useFormDraft('accident', blank, user?.username);
   const [files, setFiles] = useState<FileList | null>(null);
   const set = (k: string, v: string) => setF((p) => ({ ...p, [k]: v }));
+
+  const resetForm = () => {
+    draft.clear();
+    setF({ ...blank, reportDateTime: getNowDateTimeLocal() });
+  };
 
   const getLocation = () => {
     if (!navigator.geolocation) {
@@ -81,6 +90,7 @@ export const AccidentForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const attachments = await filesToBase64(files);
     const res = await api.submitReport('accident', payload, user?.token, { files: attachments });
     if (res.status === 'success') {
+      draft.clear();
       await showLineCopyResult(res.message || 'บันทึกรายงานอุบัติเหตุสำเร็จ', res.lineText || previewText, copied);
       onBack();
     } else {
@@ -97,6 +107,7 @@ export const AccidentForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   return (
     <FormShell title="รายงานอุบัติเหตุ" onBack={onBack} maxWidth={900}>
       <div className="glass-card w-100" style={{ borderTop: '4px solid #ffc107' }}>
+        {draft.restored && <DraftNotice onClear={resetForm} />}
         <div className="row g-3">
           <div className="col-12 col-md-6">
             <label className="form-label small text-white-50">วันที่เวลาที่เกิดเหตุ</label>
@@ -149,9 +160,20 @@ export const AccidentForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <div className="col-12"><label className="form-label small text-white-50">รายละเอียดอุบัติเหตุ (พฤติการณ์)</label><textarea className="form-control" rows={4} placeholder="ระบุเหตุการณ์ตั้งแต่ต้นจนจบ..." value={f.description} onChange={(e) => set('description', e.target.value)} /></div>
 
           <div className="col-12"><hr className="border-secondary" /></div>
-          <div className="col-12 col-md-5"><label className="form-label small text-white-50">ละติจูด</label><input type="text" className="form-control" value={f.lat} onChange={(e) => set('lat', e.target.value)} /></div>
-          <div className="col-12 col-md-5"><label className="form-label small text-white-50">ลองจิจูด</label><input type="text" className="form-control" value={f.lng} onChange={(e) => set('lng', e.target.value)} /></div>
-          <div className="col-12 col-md-2 d-flex align-items-end"><button type="button" className="btn btn-outline-success w-100" onClick={getLocation}><i className="fa-solid fa-location-crosshairs"></i> ดึงพิกัด</button></div>
+          <div className="col-12 col-md-4"><label className="form-label small text-white-50">ละติจูด</label><input type="text" className="form-control" value={f.lat} onChange={(e) => set('lat', e.target.value)} /></div>
+          <div className="col-12 col-md-4"><label className="form-label small text-white-50">ลองจิจูด</label><input type="text" className="form-control" value={f.lng} onChange={(e) => set('lng', e.target.value)} /></div>
+          <div className="col-6 col-md-2 d-flex align-items-end"><button type="button" className="btn btn-outline-success w-100" onClick={getLocation}><i className="fa-solid fa-location-crosshairs"></i> ดึงพิกัด</button></div>
+          {/* ปุ่ม "ดึงพิกัด" ใช้ได้เฉพาะตอนยืนอยู่ตรงจุดเกิดเหตุ รายงานที่พิมพ์ย้อนหลัง
+              ที่หน่วยต้องปักหมุดเอง ข้อ 5 จึงเพิ่มปุ่มนี้คู่กันไว้ ไม่ได้แทนที่ของเดิม */}
+          <div className="col-6 col-md-2 d-flex align-items-end">
+            <LocationPickerButton
+              lat={f.lat}
+              lng={f.lng}
+              title="ปักหมุดจุดเกิดเหตุ"
+              label="ปักหมุด"
+              onSelect={(lat, lng) => setF((p) => ({ ...p, lat, lng }))}
+            />
+          </div>
 
           <div className="col-12 mt-3"><label className="form-label small text-white-50">แนบภาพถ่ายที่เกิดเหตุ (เลือกได้หลายภาพ)</label><input type="file" className="form-control" multiple accept="image/*" onChange={(e) => setFiles(e.target.files)} /></div>
 

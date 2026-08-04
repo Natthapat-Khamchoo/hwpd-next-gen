@@ -151,6 +151,46 @@ def phone_map_for_station(station_id: str) -> Dict[str, str]:
     return {user["fullName"]: user.get("phone", "") for user in _visible_users(station_id)}
 
 
+# บทบาทที่ถือว่าเป็น "หัวหน้าหน่วยงาน" ของสถานี เรียงตามลำดับความเป็นหัวหน้า
+# ใช้ตอบ requirement ข้อ 2 ที่ให้แสดงเบอร์ติดต่อของหัวหน้าหน่วยที่ได้รับคำสั่ง
+#
+# ชีต tb_Users ไม่มีคอลัมน์ที่บอกตรง ๆ ว่าใครเป็นหัวหน้า มีแต่ Role ซึ่งบอกสิทธิ์
+# การใช้งานระบบ **ถ้าหน่วยมีนิยามหัวหน้าที่ต่างจากนี้ แก้ลำดับในลิสต์นี้ที่เดียว**
+HEAD_ROLES: List[str] = ["Division_Commander", "Division_Admin", "Station_Admin", "สิบเวร"]
+
+
+def station_heads(station_id: str) -> List[Dict[str, str]]:
+    """
+    หัวหน้าหน่วยของสถานีที่ระบุ พร้อมเบอร์โทร เรียงจากตำแหน่งสูงสุดลงมา
+
+    เทียบสถานีแบบตรงตัว ไม่ใช้ check_station_match เพราะที่นี่ต้องการคนของสถานีนั้นจริง ๆ
+    ไม่ใช่ทุกคนที่สถานีนั้นมองเห็นได้ (ซึ่งจะลากหัวหน้าของทั้ง กก. เข้ามาด้วย)
+
+    คืนลิสต์ว่างถ้าสถานีนั้นยังไม่มีใครถือบทบาทหัวหน้า ซึ่งเป็นเรื่องข้อมูลไม่ครบ
+    ไม่ใช่ error — ผู้เรียกต้องบอกผู้ใช้ตามจริงว่ายังไม่มีเบอร์ติดต่อ
+    """
+    wanted = str(station_id or "").strip()
+    if not wanted:
+        return []
+
+    rank = {role: index for index, role in enumerate(HEAD_ROLES)}
+    heads = [
+        {
+            "name": str(user.get("fullName") or ""),
+            "role": str(user.get("role") or ""),
+            "phone": str(user.get("phone") or ""),
+            "station": wanted,
+        }
+        for user in get_all_users().values()
+        if str(user.get("station") or "").strip() == wanted
+        and str(user.get("role") or "") in rank
+        and user.get("fullName")
+        and not is_unit_account(user)
+    ]
+    heads.sort(key=lambda head: (rank.get(head["role"], len(HEAD_ROLES)), head["name"]))
+    return heads
+
+
 def update_password(username: str, stored_password: str) -> bool:
     """
     เขียนรหัสผ่านใหม่ทับคอลัมน์ Password ของบัญชีนั้น คืน False ถ้าไม่พบ username

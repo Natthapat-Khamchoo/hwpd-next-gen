@@ -16,12 +16,18 @@ const MENU_ITEMS: { id: string; icon: string; label: string }[] = [
   { id: 'mission', icon: 'fa-bullseye', label: 'แจ้งภารกิจ' },
   { id: 'mission_view', icon: 'fa-list-check', label: 'เรียกดูภารกิจ' },
   { id: 'pr', icon: 'fa-bullhorn', label: 'การประชาสัมพันธ์' },
-  { id: 'document', icon: 'fa-file-signature', label: 'บันทึกข้อความ' },
+  // requirement ข้อ 8 — เปลี่ยนเมนูนี้จาก "บันทึกข้อความ" (งานสารบรรณ) เป็นรายงาน
+  // ตรวจรถบรรทุกน้ำหนักเกิน เมนูยังมี 12 ปุ่มเท่าต้นฉบับ ไม่ได้เพิ่มปุ่มใหม่
+  // เอกสารเดิมใน tb_Documents ยังอยู่ครบ route 'document' ยังเปิดได้ถ้าต้องใช้
+  { id: 'overweight', icon: 'fa-truck-ramp-box', label: 'ตรวจรถบรรทุกน้ำหนักเกิน' },
   { id: 'royal_guard', icon: 'fa-shield-halved', label: 'รายงานรับเสด็จ' },
   { id: 'fuel', icon: 'fa-gas-pump', label: 'น้ำมัน/น้ำมันเครื่อง' },
   { id: 'history', icon: 'fa-clock-rotate-left', label: 'ประวัติของฉัน' },
   { id: 'tools', icon: 'fa-toolbox', label: 'เครื่องมือการทำงาน' },
 ];
+// เมนูนี้ตรงกับต้นฉบับ Apps Script 12 ปุ่มพอดีสามแถว ห้ามเพิ่มปุ่มที่ 13 เข้ามาลอย ๆ
+// เพราะแถวสุดท้ายจะเหลือค้างปุ่มเดียว — แผนที่ผลการปฏิบัติ (requirement ข้อ 4) จึงไป
+// อยู่ในแผงควบคุมของ ฝอ.กก. และผู้กำกับการแทน ดู `dashboards/hq/MapPanel.tsx`
 
 export const MainMenuGrid: React.FC<MainMenuGridProps> = ({ onSelectView }) => {
   const { user, logout } = useAuth();

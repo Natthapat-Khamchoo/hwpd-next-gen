@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { useStationData } from '../../hooks/useStationData';
+import { useFormDraft } from '../../hooks/useFormDraft';
 import { FormShell } from './FormShell';
+import { DraftNotice } from './DraftNotice';
 import { ThaiDateInput } from './ThaiDateInput';
-import { getNowDateTimeLocal, loadingModal } from '../../utils/formHelpers';
+import { getNowDateTimeLocal, filesToBase64, loadingModal } from '../../utils/formHelpers';
 import Swal from 'sweetalert2';
 
 export const FuelForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
@@ -12,14 +14,33 @@ export const FuelForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { users } = useStationData();
   const [tab, setTab] = useState<'refuel' | 'oil'>('refuel');
 
-  const [refuel, setRefuel] = useState<Record<string, string>>({
+  // สองแท็บเก็บร่างแยกกัน คนกรอกค้างที่แท็บเติมน้ำมันแล้วไปดูแท็บน้ำมันเครื่อง
+  // ต้องไม่ทำให้ของอีกแท็บหาย
+  const blankRefuel: Record<string, string> = {
     actionDateTime: getNowDateTimeLocal(), actionPerson: '', plateNumber: '', currentMileage: '', fuelType: '', liters: '', totalPrice: '', receiptNumber: '',
-  });
-  const [oil, setOil] = useState<Record<string, string>>({
+  };
+  const blankOil: Record<string, string> = {
     actionDateTime: getNowDateTimeLocal(), actionPerson: '', plateNumber: '', carType: '', liters: '', prevMileage: '', currentMileage: '',
-  });
+  };
+  const [refuel, setRefuel, refuelDraft] = useFormDraft('fuel.refuel', blankRefuel, user?.username);
+  const [oil, setOil, oilDraft] = useFormDraft('fuel.oil', blankOil, user?.username);
   const rset = (k: string, v: string) => setRefuel((p) => ({ ...p, [k]: v }));
   const oset = (k: string, v: string) => setOil((p) => ({ ...p, [k]: v }));
+
+  // requirement ข้อ 7 — สลิป/ใบเสร็จของแต่ละแท็บเก็บแยกกัน ไม่เก็บลงร่างเพราะ
+  // FileList แปลงเป็น JSON ไม่ได้ (เหมือนไฟล์แนบของทุกฟอร์มในระบบ)
+  const [slips, setSlips] = useState<Record<string, FileList | null>>({ refuel: null, oil: null });
+
+  const activeDraft = tab === 'refuel' ? refuelDraft : oilDraft;
+  const resetActiveTab = () => {
+    if (tab === 'refuel') {
+      refuelDraft.clear();
+      setRefuel({ ...blankRefuel, actionDateTime: getNowDateTimeLocal() });
+    } else {
+      oilDraft.clear();
+      setOil({ ...blankOil, actionDateTime: getNowDateTimeLocal() });
+    }
+  };
   const distanceUsed = (() => {
     const prev = parseFloat(oil.prevMileage) || 0;
     const curr = parseFloat(oil.currentMileage) || 0;
@@ -45,8 +66,11 @@ export const FuelForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       recordType: type === 'refuel' ? 'เติมน้ำมัน' : 'เปลี่ยนน้ำมันเครื่อง',
     };
     if (type === 'oil') payload.distanceUsed = distanceUsed;
-    const res = await api.submitReport('fuel', payload, user?.token);
+    const attachments = await filesToBase64(slips[type]);
+    const res = await api.submitReport('fuel', payload, user?.token, { files: attachments });
     if (res.status === 'success') {
+      (type === 'refuel' ? refuelDraft : oilDraft).clear();
+      setSlips((p) => ({ ...p, [type]: null }));
       await Swal.fire('สำเร็จ!', res.message || 'บันทึกข้อมูลลงระบบเรียบร้อย', 'success');
       onBack();
     } else {
@@ -69,6 +93,8 @@ export const FuelForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         </li>
       </ul>
 
+      {activeDraft.restored && <DraftNotice onClear={resetActiveTab} />}
+
       {tab === 'refuel' && (
         <div className="glass-card w-100">
           <h5 className="text-center text-warning mb-4">บันทึกการเติมน้ำมันเชื้อเพลิง</h5>
@@ -88,6 +114,7 @@ export const FuelForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <div className="col-md-4 col-6"><label className="form-label small text-white-50">จำนวน (ลิตร)</label><input type="number" step="0.001" className="form-control text-center" placeholder="0.000" value={refuel.liters} onChange={(e) => rset('liters', e.target.value)} /></div>
             <div className="col-md-4 col-6"><label className="form-label small text-white-50">ราคา (บาท)</label><input type="number" step="0.01" className="form-control text-center border-success" placeholder="0.00" value={refuel.totalPrice} onChange={(e) => rset('totalPrice', e.target.value)} /></div>
             <div className="col-12"><label className="form-label small text-white-50">เลขที่ใบเสร็จ</label><input type="text" className="form-control" placeholder="กรอกเลขที่ใบเสร็จรับเงิน" value={refuel.receiptNumber} onChange={(e) => rset('receiptNumber', e.target.value)} /></div>
+            <div className="col-12"><label className="form-label small text-warning"><i className="fa-solid fa-receipt"></i> แนบภาพสลิป / ใบเสร็จ (เลือกได้หลายไฟล์)</label><input type="file" className="form-control" multiple accept="image/*,.pdf" onChange={(e) => setSlips((p) => ({ ...p, refuel: e.target.files }))} /><p className="text-white-50 mb-0" style={{ fontSize: '0.7rem' }}>* ฝอ.กก. ใช้ภาพนี้ตรวจย้อนกับเลขที่ใบเสร็จตอนทำเรื่องเบิก</p></div>
             <div className="col-12 mt-4"><button type="button" className="btn btn-warning w-100 py-2 fw-bold" style={{ borderRadius: 10 }} onClick={() => submitFuel('refuel')}><i className="fa-solid fa-floppy-disk"></i> บันทึกข้อมูลเติมน้ำมัน</button></div>
           </div>
         </div>
@@ -112,6 +139,7 @@ export const FuelForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <div className="col-12 col-md-4"><label className="form-label small text-white-50">เลขไมล์ครั้งก่อน</label><input type="number" className="form-control" placeholder="เช่น 140000" value={oil.prevMileage} onChange={(e) => oset('prevMileage', e.target.value)} /></div>
             <div className="col-12 col-md-4"><label className="form-label small text-white-50">เลขไมล์ปัจจุบัน</label><input type="number" className="form-control border-info" placeholder="เช่น 150000" value={oil.currentMileage} onChange={(e) => oset('currentMileage', e.target.value)} /></div>
             <div className="col-12 col-md-4"><label className="form-label small text-white-50">ระยะทางที่ใช้งาน (กม.)</label><input type="number" className="form-control bg-dark text-warning fw-bold" readOnly placeholder="คำนวณอัตโนมัติ" value={distanceUsed} /></div>
+            <div className="col-12"><label className="form-label small text-info"><i className="fa-solid fa-receipt"></i> แนบภาพสลิป / ใบเสร็จ (เลือกได้หลายไฟล์)</label><input type="file" className="form-control" multiple accept="image/*,.pdf" onChange={(e) => setSlips((p) => ({ ...p, oil: e.target.files }))} /><p className="text-white-50 mb-0" style={{ fontSize: '0.7rem' }}>* ฝอ.กก. ใช้ภาพนี้ตรวจย้อนกับเลขที่ใบเสร็จตอนทำเรื่องเบิก</p></div>
             <div className="col-12 mt-4"><button type="button" className="btn btn-info w-100 py-2 fw-bold" style={{ borderRadius: 10 }} onClick={() => submitFuel('oil')}><i className="fa-solid fa-floppy-disk"></i> บันทึกข้อมูลเปลี่ยนน้ำมันเครื่อง</button></div>
           </div>
         </div>

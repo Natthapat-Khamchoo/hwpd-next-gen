@@ -36,6 +36,46 @@ export interface ReportItem {
   details: string;
 }
 
+/** รายละเอียดเต็มของรายงานหนึ่งใบ ใช้ในหน้าตรวจก่อนอนุมัติและหน้าแก้ไขของเจ้าของ */
+export interface RecordDetail {
+  recordId: string;
+  table: string;
+  status: string;
+  actionBy: string;
+  station: string;
+  unit: string;
+  date: string;
+  timestamp: string;
+  fields: { label: string; value: string }[];
+  attachments: string[];
+  /** เจ้าของรายการที่ยังรออนุมัติเท่านั้นที่แก้ได้ (requirement ข้อ 10) */
+  canEdit: boolean;
+  /** คอลัมน์ที่เปิดให้แก้ ไม่รวมคอลัมน์ระบบและช่องไฟล์แนบ */
+  editableFields: string[];
+}
+
+/** ชั้นของหน้าแผนที่ ต้องตรงกับคีย์ใน `map_service.LAYERS` ฝั่ง backend */
+export type MapLayer = 'crime' | 'checkpoint' | 'accident';
+
+export interface MapPoint {
+  layer: MapLayer;
+  recordId: string;
+  lat: number;
+  lng: number;
+  date: string;
+  station: string;
+  unit: string;
+  title: string;
+  detail: string;
+}
+
+export interface MapPointsData {
+  points: MapPoint[];
+  counts: Record<MapLayer, number>;
+  /** จำนวนรายการที่กรอกพิกัดไว้แต่ใช้ไม่ได้ (พิมพ์ผิด/นอกกรอบประเทศไทย) */
+  skippedInvalidCoordinates: number;
+}
+
 export interface NationalAnalytics {
   totals: {
     arrestsCount: number;

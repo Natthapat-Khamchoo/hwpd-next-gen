@@ -1,4 +1,4 @@
-import type { User } from '../types';
+import type { MapPointsData, RecordDetail, User } from '../types';
 
 // Set VITE_API_BASE_URL on the host (e.g. Vercel) to point at a deployed backend.
 // Falls back to localhost for dev; if unreachable, api.* methods use offline demo data.
@@ -78,7 +78,17 @@ const fetchList = async (
  * ที่ต้องอ่านของจริง ตัวเลขปลอมบนหน้าโควตาน้ำมันหรือกำลังพลอันตรายกว่าการขึ้นว่า
  * ต่อเซิร์ฟเวอร์ไม่ได้
  */
-type HqResult<T = any> = { status: string; data?: T; message?: string };
+/**
+ * `contacts` ใช้เฉพาะ `/commander/order` ที่คืนเบอร์หัวหน้าหน่วยปลายทางมาด้วย
+ * (requirement ข้อ 2) endpoint อื่นไม่ส่งฟิลด์นี้
+ */
+export interface OrderContact {
+  station: string;
+  stationName: string;
+  heads: { name: string; role: string; phone: string; station: string }[];
+}
+
+type HqResult<T = any> = { status: string; data?: T; message?: string; contacts?: OrderContact[] };
 
 const hqRequest = async (path: string, init: RequestInit, token?: string): Promise<HqResult> => {
   try {
@@ -346,6 +356,44 @@ export const api = {
     }
   },
 
+  /**
+   * พิกัดสำหรับหน้าแผนที่ (requirement ข้อ 4)
+   *
+   * ส่งเฉพาะชั้นที่เปิดอยู่ ชั้นที่ผู้ใช้ปิดไว้จะไม่ถูกอ่านจากชีตเลย ซึ่งสำคัญกับระบบนี้
+   * เพราะโควตาการอ่านของ Google คิดเป็นจำนวนคำขอ ไม่ใช่ปริมาณข้อมูล
+   */
+  getMapPoints: async (
+    params: {
+      station?: string;
+      start?: string;
+      end?: string;
+      layers: string[];
+      charge?: string;
+      unit?: string;
+      stationFilter?: string;
+    },
+    token?: string,
+  ): Promise<{ status: string; data?: MapPointsData; message?: string }> => {
+    try {
+      const q = new URLSearchParams({ layers: params.layers.join(',') });
+      (['station', 'start', 'end', 'charge', 'unit', 'stationFilter'] as const).forEach((key) => {
+        const value = params[key];
+        if (value) q.set(key, value);
+      });
+      const res = await fetch(`${API_BASE_URL}/map/points?${q.toString()}`, {
+        headers: { 'x-token': token || '' },
+      });
+      if (res.status === 401) {
+        onSessionExpired();
+        return { status: 'error', message: SESSION_EXPIRED_MESSAGE };
+      }
+      if (res.status === 403) return { status: 'error', message: 'ไม่มีสิทธิ์ดูข้อมูลของสถานีนี้' };
+      return await res.json();
+    } catch {
+      return { status: 'error', message: OFFLINE_MESSAGE };
+    }
+  },
+
   /** แบบฟอร์มที่ออกเป็น Excel ได้ตอนนี้ — รายการมาจากฝั่ง API ไม่ฮาร์ดโค้ดสองที่ */
   getExportableReports: async (token?: string): Promise<{ reportKey: string; title: string; cadence: string }[]> => {
     const res = await fetchReference('/reports/catalog/exportable', token);
@@ -443,6 +491,116 @@ export const api = {
     }
   },
 
+  /**
+   * ข้อหาที่จัดกลุ่มตาม พ.ร.บ. แล้ว (requirement ข้อ 14)
+   * คืนทั้งแบบกลุ่มและแบบรายชื่อล้วนในคำขอเดียว หน้าเว็บจึงสลับได้โดยไม่ยิงซ้ำ
+   */
+  getChargeGroups: async (
+    token?: string,
+  ): Promise<{ groups: { group: string; charges: string[] }[]; flat: string[] }> => {
+    const res = await fetchReference('/dropdowns/charges-grouped', token);
+    const data = (res as { data?: { groups?: unknown; flat?: unknown } })?.data;
+    return {
+      groups: Array.isArray(data?.groups) ? (data.groups as { group: string; charges: string[] }[]) : [],
+      flat: Array.isArray(data?.flat) ? (data.flat as string[]) : [],
+    };
+  },
+
+  // ------------------------------------------- โมดูลประชาสัมพันธ์ (requirement ข้อ 13)
+
+  /** ส่งข่าวเข้าคิวตรวจ (FR-01) — `mediaMeta` คือค่าที่วัดจากเบราว์เซอร์ */
+  submitPrNews: async (
+    formData: Record<string, unknown>,
+    token?: string,
+    files?: { name: string; type: string; data: string }[],
+  ): Promise<{ status: string; message?: string; needsMediaReview?: boolean; matchedKeywords?: string[] }> => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/pr/news`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-token': token || '' },
+        body: JSON.stringify({ formData, files: files || [] }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        onSessionExpired();
+        return { status: 'error', message: SESSION_EXPIRED_MESSAGE };
+      }
+      if (!res.ok) return { status: 'error', message: errorMessage(body, 'ส่งข่าวไม่สำเร็จ') };
+      return body;
+    } catch {
+      return { status: 'error', message: OFFLINE_MESSAGE };
+    }
+  },
+
+  /** ตารางรวมข่าวพร้อมตัวกรองและยอดสรุป (FR-04) */
+  listPrNews: (params: Record<string, string>, token?: string) =>
+    hqGet('/pr/news', params, token),
+
+  /** ไฟล์สื่อของข่าวหนึ่งใบ ใช้ตอนแอดมินตรวจ */
+  prNewsMedia: (recordId: string, station: string, token?: string) =>
+    hqGet('/pr/news/media', { recordId, station }, token),
+
+  /** อนุมัติหรือปฏิเสธข่าว (FR-09) */
+  decidePrNews: (body: Record<string, unknown>, token?: string) =>
+    hqPost('/pr/news/decide', body, token),
+
+  /** คำค้นที่แอดมินตั้งไว้ (FR-02) */
+  getPrKeywords: async (
+    token?: string,
+  ): Promise<{ keyword: string; category: string; note: string; isActive: boolean }[]> => {
+    const res = await fetchReference('/pr/keywords', token);
+    const data = (res as { data?: unknown })?.data;
+    return Array.isArray(data)
+      ? (data as { keyword: string; category: string; note: string; isActive: boolean }[])
+      : [];
+  },
+
+  /** เพิ่มคำค้น (FR-09) — แอดมินเท่านั้น */
+  savePrKeyword: (body: Record<string, unknown>, token?: string) =>
+    hqPost('/pr/keywords', body, token),
+
+  /** รายละเอียดเต็มของรายการ พร้อมไฟล์แนบ (requirement ข้อ 9) */
+  getRecordDetail: async (
+    sheetName: string,
+    recordId: string,
+    token?: string,
+  ): Promise<{ status: string; data?: RecordDetail; message?: string }> => {
+    const q = new URLSearchParams({ sheetName, recordId }).toString();
+    try {
+      const res = await fetch(`${API_BASE_URL}/records/detail?${q}`, { headers: { 'x-token': token || '' } });
+      if (res.status === 401) {
+        onSessionExpired();
+        return { status: 'error', message: SESSION_EXPIRED_MESSAGE };
+      }
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) return { status: 'error', message: errorMessage(body, 'ดึงรายละเอียดไม่สำเร็จ') };
+      return body;
+    } catch {
+      return { status: 'error', message: OFFLINE_MESSAGE };
+    }
+  },
+
+  /** แก้ไขรายการของตัวเองที่ยังรออนุมัติ (requirement ข้อ 10) */
+  updateRecord: async (
+    sheetName: string,
+    recordId: string,
+    updates: Record<string, string>,
+    token?: string,
+  ): Promise<{ status: string; message?: string; changed?: number }> => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/records/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-token': token || '' },
+        body: JSON.stringify({ sheetName, recordId, updates }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) return { status: 'error', message: errorMessage(body, 'แก้ไขไม่สำเร็จ') };
+      return body;
+    } catch {
+      return { status: 'error', message: OFFLINE_MESSAGE };
+    }
+  },
+
   approveItem: async (sheetName: string, recordId: string, token?: string): Promise<{ status: string; message?: string }> => {
     try {
       const res = await fetch(`${API_BASE_URL}/records/approve`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-token': token || '' }, body: JSON.stringify({ sheetName, recordId }) });
@@ -453,9 +611,19 @@ export const api = {
     }
   },
 
-  getNationalSummary: async (start: string, end: string, token?: string): Promise<{ status: string; data?: any; message?: string }> => {
+  /**
+   * ภาพรวมของ บก.ทล. — ค่าเริ่มต้นนับเฉพาะ กก.8 ตาม requirement ข้อ 3
+   * ส่ง `includeArchived` เพื่อดูข้อมูลสำรองของ กก.1-7 ที่ยังเก็บไว้ครบ
+   */
+  getNationalSummary: async (
+    start: string,
+    end: string,
+    token?: string,
+    includeArchived = false,
+  ): Promise<{ status: string; data?: any; message?: string }> => {
     try {
-      const q = new URLSearchParams({ start, end }).toString();
+      const q = new URLSearchParams({ start, end }).toString()
+        + (includeArchived ? '&includeArchived=true' : '');
       const res = await fetch(`${API_BASE_URL}/national-summary?${q}`, { headers: { 'x-token': token || '' } });
       return await res.json();
     } catch {
@@ -540,6 +708,10 @@ export const api = {
 
   commanderOrder: (body: Record<string, unknown>, token?: string) =>
     hqPost('/commander/order', body, token),
+
+  /** กก. ที่บัญชีนี้เปิดดูสถิติได้ (requirement ข้อ 1) — ระดับผู้กำกับการขึ้นไปเท่านั้น */
+  commanderDivisions: (token?: string) =>
+    hqGet('/commander/divisions', {}, token),
 
   hqAnalysisCategories: (token?: string) =>
     hqGet('/hq/analysis/categories', {}, token),

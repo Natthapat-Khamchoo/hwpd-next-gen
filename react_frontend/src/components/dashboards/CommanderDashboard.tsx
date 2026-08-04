@@ -9,6 +9,7 @@ import { DeepSearchModal } from './DeepSearchModal';
 import { MissionCalendar } from './hq/MissionCalendar';
 import { EvidencePanel } from './hq/EvidencePanel';
 import { EscortPanel } from './hq/EscortPanel';
+import { MapPanelLazy } from './hq/MapPanelLazy';
 import { TextSummaryModal } from './hq/TextSummaryModal';
 import { captureToImage } from './hq/captureImage';
 import Swal from 'sweetalert2';
@@ -28,7 +29,14 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
   const { user, logout } = useAuth();
   // ของเดิมสลับ userData.station ใน localStorage ชั่วคราวแล้วโหลดใหม่ ที่นี่ส่งเป็น prop
   // แทน ได้ผลเหมือนกันแต่ไม่ต้องเขียนทับตัวตนของคนที่ล็อกอินอยู่
-  const station = viewStation || user?.station || '';
+  // requirement ข้อ 1 — ผกก. เลือกดูสถิติของ กก. อื่นได้ แต่สั่งการได้เฉพาะกองตัวเอง
+  // `viewDivision` ว่าง = ดูกองตัวเอง ค่าอื่นคือสถานี ฝอ. ของกองที่เลือก เช่น "10"
+  const [divisions, setDivisions] = useState<{ division: string; name: string; station: string; isOwn: boolean }[]>([]);
+  const [viewDivision, setViewDivision] = useState('');
+
+  // ลำดับความสำคัญ: ผบก. เจาะลงมา > ผกก. เลือกดูกองอื่น > กองของตัวเอง
+  const station = viewStation || viewDivision || user?.station || '';
+  const ownStation = user?.station || '';
   const div = String(station || '5').charAt(0);
   const [start, setStart] = useState(recentStart());
   const [end, setEnd] = useState(getNowDateLocal());
@@ -39,7 +47,7 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
   const [sending, setSending] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [loadError, setLoadError] = useState('');
-  const [view, setView] = useState<'overview' | 'evidence' | 'escort'>('overview');
+  const [view, setView] = useState<'overview' | 'evidence' | 'escort' | 'map'>('overview');
   const [summaryOpen, setSummaryOpen] = useState(false);
   // กราฟนำขบวนกับโดนัทกำลังพลของเดิมอ่านจากสองชุดนี้ ดึงมาพร้อมภาพรวมในรอบเดียว
   const [escort, setEscort] = useState<any | null>(null);
@@ -66,6 +74,24 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
   };
   // โหลดใหม่เมื่อสลับไปดู กก. อื่น ไม่งั้นหัวเปลี่ยนแต่ตัวเลขยังเป็นของหน่วยเดิม
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [station]);
+
+  // รายชื่อ กก. ที่เปิดดูได้ ไม่โหลดตอน ผบก. เจาะลงมาเพราะหน้านั้นมีตัวเลือกของตัวเองอยู่แล้ว
+  useEffect(() => {
+    if (viewStation) return;
+    api.commanderDivisions(user?.token).then((res) => {
+      if (res.status === 'success') setDivisions(res.data || []);
+    });
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, []);
+
+  // ธงจาก API ไม่ใช่คำนวณเองฝั่งหน้าเว็บ จะได้ตรงกับที่ backend ตัดสินจริงเสมอ
+  // ระหว่างที่ยังโหลดไม่เสร็จ ใช้การเทียบเลข กก. ไปก่อนเพื่อไม่ให้กล่องสั่งการแวบขึ้นมา
+  const readOnly = exec?.readOnly ?? (Boolean(ownStation) && ownStation[0] !== String(station)[0]);
+
+  // ค่าตั้งต้นกันหน้าขาวทั้งหน้าเมื่อ API ไม่ส่งฟิลด์นี้มา (เช่นข้อมูลชุดเก่าหรือ
+  // ตอนที่รวมยอดยังไม่เสร็จ) ของเดิมอ่านตรง ๆ แล้ว Object.keys(undefined) ทำให้
+  // ทั้งแดชบอร์ดล่ม ซึ่งอ่านเหมือนระบบพังทั้งระบบทั้งที่ขาดแค่กราฟใบเดียว
+  const seized = data?.seizedBreakdown || {};
 
   const t = data?.totals || {};
   const bs = data?.byStation || [];
@@ -119,7 +145,23 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
     setSending(false);
     if (res.status === 'success') {
       setMsg('');
-      Swal.fire('ส่งคำสั่งแล้ว', res.message || '', 'success');
+      // requirement ข้อ 2 — โชว์เบอร์หัวหน้าหน่วยที่ได้รับคำสั่ง ให้โทรตามได้ทันที
+      // โดยไม่ต้องเปิดทำเนียบกำลังพลอีกหน้า
+      const contacts: any[] = res.contacts || [];
+      const rows = contacts
+        .map((c) => {
+          const heads = (c.heads || [])
+            .map((h: any) => `${h.name}${h.phone ? ` <a href="tel:${h.phone}">${h.phone}</a>` : ' (ไม่มีเบอร์ในระบบ)'}`)
+            .join('<br>');
+          return `<div style="margin-bottom:.6rem"><b>${c.stationName}</b><br>${heads || '<span style="color:#dc3545">ยังไม่มีข้อมูลหัวหน้าหน่วยในระบบ</span>'}</div>`;
+        })
+        .join('');
+      await Swal.fire({
+        icon: 'success',
+        title: 'ส่งคำสั่งแล้ว',
+        html: `<p>${res.message || ''}</p>${rows ? `<hr><div style="text-align:left"><b>ผู้รับคำสั่งที่ติดต่อได้</b><br>${rows}</div>` : ''}`,
+        confirmButtonColor: '#0dcaf0',
+      });
     } else {
       Swal.fire('ส่งไม่สำเร็จ', res.message || '', 'error');
     }
@@ -149,6 +191,7 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
             <div className={`sidebar-item ${view === 'overview' ? 'active' : ''}`} onClick={() => { close(); setView('overview'); }}><i className="fa-solid fa-chart-line"></i> ภาพรวมระดับบริหาร (Executive)</div>
             <div className={`sidebar-item ${view === 'evidence' ? 'active' : ''}`} onClick={() => { close(); setView('evidence'); }}><i className="fa-solid fa-boxes-packing"></i> ของกลางที่ตรวจยึด</div>
             <div className={`sidebar-item ${view === 'escort' ? 'active' : ''}`} onClick={() => { close(); setView('escort'); }}><i className="fa-solid fa-motorcycle"></i> งานนำขบวน</div>
+            <div className={`sidebar-item ${view === 'map' ? 'active' : ''}`} onClick={() => { close(); setView('map'); }}><i className="fa-solid fa-map-location-dot"></i> แผนที่ผลการปฏิบัติ</div>
             <h6 className="text-white-50 px-4 mt-4 mb-2 small"><i className="fa-solid fa-sitemap"></i> ทางลัดการเข้าถึงระบบ</h6>
             {onSwitchHQ && <div className="sidebar-item text-info" onClick={() => { close(); onSwitchHQ(); }}><i className="fa-solid fa-building-shield"></i> เข้าสู่หน้า ฝอ. (HQ Dashboard)</div>}
             <div className="px-4 mt-3 mb-2 small text-warning">เจาะลึกรายสถานี:</div>
@@ -191,9 +234,38 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
 
         {view === 'evidence' && <EvidencePanel station={station} canEdit={false} />}
         {view === 'escort' && <EscortPanel station={station} canEdit={false} />}
+        {view === 'map' && (
+          <MapPanelLazy station={station} stations={bs.map((s: any) => ({ station: String(s.station), name: s.name }))} />
+        )}
 
         {view === 'overview' && (<>
-        {/* Command Center */}
+        {/* เลือก กก. ที่จะดูสถิติ (requirement ข้อ 1) ไม่โชว์ตอน ผบก. เจาะลงมา
+            เพราะหน้านั้นมีทางกลับของตัวเองอยู่แล้ว */}
+        {!viewStation && divisions.length > 1 && (
+          <div className="cmd-card mb-4" style={{ borderColor: 'rgba(250,204,21,0.35)' }}>
+            <div className="d-flex flex-wrap align-items-center gap-2">
+              <span className="small text-white-50"><i className="fa-solid fa-sitemap"></i> ดูสถิติของกองกำกับการ</span>
+              {divisions.map((d) => (
+                <button
+                  key={d.division}
+                  type="button"
+                  className={`btn btn-sm ${station === d.station ? 'btn-warning fw-bold' : 'btn-outline-warning'}`}
+                  onClick={() => setViewDivision(d.isOwn ? '' : d.station)}
+                >
+                  {d.name}{d.isOwn ? ' (ของท่าน)' : ''}
+                </button>
+              ))}
+              {readOnly && (
+                <span className="badge bg-warning text-dark ms-auto">
+                  <i className="fa-solid fa-eye"></i> โหมดดูอย่างเดียว — สั่งการหน่วยนี้ไม่ได้
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Command Center — ซ่อนตอนดูกองอื่น การโชว์ปุ่มที่กดแล้วได้ 403 คือพาไปเจอ error */}
+        {!readOnly && (
         <div className="cmd-card mb-4" style={{ borderColor: 'rgba(13,202,240,0.4)' }}>
           <h5 className="text-info mb-3"><i className="fa-solid fa-walkie-talkie"></i> ศูนย์สั่งการผู้บังคับบัญชา (Command Center)</h5>
           <div className="row g-3 align-items-end">
@@ -207,6 +279,7 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
             <div className="col-12 col-md-2"><button className="btn btn-info w-100 fw-bold h-100" onClick={sendOrder} disabled={sending}><i className="fa-solid fa-paper-plane"></i> {sending ? 'กำลังส่ง...' : 'ถ่ายทอดคำสั่ง'}</button></div>
           </div>
         </div>
+        )}
 
         {loadError && (
           <div className="alert alert-danger d-flex justify-content-between align-items-center py-2 mb-4">
@@ -246,8 +319,8 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
                   <div className="row align-items-center">
                     <div className="col-12 col-md-7">
                       <ReactApexChart type="donut" height={280}
-                        options={donutOptions(Object.keys(data.seizedBreakdown))}
-                        series={Object.values(data.seizedBreakdown) as number[]} />
+                        options={donutOptions(Object.keys(seized))}
+                        series={Object.values(seized) as number[]} />
                     </div>
                     <div className="col-12 col-md-5">
                       {/* ต้นฉบับวางรายการสรุปไว้ข้างกราฟ เพราะโดนัทบอกสัดส่วนแต่ไม่บอกจำนวนจริง */}
@@ -256,8 +329,8 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
                           <i className="fa-solid fa-list-ul"></i> สรุปยอดของกลาง
                         </h6>
                         <ul className="list-unstyled mb-0 small" style={{ maxHeight: 220, overflowY: 'auto' }}>
-                          {Object.entries(data.seizedBreakdown).length ? (
-                            Object.entries(data.seizedBreakdown).map(([name, qty]) => (
+                          {Object.entries(seized).length ? (
+                            Object.entries(seized).map(([name, qty]) => (
                               <li key={name} className="d-flex justify-content-between border-bottom border-secondary py-1">
                                 <span className="text-white-50 text-truncate" title={name}>{name}</span>
                                 <span className="text-white fw-bold ms-2">{String(qty)}</span>
@@ -277,7 +350,7 @@ export const CommanderDashboard: React.FC<Props> = ({ onBack, onSwitchHQ, viewSt
                 <div className="cmd-card h-100">
                   <h5 className="text-info mb-1"><i className="fa-solid fa-motorcycle"></i> สถิติภารกิจนำขบวน</h5>
                   <p className="small text-white-50 mb-3">เปรียบเทียบภาระงานนำขบวนแยกระดับสถานี (VIP และ ทั่วไป)</p>
-                  {escort && escort.summary.total ? (
+                  {escort?.summary?.total ? (
                     <div className="row align-items-center">
                       <div className="col-12 col-md-7">
                         <ReactApexChart type="bar" height={260}

@@ -42,6 +42,7 @@ const MissionForm = named(() => import('./components/forms/MissionForm'), 'Missi
 const MissionViewForm = named(() => import('./components/forms/MissionViewForm'), 'MissionViewForm');
 const PrForm = named(() => import('./components/forms/PrForm'), 'PrForm');
 const DocumentForm = named(() => import('./components/forms/DocumentForm'), 'DocumentForm');
+const OverweightForm = named(() => import('./components/forms/OverweightForm'), 'OverweightForm');
 const RoyalGuardForm = named(() => import('./components/forms/RoyalGuardForm'), 'RoyalGuardForm');
 const FuelForm = named(() => import('./components/forms/FuelForm'), 'FuelForm');
 const MyHistoryForm = named(() => import('./components/forms/MyHistoryForm'), 'MyHistoryForm');
@@ -115,6 +116,7 @@ const MainContent: React.FC = () => {
       case 'mission_view': return <MissionViewForm onBack={back} />;
       case 'pr': return <PrForm onBack={back} />;
       case 'document': return <DocumentForm onBack={back} />;
+      case 'overweight': return <OverweightForm onBack={back} />;
       case 'royal_guard': return <RoyalGuardForm onBack={back} />;
       case 'fuel': return <FuelForm onBack={back} />;
       case 'history': return <MyHistoryForm onBack={back} />;

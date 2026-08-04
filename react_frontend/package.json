@@ -7,28 +7,38 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
+    "@types/leaflet": "^1.9.22",
     "apexcharts": "^4.7.0",
     "bootstrap": "^5.3.3",
     "flatpickr": "^4.6.13",
     "html2canvas": "^1.4.1",
+    "leaflet": "^1.9.4",
     "lucide-react": "^1.25.0",
     "react": "^19.2.7",
     "react-apexcharts": "^1.7.0",
     "react-dom": "^19.2.7",
+    "react-leaflet": "^5.0.0",
     "sweetalert2": "^11.26.25"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
+    "@vitest/coverage-v8": "^4.1.10",
+    "jsdom": "^29.1.1",
     "oxlint": "^1.71.0",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",
-    "vite": "^8.1.1"
+    "vite": "^8.1.1",
+    "vitest": "^4.1.10"
   }
 }

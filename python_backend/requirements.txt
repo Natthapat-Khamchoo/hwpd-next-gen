@@ -11,3 +11,6 @@ google-auth-oauthlib>=1.2.0
 pytest>=8.0.0
 # ออกรายงานตามแบบฟอร์มใน tb_ReportCatalog เป็นไฟล์ Excel
 openpyxl>=3.1.0
+# ตรวจความละเอียดภาพซ้ำฝั่ง backend สำหรับโมดูลประชาสัมพันธ์ (BR-01)
+# วิดีโอยังเชื่อค่าจากเบราว์เซอร์ เพราะ Render แผนฟรีไม่มี ffprobe
+pillow>=10.0.0

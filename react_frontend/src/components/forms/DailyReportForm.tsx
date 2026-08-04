@@ -2,7 +2,10 @@ import React, { createContext, useContext, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { useStationData } from '../../hooks/useStationData';
+import { useFormDraft } from '../../hooks/useFormDraft';
 import { FormShell } from './FormShell';
+import { DraftNotice } from './DraftNotice';
+import { ChargeSelect, ChargeGroupToggle } from './ChargeSelect';
 import { ThaiDateInput } from './ThaiDateInput';
 import {
   getNowDateTimeLocal,
@@ -13,6 +16,8 @@ import {
   confirmLinePreview,
   showLineCopyResult,
   loadingModal,
+  copyWithToast,
+  buildV20CopyText,
 } from '../../utils/formHelpers';
 import Swal from 'sweetalert2';
 
@@ -125,20 +130,34 @@ const Num2: React.FC<{ k: string; label: string; cls?: string }> = ({ k, label, 
 
 export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { user } = useAuth();
-  const { units, users, charges, phoneMap } = useStationData({ charges: true });
+  const { units, users, charges, chargeGroups, phoneMap } = useStationData({ charges: true });
+  // requirement ข้อ 14 — จัดกลุ่มข้อหาตาม พ.ร.บ. สลับปิดได้
+  const [groupCharges, setGroupCharges] = useState(true);
   const [tab, setTab] = useState(1);
   const [files, setFiles] = useState<Record<string, FileList | null>>({});
   const st = getFrontendStationData(user?.station);
   const today = getNowDateLocal();
 
   // ---------- Tab 1 ----------
-  const [t1, setT1] = useState<Record<string, string>>({
+  const blank1: Record<string, string> = {
     reportDateTime: getNowDateTimeLocal(), unitId: '', dutyOfficer: '', dutyPhone: '', carNumber: '',
     driverName: '', driverPhone: '', radioOpName: '', radioOpPhone: '', startTime: today, endTime: today,
     camTotal: '0', camReady: '0', camBroken: '0',
-  });
+  };
+  const [t1, setT1, d1] = useFormDraft('daily.t1', blank1, user?.username);
+  // requirement ข้อ 11 — ผู้ร่วมออก ว.4 นอกเหนือจากสามตำแหน่งประจำ ยกแบบมาจากแท็บ 5
+  // แต่เพิ่มช่องตำแหน่ง/บทบาทซึ่งแท็บ 5 ยังไม่มี
+  const BLANK_CREW = [{ name: '', role: '' }];
+  const [crew, setCrew, d1crew] = useFormDraft('daily.t1.crew', BLANK_CREW, user?.username);
   const s1 = (k: string, v: string) => setT1((p) => ({ ...p, [k]: v }));
   const s1user = (k: string, phoneK: string, v: string) => setT1((p) => ({ ...p, [k]: v, [phoneK]: phoneMap[v] || p[phoneK] }));
+
+  // แถวที่ยังไม่ได้เลือกชื่อถือว่ายังไม่ได้กรอก ตัดทิ้งก่อนส่งและก่อนขึ้นพรีวิว
+  const extraCrew = crew.filter((c) => c.name);
+  const crewLines = extraCrew
+    .map((c) => `ผู้ร่วมปฏิบัติ ${c.name}${c.role ? ` (${c.role})` : ''}
+`)
+    .join('');
 
   const submitT1 = async () => {
     if (!t1.unitId || !t1.dutyOfficer || !t1.driverName || !t1.radioOpName) return Swal.fire('ข้อมูลไม่ครบ', 'กรุณาเลือกหน่วยและกำลังพลให้ครบ', 'warning');
@@ -147,6 +166,9 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
       `หน่วยบริการ ${cu}\nวันที่ ${formatPreviewDate(t1.reportDateTime)}\nปฏิบัติหน้าที่ประจำหน่วยบริการ ${cu}\n` +
       `ยศ ชื่อ สกุล ${t1.dutyOfficer}\nโทร ${t1.dutyPhone}\nรถวิทยุตรวจเขต ${t1.carNumber}\n` +
       `พลขับ ยศ ชื่อ สกุล ${t1.driverName}\nโทร ${t1.driverPhone}\nพงว. ยศ ชื่อ สกุล ${t1.radioOpName}\nโทร ${t1.radioOpPhone}\n` +
+      // ต้องเรียงตรงกับที่ prepare_daily_report ฝั่ง backend สร้าง ไม่งั้นข้อความที่
+      // เจ้าหน้าที่กดคัดลอกจากพรีวิวจะไม่ตรงกับที่ระบบส่งเข้ากลุ่ม LINE จริง
+      crewLines +
       `ปฏิบัติหน้าที่ตั้งแต่เวลา 08.00 น. ของวันที่ ${formatPreviewDate(t1.startTime)} ถึง 08.00 น. ของวันที่ ${formatPreviewDate(t1.endTime)}\n\n` +
       `รายงานสถานะการใช้งานกล้องประจำตัว body worn\n1. กล้อง body worn ได้รับทั้งหมด ${t1.camTotal} ตัว\n` +
       `2. เปิดใช้งานทดสอบระบบ เวลา ${timePart(t1.reportDateTime)} น.\nพร้อมใช้งาน ${t1.camReady} ตัว\n3. ใช้งานไม่ได้ ${t1.camBroken} ตัว\n\n` +
@@ -154,30 +176,51 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
     const { confirmed, copied } = await confirmLinePreview(previewText);
     if (!confirmed) return;
     loadingModal('กำลังบันทึก...');
-    const res = await api.submitReport('daily', { ...t1, unitName: 'หน่วยบริการฯ ' + t1.unitId, stationId: user?.station, actionBy: user?.username }, user?.token, { files: await filesToBase64(files.f1) });
-    if (res.status === 'success') { await showLineCopyResult(res.message || 'บันทึกสำเร็จ', res.lineText || previewText, copied); onBack(); }
+    const res = await api.submitReport(
+      'daily',
+      { ...t1, unitName: 'หน่วยบริการฯ ' + t1.unitId, stationId: user?.station, actionBy: user?.username },
+      user?.token,
+      { files: await filesToBase64(files.f1), officers: extraCrew },
+    );
+    if (res.status === 'success') { d1.clear(); d1crew.clear(); await showLineCopyResult(res.message || 'บันทึกสำเร็จ', res.lineText || previewText, copied); onBack(); }
     else Swal.fire('เกิดข้อผิดพลาด!', res.message || 'บันทึกไม่สำเร็จ', 'error');
   };
 
   // ---------- Tab 2 ----------
   const NUM2_DEFAULTS: Record<string, string> = {};
-  ['v43', 'service', 'v42', 'v20', 'camTotal2', 'camReady2', 'camBroken2',
+  ['v43', 'service', 'v42', 'v20', 'v20Warrant', 'v20Flagrante', 'camTotal2', 'camReady2', 'camBroken2',
     'smkTransCheck', 'smkTransFail', 'smkTransCancel', 'smkBusCheck', 'smkBusFail', 'smkBusCancel',
     'smkCarCheck', 'smkCarFail', 'smkCarCancel', 'smkBikeCheck', 'smkBikeFail', 'smkBikeCancel', 'smkArrest', 'smkAdvice',
     'burnForestCheck', 'burnForestArrest', 'burnForestAdvice', 'burnFarmCheck', 'burnFarmArrest', 'burnFarmAdvice',
     'factoryCheck', 'factoryArrest', 'factoryAdvice', 'searchTarget', 'searchSeized', 'complaintCount', 'homeCheck', 'vehicleCheck', 'alienRecord',
   ].forEach((k) => (NUM2_DEFAULTS[k] = '0'));
-  const [t2, setT2] = useState<Record<string, string>>({ unitId: '', reportDateTime: getNowDateTimeLocal(), ...NUM2_DEFAULTS });
+  const blank2: Record<string, string> = { unitId: '', reportDateTime: getNowDateTimeLocal(), ...NUM2_DEFAULTS };
+  const [t2, setT2, d2] = useFormDraft('daily.t2', blank2, user?.username);
   const s2 = (k: string, v: string) => setT2((p) => ({ ...p, [k]: v }));
-  const [chargeRows, setChargeRows] = useState<{ name: string; amount: string }[]>([]);
+  const [chargeRows, setChargeRows, d2charges] = useFormDraft(
+    'daily.t2.charges',
+    [] as { name: string; amount: string }[],
+    user?.username,
+  );
   const [showSmoke, setShowSmoke] = useState(false);
   const [showExtra, setShowExtra] = useState(false);
   const v20n = parseInt(t2.v20) || 0;
+  // requirement ข้อ 15 — สองยอดนี้เป็นรายละเอียดของ ว.20 รวมกันต้องไม่เกินยอดรวม
+  // ไม่บังคับให้เท่ากัน เพราะบางใบยังแยกประเภทไม่ได้ตอนกรอก
+  const v20Warrant = parseInt(t2.v20Warrant) || 0;
+  const v20Flagrante = parseInt(t2.v20Flagrante) || 0;
 
   const submitT2 = async () => {
     if (!t2.unitId) return Swal.fire('ข้อมูลไม่ครบ', 'กรุณาเลือกหน่วยบริการ', 'warning');
     const validCharges = chargeRows.filter((c) => c.name && c.amount);
     if (v20n > 0 && validCharges.length === 0) return Swal.fire('แจ้งเตือน', 'คุณมียอด ว.20 กรุณาระบุรายการข้อหาอย่างน้อย 1 ข้อหาครับ', 'warning');
+    if (v20Warrant + v20Flagrante > v20n) {
+      return Swal.fire(
+        'ตัวเลขไม่สอดคล้องกัน',
+        `จับตามหมายจับ (${v20Warrant}) + จับซึ่งหน้า (${v20Flagrante}) รวมแล้วมากกว่ายอด ว.20 ทั้งหมด (${v20n})`,
+        'warning',
+      );
+    }
     const cu = cleanUnit(t2.unitId);
     const previewText =
       `หน่วยบริการ ${cu}\n\nวันที่ ${formatPreviewDate(t2.reportDateTime)}\nการดำเนินการ\nว.43 = ${t2.v43}\nบริการ = ${t2.service}\nว.42 = ${t2.v42}\nว.20 = ${t2.v20}\n\n` +
@@ -186,15 +229,16 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
     if (!confirmed) return;
     loadingModal('กำลังบันทึก...');
     const res = await api.submitReport('daily-result', { ...t2, unitName: 'หน่วยบริการฯ ' + t2.unitId, stationId: user?.station, actionBy: user?.username }, user?.token, { files: await filesToBase64(files.f2), charges: validCharges });
-    if (res.status === 'success') { await showLineCopyResult(res.message || 'บันทึกสำเร็จ', res.lineText || previewText, copied); onBack(); }
+    if (res.status === 'success') { d2.clear(); d2charges.clear(); await showLineCopyResult(res.message || 'บันทึกสำเร็จ', res.lineText || previewText, copied); onBack(); }
     else Swal.fire('เกิดข้อผิดพลาด!', res.message || 'บันทึกไม่สำเร็จ', 'error');
   };
 
   // ---------- Tab 3 ----------
-  const [t3, setT3] = useState<Record<string, string>>({
+  const blank3: Record<string, string> = {
     reportDateTime: getNowDateTimeLocal(), inspectorName: '', inspectorPhone: '', dutyOfficerName: '', dutyOfficerPhone: '',
     radioOpName: '', radioOpPhone: '', startTime: today, endTime: today,
-  });
+  };
+  const [t3, setT3, d3] = useFormDraft('daily.t3', blank3, user?.username);
   const s3 = (k: string, v: string) => setT3((p) => ({ ...p, [k]: v }));
   const s3user = (k: string, phoneK: string, v: string) => setT3((p) => ({ ...p, [k]: v, [phoneK]: phoneMap[v] || p[phoneK] }));
   const submitT3 = async () => {
@@ -207,7 +251,7 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
     if (!confirmed) return;
     loadingModal('กำลังส่ง...');
     const res = await api.submitReport('station-duty', { ...t3, unitId: user?.unit, stationId: user?.station, actionBy: user?.username }, user?.token);
-    if (res.status === 'success') { await showLineCopyResult(res.message || 'บันทึกสำเร็จ', res.lineText || previewText, copied); onBack(); }
+    if (res.status === 'success') { d3.clear(); await showLineCopyResult(res.message || 'บันทึกสำเร็จ', res.lineText || previewText, copied); onBack(); }
     else Swal.fire('เกิดข้อผิดพลาด!', res.message || 'บันทึกไม่สำเร็จ', 'error');
   };
 
@@ -235,12 +279,13 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
   };
 
   // ---------- Tab 5 ----------
-  const [t5, setT5] = useState<Record<string, string>>({
+  const blank5: Record<string, string> = {
     reportDateTime: getNowDateTimeLocal(), unitId: '', carNumber: '', dutyType: '', dutyOtherText: '', actionDetails: '', location: '',
     volType: '', volSubType: '', volSpecial: '', volHost: '', volHostUnit: '', volPolice: '0', volPoliceOther: '0', volGov: '0', volCivil: '0', volBloodCc: '0', volPlateletUnit: '0',
-  });
+  };
+  const [t5, setT5, d5] = useFormDraft('daily.t5', blank5, user?.username);
   const s5 = (k: string, v: string) => setT5((p) => ({ ...p, [k]: v }));
-  const [officers, setOfficers] = useState<string[]>(['']);
+  const [officers, setOfficers, d5officers] = useFormDraft('daily.t5.officers', [''], user?.username);
   const submitT5 = async () => {
     const offs = officers.filter(Boolean);
     if (offs.length === 0) return Swal.fire('แจ้งเตือน', 'เพิ่มเจ้าหน้าที่อย่างน้อย 1 นาย', 'warning');
@@ -255,8 +300,30 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
     if (!confirmed) return;
     loadingModal('กำลังบันทึก...');
     const res = await api.submitReport('other-duty', { ...t5, stationId: user?.station, actionBy: user?.username }, user?.token, { files: await filesToBase64(files.f5), officers: offs });
-    if (res.status === 'success') { await showLineCopyResult(res.message || 'บันทึกสำเร็จ', res.lineText || previewText, copied); onBack(); }
+    if (res.status === 'success') { d5.clear(); d5officers.clear(); await showLineCopyResult(res.message || 'บันทึกสำเร็จ', res.lineText || previewText, copied); onBack(); }
     else Swal.fire('เกิดข้อผิดพลาด!', res.message || 'บันทึกไม่สำเร็จ', 'error');
+  };
+
+  // ล้างร่างแล้วคืนค่าตั้งต้นของแท็บนั้นแท็บเดียว ฟอร์มนี้มีห้าแท็บที่กรอกแยกกัน
+  // การกดล้างที่แท็บหนึ่งไม่ควรลบของที่กรอกค้างไว้ในอีกแท็บ
+  const resetT1 = () => {
+    d1.clear();
+    d1crew.clear();
+    setT1({ ...blank1, reportDateTime: getNowDateTimeLocal() });
+    setCrew(BLANK_CREW.map((c) => ({ ...c })));
+  };
+  const resetT2 = () => {
+    d2.clear();
+    d2charges.clear();
+    setT2({ ...blank2, reportDateTime: getNowDateTimeLocal() });
+    setChargeRows([]);
+  };
+  const resetT3 = () => { d3.clear(); setT3({ ...blank3, reportDateTime: getNowDateTimeLocal() }); };
+  const resetT5 = () => {
+    d5.clear();
+    d5officers.clear();
+    setT5({ ...blank5, reportDateTime: getNowDateTimeLocal() });
+    setOfficers(['']);
   };
 
   return (
@@ -273,6 +340,7 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
       {/* TAB 1 */}
       {tab === 1 && (
         <div className="glass-card w-100">
+          {d1.restored && <DraftNotice onClear={resetT1} />}
           <h5 className="text-center text-info mb-4">1. รายงานประจำวัน (เวรผลัด)</h5>
           <div className="row g-3">
             <div className="col-12 col-md-6"><label className="form-label small text-white-50">วันที่เวลาที่รายงาน</label><div className="d-flex gap-2"><ThaiDateInput type="datetime-local" value={t1.reportDateTime} onChange={(v) => s1('reportDateTime', v)} /><button type="button" className="btn btn-outline-info" onClick={() => s1('reportDateTime', getNowDateTimeLocal())}><i className="fa-solid fa-clock-rotate-left"></i></button></div></div>
@@ -283,6 +351,47 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
             <div className="col-12"><label className="form-label small text-white-50">รถวิทยุตรวจเขต</label><input type="text" className="form-control" placeholder="เลขรถ" value={t1.carNumber} onChange={(e) => s1('carNumber', e.target.value)} /></div>
             <div className="col-12 col-md-6"><label className="form-label small text-white-50">พลขับ</label><UserSelect value={t1.driverName} onChange={(v) => s1user('driverName', 'driverPhone', v)} /><input type="tel" className="form-control mt-2" placeholder="เบอร์โทรพลขับ" value={t1.driverPhone} onChange={(e) => s1('driverPhone', e.target.value)} /></div>
             <div className="col-12 col-md-6"><label className="form-label small text-white-50">พนักงานวิทยุ</label><UserSelect value={t1.radioOpName} onChange={(v) => s1user('radioOpName', 'radioOpPhone', v)} /><input type="tel" className="form-control mt-2" placeholder="เบอร์โทรพงว." value={t1.radioOpPhone} onChange={(e) => s1('radioOpPhone', e.target.value)} /></div>
+            {/* requirement ข้อ 11 — เพิ่มผู้ร่วมออก ว.4 ได้ไม่จำกัดจำนวน พร้อมตำแหน่ง
+                สามช่องข้างบนเป็นตำแหน่งประจำที่มีคอลัมน์ของตัวเองในชีตอยู่แล้ว
+                ส่วนนี้เก็บเป็น JSON คอลัมน์เดียวเพราะจำนวนไม่คงที่ */}
+            <div className="col-12" style={{ background: 'rgba(0, 242, 255, 0.05)', padding: 15, borderRadius: 10, border: '1px dashed rgba(0, 242, 255, 0.3)' }}>
+              <div className="d-flex justify-content-between align-items-center mb-2">
+                <label className="small text-info">ผู้ร่วมออก ว.4 เพิ่มเติม (ถ้ามี)</label>
+                <button type="button" className="btn btn-sm btn-outline-info" onClick={() => setCrew((p) => [...p, { name: '', role: '' }])}>
+                  <i className="fa-solid fa-user-plus"></i> เพิ่มเจ้าหน้าที่
+                </button>
+              </div>
+              {crew.map((c, i) => (
+                <div className="row g-2 mb-2" key={i}>
+                  <div className="col-12 col-md-7">
+                    <select
+                      className="form-select border-info"
+                      value={c.name}
+                      onChange={(e) => setCrew((p) => p.map((x, idx) => (idx === i ? { ...x, name: e.target.value } : x)))}
+                    >
+                      <option value="">-- เลือกรายชื่อ --</option>
+                      {users.map((u) => <option key={u} value={u}>{u}</option>)}
+                    </select>
+                  </div>
+                  <div className="col-10 col-md-4">
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="ตำแหน่ง/บทบาท เช่น พลขับสำรอง"
+                      value={c.role}
+                      onChange={(e) => setCrew((p) => p.map((x, idx) => (idx === i ? { ...x, role: e.target.value } : x)))}
+                    />
+                  </div>
+                  <div className="col-2 col-md-1">
+                    {crew.length > 1 && (
+                      <button type="button" className="btn btn-outline-danger w-100" onClick={() => setCrew((p) => p.filter((_, idx) => idx !== i))}>
+                        <i className="fa-solid fa-trash"></i>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
             <div className="col-12 col-md-6"><label className="form-label small text-white-50">ปฏิบัติหน้าที่ตั้งแต่ (ว/ด/ป)</label><ThaiDateInput type="date" value={t1.startTime} onChange={(v) => s1('startTime', v)} /></div>
             <div className="col-12 col-md-6"><label className="form-label small text-white-50">ถึงวันที่ (ว/ด/ป)</label><ThaiDateInput type="date" value={t1.endTime} onChange={(v) => s1('endTime', v)} /></div>
             <div className="col-12"><span className="badge bg-info">กล้อง Bodyworn</span></div>
@@ -298,6 +407,7 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
       {/* TAB 2 */}
       {tab === 2 && (
         <div className="glass-card w-100">
+          {d2.restored && <DraftNotice onClear={resetT2} />}
           <h5 className="text-center text-info mb-4">2. ผลการปฏิบัติประจำวัน</h5>
           <div className="row g-3">
             <div className="col-12 col-md-6"><label className="form-label small text-white-50">หน่วยบริการ</label><UnitSelect value={t2.unitId} onChange={(v) => s2('unitId', v)} /></div>
@@ -308,11 +418,35 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
             <div className="col-md-3 col-6"><Num2 k="v42" label="ว.42 (ครั้ง)" /></div>
             <div className="col-md-3 col-6"><label className="form-label small text-warning fw-bold">ว.20 (ครั้ง)</label><input type="number" className="form-control text-center border-warning" value={t2.v20} onChange={(e) => s2('v20', e.target.value)} min="0" /></div>
             {v20n > 0 && (
+              <div className="col-12">
+                <div className="row g-2 align-items-end p-3" style={{ background: 'rgba(255,193,7,0.06)', borderRadius: 10, border: '1px dashed rgba(255,193,7,0.3)' }}>
+                  {/* requirement ข้อ 15 — แยกยอด ว.20 ให้ผู้บังคับบัญชาเห็นสัดส่วน
+                      ไม่บังคับให้รวมกันเท่ายอด ว.20 พอดี เพราะบางใบยังแยกประเภทไม่ได้ตอนกรอก
+                      แต่รวมกันเกินยอดรวมไม่ได้ ซึ่งเช็คตอนกดส่ง */}
+                  <div className="col-12"><span className="badge bg-warning text-dark">แยกประเภทการจับกุม (ไม่บังคับ)</span></div>
+                  <div className="col-6 col-md-4">
+                    <label className="form-label small text-white-50">จับกุมตามหมายจับ (ราย)</label>
+                    <input type="number" className="form-control text-center" min="0" value={t2.v20Warrant} onChange={(e) => s2('v20Warrant', e.target.value)} />
+                  </div>
+                  <div className="col-6 col-md-4">
+                    <label className="form-label small text-white-50">จับกุมซึ่งหน้า (ราย)</label>
+                    <input type="number" className="form-control text-center" min="0" value={t2.v20Flagrante} onChange={(e) => s2('v20Flagrante', e.target.value)} />
+                  </div>
+                  <div className="col-12 col-md-4">
+                    <div className={`small ${v20Warrant + v20Flagrante > v20n ? 'text-danger fw-bold' : 'text-white-50'}`}>
+                      รวมแยกประเภท {v20Warrant + v20Flagrante} / ยอด ว.20 ทั้งหมด {v20n}
+                      {v20Warrant + v20Flagrante > v20n && ' — เกินยอดรวม'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            {v20n > 0 && (
               <div className="col-12" style={{ background: 'rgba(255,193,7,0.1)', padding: 15, borderRadius: 10, border: '1px solid rgba(255,193,7,0.3)' }}>
-                <div className="d-flex justify-content-between align-items-center mb-2"><label className="small text-warning">รายการข้อหา ว.20</label><button type="button" className="btn btn-sm btn-warning" onClick={() => setChargeRows((p) => [...p, { name: '', amount: '1' }])}><i className="fa-solid fa-plus"></i> เพิ่มข้อหา</button></div>
+                <div className="d-flex justify-content-between align-items-center mb-2 gap-2 flex-wrap"><label className="small text-warning">รายการข้อหา ว.20</label><div className="d-flex gap-2"><ChargeGroupToggle grouped={groupCharges} onToggle={() => setGroupCharges((v) => !v)} disabled={!chargeGroups.length} /><button type="button" className="btn btn-sm btn-warning" onClick={() => setChargeRows((p) => [...p, { name: '', amount: '1' }])}><i className="fa-solid fa-plus"></i> เพิ่มข้อหา</button></div></div>
                 {chargeRows.map((c, i) => (
                   <div className="d-flex gap-2 mb-2" key={i}>
-                    <select className="form-select border-warning" value={c.name} onChange={(e) => setChargeRows((p) => p.map((x, idx) => (idx === i ? { ...x, name: e.target.value } : x)))}><option value="">-- เลือกข้อหา --</option>{charges.map((ch) => <option key={ch} value={ch}>{ch}</option>)}</select>
+                    <ChargeSelect value={c.name} onChange={(v) => setChargeRows((p) => p.map((x, idx) => (idx === i ? { ...x, name: v } : x)))} groups={chargeGroups} flat={charges} grouped={groupCharges} />
                     <input type="number" className="form-control text-center" style={{ width: 80 }} value={c.amount} min="1" onChange={(e) => setChargeRows((p) => p.map((x, idx) => (idx === i ? { ...x, amount: e.target.value } : x)))} />
                     <button type="button" className="btn btn-outline-danger" onClick={() => setChargeRows((p) => p.filter((_, idx) => idx !== i))}><i className="fa-solid fa-trash"></i></button>
                   </div>
@@ -372,6 +506,7 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
       {/* TAB 3 */}
       {tab === 3 && (
         <div className="glass-card w-100">
+          {d3.restored && <DraftNotice onClear={resetT3} />}
           <h5 className="text-center text-info mb-4">3. รายงานประจำวันสิบเวร</h5>
           <div className="row g-3">
             <div className="col-12"><label className="form-label small text-white-50">วันที่เวลาที่รายงาน</label><div className="d-flex gap-2"><ThaiDateInput type="datetime-local" value={t3.reportDateTime} onChange={(v) => s3('reportDateTime', v)} /><button type="button" className="btn btn-outline-info" onClick={() => s3('reportDateTime', getNowDateTimeLocal())}><i className="fa-solid fa-clock-rotate-left"></i></button></div></div>
@@ -411,8 +546,27 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
                     <div className="col-3"><div className="small text-white-50">ว.42</div><h5 className="m-0">{summary.v42}</h5></div>
                     <div className="col-3"><div className="small text-white-50 text-warning">ว.20</div><h5 className="m-0 text-warning">{summary.v20}</h5></div>
                   </div>
+                  {/* requirement ข้อ 15 — สองยอดนี้เป็นส่วนย่อยของ ว.20 ไม่ใช่ยอดเพิ่ม */}
+                  <div className="row text-center mb-3">
+                    <div className="col-6"><div className="small text-white-50">จับตามหมายจับ</div><h6 className="m-0 text-info">{summary.v20Warrant ?? 0} ราย</h6></div>
+                    <div className="col-6"><div className="small text-white-50">จับซึ่งหน้า</div><h6 className="m-0 text-danger">{summary.v20Flagrante ?? 0} ราย</h6></div>
+                  </div>
                   <div className="small text-white-50">สรุปข้อหา ว.20:</div>
                   <pre className="text-white bg-dark p-2 rounded" style={{ whiteSpace: 'pre-wrap', fontFamily: 'Kanit', fontSize: '0.9rem' }}>{summary.chargesText || 'ไม่มีข้อมูลข้อหา'}</pre>
+                  <button
+                    type="button"
+                    className="btn btn-outline-info w-100 mt-2"
+                    onClick={() => copyWithToast(buildV20CopyText({
+                      stationName: st.f,
+                      dateText: formatPreviewDate(t4.reportDateTime),
+                      warrant: summary.v20Warrant ?? 0,
+                      flagrante: summary.v20Flagrante ?? 0,
+                      v20: summary.v20 ?? 0,
+                      chargesText: summary.chargesText,
+                    }))}
+                  >
+                    <i className="fa-solid fa-copy"></i> คัดลอกข้อความสรุป ว.20
+                  </button>
                   <button type="button" className="btn-primary-custom mt-2" onClick={submitT4}><i className="fa-solid fa-paper-plane"></i> ยืนยันส่งสรุปผลเข้า LINE</button>
                 </div>
               </div>
@@ -424,6 +578,7 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
       {/* TAB 5 */}
       {tab === 5 && (
         <div className="glass-card w-100">
+          {d5.restored && <DraftNotice onClear={resetT5} />}
           <h5 className="text-center text-info mb-4">5. รายงาน ว.4 อื่นๆ</h5>
           <div className="row g-3">
             <div className="col-12 col-md-6"><label className="form-label small text-white-50">วันที่เวลาที่รายงาน</label><div className="d-flex gap-2"><ThaiDateInput type="datetime-local" value={t5.reportDateTime} onChange={(v) => s5('reportDateTime', v)} /><button type="button" className="btn btn-outline-info" onClick={() => s5('reportDateTime', getNowDateTimeLocal())}><i className="fa-solid fa-clock-rotate-left"></i></button></div></div>

@@ -63,7 +63,7 @@ export const filesToBase64 = (
   );
 };
 
-const copyTextToClipboard = async (text: string): Promise<boolean> => {
+export const copyTextToClipboard = async (text: string): Promise<boolean> => {
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text);
@@ -149,4 +149,56 @@ export const showLineCopyResult = async (
 
 export const loadingModal = (title = 'กำลังบันทึกข้อมูล...') => {
   Swal.fire({ title, allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+};
+
+/**
+ * คัดลอกข้อความแล้วขึ้น toast แจ้งผล (requirement ข้อ 15)
+ *
+ * ใช้ toast ไม่ใช่ modal เพราะการคัดลอกเป็นงานเล็กที่ทำซ้ำได้ modal ที่ต้องกดปิด
+ * ทุกครั้งจะน่ารำคาญกว่าประโยชน์ที่ได้
+ *
+ * แจ้งตอนล้มเหลวด้วยเสมอ ไม่ใช่เงียบ ๆ เพราะ `navigator.clipboard` ถูกบล็อกได้
+ * เมื่อหน้าไม่ได้อยู่บน https หรือผู้ใช้ไม่ได้ให้สิทธิ์ ถ้าไม่บอก เจ้าหน้าที่จะไปวางใน
+ * LINE แล้วได้ข้อความเก่าของคลิปบอร์ดโดยไม่รู้ตัว
+ */
+export const copyWithToast = async (text: string): Promise<boolean> => {
+  const ok = await copyTextToClipboard(text);
+  Swal.fire({
+    toast: true,
+    position: 'top-end',
+    icon: ok ? 'success' : 'error',
+    title: ok ? 'คัดลอกข้อความสำเร็จ' : 'คัดลอกไม่สำเร็จ กรุณาเลือกข้อความแล้วคัดลอกเอง',
+    showConfirmButton: false,
+    timer: ok ? 2000 : 4000,
+    timerProgressBar: true,
+  });
+  return ok;
+};
+
+/**
+ * ข้อความสรุป ว.20 สำหรับวางในกลุ่ม LINE (requirement ข้อ 15)
+ *
+ * รูปแบบตามที่หน่วยกำหนดไว้ใน requirement **ยกเว้นบรรทัดพิกัด** ซึ่งตัดออกเพราะ
+ * สรุปนี้เป็นยอดรวมของทั้งสถานีตลอดช่วงวันที่ ไม่ได้ผูกกับจุดใดจุดหนึ่ง การใส่พิกัด
+ * ปลอมหรือเว้นวงเล็บว่างไว้จะทำให้คนอ่านเข้าใจผิดว่าเป็นพิกัดจริง
+ */
+export const buildV20CopyText = (o: {
+  stationName: string;
+  dateText: string;
+  warrant: number;
+  flagrante: number;
+  v20: number;
+  chargesText?: string;
+}): string => {
+  const lines = [
+    '📢 รายงานผลการปฏิบัติ ว.20',
+    `🗓️ วันที่: ${o.dateText} | หน่วย: ${o.stationName}`,
+    `⚖️ จับกุมตามหมายจับ: ${o.warrant} ราย`,
+    `🚨 จับกุมซึ่งหน้า: ${o.flagrante} ราย`,
+    `📊 ยอด ว.20 รวม: ${o.v20} ราย`,
+  ];
+  if (o.chargesText && o.chargesText.trim()) {
+    lines.push('', '📋 แบ่งตามข้อหา', o.chargesText.trim());
+  }
+  return lines.join('\n');
 };

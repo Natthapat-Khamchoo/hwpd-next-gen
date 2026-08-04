@@ -53,6 +53,9 @@ GENERAL_TABLES: List[Tuple[str, str, str]] = [
     ("tb_Accidents", "รายงานอุบัติเหตุ", "fa-car-burst"),
     ("tb_RoyalGuard", "รายงานรับเสด็จ", "fa-shield-halved"),
     ("tb_OtherDuties", "ว.4 จิตอาสา/ช่วยเหลือ", "fa-hands-holding-child"),
+    # requirement ข้อ 8 — เข้าคิวอนุมัติเหมือนรายงานตัวอื่น เพราะเป็นผลการปฏิบัติ
+    # ที่ ฝอ. ต้องตรวจก่อนนับเป็นผลงาน ต่างจาก tb_Documents เดิมที่เป็นงานสารบรรณ
+    ("tb_OverweightTrucks", "ตรวจรถบรรทุกน้ำหนักเกิน", "fa-truck-ramp-box"),
 ]
 FUEL_TABLES: List[Tuple[str, str, str]] = [
     ("tb_FuelOil", "น้ำมันรถยนต์", "fa-gas-pump"),
@@ -296,6 +299,10 @@ def _blank_totals() -> Dict[str, int]:
         "royalGuard": 0,
         "accident": 0,
         "mission": 0,
+        # requirement ข้อ 15 — แยกยอด ว.20 ตามชนิดการจับกุม สองค่านี้เป็นส่วนย่อยของ
+        # "v20" ไม่ใช่ยอดเพิ่ม การเอาไปบวกกับ v20 อีกรอบจะทำให้ยอดเบิ้ล
+        "v20Warrant": 0,
+        "v20Flagrante": 0,
     }
 
 
@@ -399,6 +406,8 @@ def _station_summary(spreadsheet_id: str, station_id: str, start: str, end: str)
                 totals["v43"] += _to_int(record.get("ยอด ว.43"))
                 totals["v42"] += _to_int(record.get("ยอด ว.42"))
                 totals["v20"] += _to_int(record.get("ยอด ว.20"))
+                totals["v20Warrant"] += _to_int(record.get("จับกุมตามหมายจับ (ราย)"))
+                totals["v20Flagrante"] += _to_int(record.get("จับกุมซึ่งหน้า (ราย)"))
                 service = _to_int(record.get("ยอด บริการ"))
                 totals["service"] += service
                 day(record)["service"] += service
@@ -660,6 +669,137 @@ def find_record(station_id: str, table_name: str, record_id: str) -> Dict[str, A
             record["_spreadsheetId"] = spreadsheet_id
             return record
     raise RecordNotFound(f"ไม่พบรายการ {record_id} ใน {table_name} อาจถูกลบไปแล้ว")
+
+
+# คอลัมน์ที่เก็บลิงก์ไฟล์แนบ ชื่อไม่ตรงกันทุกตารางเพราะชีตเดิมตั้งกันคนละแบบ
+ATTACHMENT_COLUMNS = ("Attachment_Folder", "Attachment_Folde", "FileUrl", "Doc_File_Url", "Slip_Attachment_Folder")
+
+# คอลัมน์ระบบที่ไม่ต้องเอาไปโชว์ในหน้าตรวจรายละเอียด เพราะเป็นข้อมูลภายในของตาราง
+# ไม่ใช่เนื้อรายงานที่แอดมินต้องอ่านก่อนอนุมัติ
+_DETAIL_HIDDEN = {COL_TIMESTAMP, COL_LAST_UPDATE, COL_IS_ACTIVE, "_row", "_spreadsheetId"}
+
+
+def _looks_like_link(value: str) -> bool:
+    return str(value or "").strip().startswith(("http://", "https://"))
+
+
+def record_detail(station_id: str, table_name: str, record_id: str) -> Dict[str, Any]:
+    """
+    รายละเอียดเต็มของรายการหนึ่งใบ สำหรับหน้าตรวจก่อนอนุมัติ (requirement ข้อ 9)
+
+    คืน **ทุกช่องที่มีค่า** พร้อมชื่อคอลัมน์ตามชีต ไม่ได้เลือกเฉพาะบางช่อง เพราะแต่ละ
+    ตารางมีฟิลด์คนละชุดและ requirement ขอให้แอดมินเห็นครบก่อนกดอนุมัติ ช่องว่างถูก
+    ตัดออกเพื่อไม่ให้ต้องเลื่อนผ่านช่องเปล่าสิบกว่าช่องกว่าจะเจอเนื้อรายงาน
+
+    `attachments` แยกออกมาให้หน้าเว็บทำเป็นปุ่มเปิดดูได้ทันที ไม่ต้องให้แอดมินคัดลอก
+    ลิงก์ไปเปิดเอง ซึ่งเป็นขั้นตอนที่คนจะข้ามแล้วกดอนุมัติโดยไม่ได้ดูของจริง
+    """
+    record = find_record(station_id, table_name, record_id)
+
+    fields: List[Dict[str, str]] = []
+    attachments: List[str] = []
+
+    for column in get_columns(table_name):
+        value = str(record.get(column, "") or "").strip()
+        if not value:
+            continue
+        if column in ATTACHMENT_COLUMNS:
+            if _looks_like_link(value):
+                attachments.append(value)
+            continue
+        if column in _DETAIL_HIDDEN:
+            continue
+        fields.append({"label": column, "value": value})
+
+    return {
+        "recordId": record.get(COL_RECORD_ID, ""),
+        "table": table_name,
+        "status": record.get(COL_STATUS, ""),
+        "actionBy": record.get(COL_ACTION_BY, ""),
+        "station": record.get(COL_STATION_ID, ""),
+        "unit": record.get(COL_UNIT_ID, ""),
+        "date": record.get(COL_ACTUAL_DATE, ""),
+        "timestamp": _format_timestamp(str(record.get(COL_TIMESTAMP, "")))[0],
+        "fields": fields,
+        "attachments": attachments,
+    }
+
+
+# ช่องที่เจ้าของรายการห้ามแก้เอง — คอลัมน์ระบบทั้งหมดบวกสังกัด
+#
+# ปล่อยให้แก้ Data_StationID ได้เท่ากับปล่อยให้ย้ายรายงานข้ามสถานี ส่วน Sys_Status
+# ถ้าแก้ได้ก็เท่ากับอนุมัติตัวเอง สองอย่างนี้อันตรายกว่าที่ฟีเจอร์นี้คุ้มจะเสี่ยง
+PROTECTED_COLUMNS = {
+    COL_RECORD_ID,
+    COL_TIMESTAMP,
+    COL_LAST_UPDATE,
+    COL_ACTION_BY,
+    COL_STATUS,
+    COL_IS_ACTIVE,
+    COL_STATION_ID,
+}
+
+
+class NotEditable(PermissionError):
+    """รายการนี้แก้ไม่ได้แล้ว (ถูกอนุมัติหรือยกเลิกไปแล้ว)"""
+
+
+def update_record(
+    record: Dict[str, Any],
+    table_name: str,
+    updates: Dict[str, Any],
+) -> Dict[str, Dict[str, Any]]:
+    """
+    แก้ค่าบางช่องของรายการที่ยังรออนุมัติ คืนส่วนต่างในรูป {ช่อง: {"from":..,"to":..}}
+    (requirement ข้อ 10)
+
+    **แก้ได้เฉพาะรายการที่ยังเป็น Pending** เมื่ออนุมัติแล้วตัวเลขถูกนับเข้ารายงาน
+    ของหน่วยไปแล้ว การแก้ย้อนหลังจะทำให้ยอดที่ส่งขึ้นไปกับยอดในระบบไม่ตรงกัน
+    โดยไม่มีใครรู้ ถ้าต้องแก้จริงต้องยกเลิกแล้วส่งใหม่ ซึ่งเห็นร่องรอยชัดกว่า
+
+    เขียนเฉพาะช่องที่ค่าเปลี่ยนจริง ทีละช่วงใน batch เดียว ไม่เขียนทับทั้งแถว
+    เพราะการอ่านมาแล้วเขียนกลับทั้งแถวจะทับค่าที่คนอื่นเพิ่งแก้ระหว่างนั้น
+    """
+    if record.get(COL_STATUS, "") != STATUS_PENDING:
+        raise NotEditable(
+            f"แก้ไขได้เฉพาะรายการที่ยังรออนุมัติ (สถานะปัจจุบัน: {record.get(COL_STATUS) or 'ไม่ทราบ'})"
+        )
+
+    columns = get_columns(table_name)
+    known = set(columns)
+
+    diff: Dict[str, Dict[str, Any]] = {}
+    ranges: List[Dict[str, Any]] = []
+    line = record["_row"]
+
+    for column, new_value in updates.items():
+        if column not in known:
+            raise ValueError(f'ไม่รู้จักคอลัมน์ "{column}" ในตาราง {table_name}')
+        if column in PROTECTED_COLUMNS:
+            raise PermissionError(f'ช่อง "{column}" แก้ไขผ่านทางนี้ไม่ได้')
+
+        old_value = str(record.get(column, "") or "")
+        text = "" if new_value is None else str(new_value)
+        if text == old_value:
+            continue
+
+        letter = _column_letter(columns.index(column))
+        ranges.append({"range": f"{letter}{line}", "values": [[text]]})
+        diff[column] = {"from": old_value, "to": text}
+
+    if not diff:
+        return {}
+
+    ranges.append({
+        "range": f"{_column_letter(columns.index(COL_LAST_UPDATE))}{line}",
+        "values": [[datetime.now().isoformat()]],
+    })
+
+    worksheet = sheets_service.get_worksheet(record["_spreadsheetId"], table_name, ensure=False)
+    sheets_service.with_backoff(worksheet.batch_update, ranges, value_input_option="RAW")
+    invalidate_cache(record["_spreadsheetId"], table_name)
+    logger.info("แก้ไข %s ใน %s จำนวน %d ช่อง", record.get(COL_RECORD_ID, ""), table_name, len(diff))
+    return diff
 
 
 def set_status(record: Dict[str, Any], table_name: str, status: str, active: bool) -> None:

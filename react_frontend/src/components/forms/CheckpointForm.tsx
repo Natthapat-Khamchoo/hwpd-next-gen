@@ -2,7 +2,10 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { useStationData } from '../../hooks/useStationData';
+import { useFormDraft } from '../../hooks/useFormDraft';
 import { FormShell } from './FormShell';
+import { DraftNotice } from './DraftNotice';
+import { LocationPickerButton } from '../common/LocationPickerButton';
 import { ThaiDateInput } from './ThaiDateInput';
 import {
   getNowDateTimeLocal,
@@ -23,7 +26,7 @@ const LOCATIONS = [
 export const CheckpointForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { user } = useAuth();
   const { units, users, phoneMap } = useStationData();
-  const [f, setF] = useState({
+  const blank = {
     reportDateTime: getNowDateTimeLocal(),
     unitId: '',
     dutyOfficer: '',
@@ -31,9 +34,33 @@ export const CheckpointForm: React.FC<{ onBack: () => void }> = ({ onBack }) => 
     carNumber: '',
     location: '',
     locationOther: '',
-  });
+    lat: '',
+    lng: '',
+  };
+  const [f, setF, draft] = useFormDraft('checkpoint', blank, user?.username);
   const [files, setFiles] = useState<FileList | null>(null);
   const set = (k: string, v: string) => setF((p) => ({ ...p, [k]: v }));
+
+  const resetForm = () => {
+    draft.clear();
+    setF({ ...blank, reportDateTime: getNowDateTimeLocal() });
+  };
+
+  const getLocation = () => {
+    if (!navigator.geolocation) {
+      Swal.fire('แจ้งเตือน', 'เบราว์เซอร์ไม่รองรับ GPS', 'warning');
+      return;
+    }
+    loadingModal('กำลังดึงพิกัด...');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setF((p) => ({ ...p, lat: String(pos.coords.latitude), lng: String(pos.coords.longitude) }));
+        Swal.close();
+      },
+      () => Swal.fire('ผิดพลาด', 'ดึงพิกัดไม่สำเร็จ กรุณาปักหมุดบนแผนที่แทน', 'error'),
+      { enableHighAccuracy: true },
+    );
+  };
 
   const submit = async () => {
     if (!f.unitId || !f.dutyOfficer || !f.totalPersonnel || !f.carNumber || !f.location) {
@@ -42,6 +69,12 @@ export const CheckpointForm: React.FC<{ onBack: () => void }> = ({ onBack }) => 
     }
     if (f.location === 'อื่นๆ' && !f.locationOther) {
       Swal.fire('ข้อมูลไม่ครบ', 'กรุณาระบุสถานที่ตั้งด่าน', 'warning');
+      return;
+    }
+    // ข้อ 16 บังคับกรอกพิกัด ถ้าปล่อยว่างได้ ด่านจะขึ้นแผนที่ไม่ครบและสถิติเชิงพื้นที่
+    // จะอ่านไม่ได้ตั้งแต่ต้น
+    if (!f.lat || !f.lng) {
+      Swal.fire('ยังไม่ได้ระบุพิกัด', 'กรุณากดปักหมุดบนแผนที่ หรือดึงพิกัดปัจจุบันของจุดตั้งด่าน', 'warning');
       return;
     }
     const st = getFrontendStationData(user?.station);
@@ -61,6 +94,8 @@ export const CheckpointForm: React.FC<{ onBack: () => void }> = ({ onBack }) => 
     const attachments = await filesToBase64(files);
     const res = await api.submitReport('checkpoint', payload, user?.token, { files: attachments });
     if (res.status === 'success') {
+      // ล้างร่างทันทีที่บันทึกสำเร็จ ไม่งั้นค่าที่ส่งไปแล้วจะกลับมาอีกรอบตอนเปิดฟอร์มใหม่
+      draft.clear();
       await showLineCopyResult(res.message || 'บันทึกรายงานด่านสำเร็จ', res.lineText || previewText, copied);
       onBack();
     } else {
@@ -71,6 +106,7 @@ export const CheckpointForm: React.FC<{ onBack: () => void }> = ({ onBack }) => 
   return (
     <FormShell title="รายงานด่าน จุดตรวจ จุดสกัด" onBack={onBack} backLabel="กลับ">
       <div className="glass-card w-100">
+        {draft.restored && <DraftNotice onClear={resetForm} />}
         <div className="row g-3">
           <div className="col-12 col-md-6">
             <label className="form-label small text-white-50">วันที่เวลาที่รายงาน</label>
@@ -132,6 +168,30 @@ export const CheckpointForm: React.FC<{ onBack: () => void }> = ({ onBack }) => 
               <input type="text" className="form-control border-info" placeholder="กรอกสถานที่" value={f.locationOther} onChange={(e) => set('locationOther', e.target.value)} />
             </div>
           )}
+
+          <div className="col-12"><hr className="border-secondary" /></div>
+          <div className="col-12 col-md-4">
+            <label className="form-label small text-white-50">ละติจูด *</label>
+            <input type="text" className="form-control" placeholder="เช่น 16.8765" value={f.lat} onChange={(e) => set('lat', e.target.value)} required />
+          </div>
+          <div className="col-12 col-md-4">
+            <label className="form-label small text-white-50">ลองจิจูด *</label>
+            <input type="text" className="form-control" placeholder="เช่น 98.5432" value={f.lng} onChange={(e) => set('lng', e.target.value)} required />
+          </div>
+          <div className="col-6 col-md-2 d-flex align-items-end">
+            <button type="button" className="btn btn-outline-success w-100" onClick={getLocation}>
+              <i className="fa-solid fa-location-crosshairs"></i> ดึงพิกัด
+            </button>
+          </div>
+          <div className="col-6 col-md-2 d-flex align-items-end">
+            <LocationPickerButton
+              lat={f.lat}
+              lng={f.lng}
+              title="ปักหมุดจุดตั้งด่าน"
+              label="ปักหมุด"
+              onSelect={(lat, lng) => setF((p) => ({ ...p, lat, lng }))}
+            />
+          </div>
 
           <div className="col-12">
             <label className="form-label small text-white-50">แนบภาพประกอบด่าน (เลือกได้หลายไฟล์)</label>

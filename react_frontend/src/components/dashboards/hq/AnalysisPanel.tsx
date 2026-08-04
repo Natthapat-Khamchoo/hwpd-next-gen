@@ -30,6 +30,10 @@ export const AnalysisPanel: React.FC<Props> = ({ station, start, end, stations }
   const { user } = useAuth();
   const [mode, setMode] = useState<'daily_charges' | 'arrests'>('daily_charges');
   const [chargeNames, setChargeNames] = useState<string[]>([]);
+  // requirement ข้อ 6 — กรองสถิติตามฐานความผิด ทั้งรายข้อหาและทั้งกลุ่ม พ.ร.บ.
+  const [chargeGroups, setChargeGroups] = useState<{ group: string; charges: string[] }[]>([]);
+  const [groupFilter, setGroupFilter] = useState('');
+  const [search, setSearch] = useState('');
   const [arrestCats, setArrestCats] = useState<{ name: string; checked: boolean }[]>([]);
   const [picked, setPicked] = useState<Record<string, Set<string>>>({ daily_charges: new Set(), arrests: new Set() });
   const [data, setData] = useState<Breakdown | null>(null);
@@ -44,9 +48,10 @@ export const AnalysisPanel: React.FC<Props> = ({ station, start, end, stations }
 
   useEffect(() => {
     // ข้อหาโหลดจากตารางอ้างอิงเดียวกับที่ฟอร์มใช้ จะได้ไม่ต้องมาไล่แก้สองที่เวลาเพิ่มข้อหา
-    api.getChargeDropdown(user?.token).then((list) => {
-      const names = (list || []).filter(Boolean);
+    api.getChargeGroups(user?.token).then((res) => {
+      const names = (res.flat || []).filter(Boolean);
       setChargeNames(names);
+      setChargeGroups(res.groups || []);
       setPicked((p) => ({ ...p, daily_charges: new Set(names) }));
     });
     api.hqAnalysisCategories(user?.token).then((res) => {
@@ -57,7 +62,16 @@ export const AnalysisPanel: React.FC<Props> = ({ station, start, end, stations }
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, []);
 
-  const options = mode === 'daily_charges' ? chargeNames : arrestCats.map((c) => c.name);
+  const allOptions = mode === 'daily_charges' ? chargeNames : arrestCats.map((c) => c.name);
+
+  // ตัวกรองมีผลกับ "รายการที่เห็น" เท่านั้น ไม่ได้ล้างสิ่งที่ติ๊กไว้แล้ว เพราะการกรอง
+  // แล้วลบตัวเลือกทิ้งเงียบ ๆ จะทำให้ผลลัพธ์ไม่ตรงกับที่ผู้ใช้คิดว่าเลือกไว้
+  const groupNames = mode === 'daily_charges' && groupFilter
+    ? new Set(chargeGroups.find((g) => g.group === groupFilter)?.charges || [])
+    : null;
+  const options = allOptions.filter(
+    (name) => (!groupNames || groupNames.has(name)) && (!search || name.includes(search)),
+  );
   const selected = picked[mode];
 
   const toggle = (name: string) => {
@@ -67,8 +81,11 @@ export const AnalysisPanel: React.FC<Props> = ({ station, start, end, stations }
     setPicked({ ...picked, [mode]: next });
   };
 
+  /** เลือก/ยกเลิกเฉพาะรายการที่มองเห็นอยู่ตอนนี้ ไม่แตะรายการที่ถูกกรองออกไป */
   const toggleAll = () => {
-    const next = selected.size === options.length ? new Set<string>() : new Set(options);
+    const next = new Set(selected);
+    const allVisiblePicked = options.every((name) => next.has(name));
+    options.forEach((name) => (allVisiblePicked ? next.delete(name) : next.add(name)));
     setPicked({ ...picked, [mode]: next });
   };
 
@@ -168,8 +185,38 @@ export const AnalysisPanel: React.FC<Props> = ({ station, start, end, stations }
         </button>
       </div>
 
+      {mode === 'daily_charges' && (
+        <div className="row g-2 mb-2">
+          <div className="col-12 col-md-5">
+            <select className="form-select form-select-sm" value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)}>
+              <option value="">— ทุกกลุ่ม พ.ร.บ. —</option>
+              {chargeGroups.map((g) => (
+                <option key={g.group} value={g.group}>{g.group} ({g.charges.length})</option>
+              ))}
+            </select>
+          </div>
+          <div className="col-12 col-md-5">
+            <input
+              className="form-control form-control-sm"
+              placeholder="ค้นหาชื่อข้อหา..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="col-12 col-md-2">
+            <button
+              className="btn btn-sm btn-outline-secondary w-100"
+              onClick={() => { setGroupFilter(''); setSearch(''); }}
+              disabled={!groupFilter && !search}
+            >
+              ล้างตัวกรอง
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="d-flex justify-content-between align-items-center mb-2">
-        <label className="text-info small fw-bold">คลิกเลือกรายการที่ต้องการชำแหละข้อมูล ({selected.size}/{options.length}):</label>
+        <label className="text-info small fw-bold">คลิกเลือกรายการที่ต้องการชำแหละข้อมูล (เลือกไว้ {selected.size} · แสดง {options.length}/{allOptions.length}):</label>
         <button className="btn btn-sm btn-outline-info fw-bold" onClick={toggleAll}>
           <i className="fa-solid fa-check-double"></i> เลือกทั้งหมด / ยกเลิก
         </button>
@@ -189,7 +236,9 @@ export const AnalysisPanel: React.FC<Props> = ({ station, start, end, stations }
             ))}
           </div>
         ) : (
-          <div className="text-white-50 small">กำลังโหลดรายการ...</div>
+          <div className="text-white-50 small">
+            {allOptions.length ? 'ไม่มีข้อหาที่ตรงกับตัวกรอง' : 'กำลังโหลดรายการ...'}
+          </div>
         )}
       </div>
 

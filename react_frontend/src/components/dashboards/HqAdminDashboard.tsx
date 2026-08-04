@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { getNowDateLocal } from '../../utils/formHelpers';
 import { ReactApexChart, vBarOptions } from './chartHelpers';
+import { ScopeNotice } from './ScopeNotice';
 import { DashboardLayout, SideItem } from './DashboardLayout';
 import { UserDirectory } from './UserDirectory';
 import { ReferenceTableEditor } from './ReferenceTableEditor';
@@ -28,13 +29,15 @@ export const HqAdminDashboard: React.FC = () => {
   const [start, setStart] = useState(recentStart());
   const [end, setEnd] = useState(getNowDateLocal());
   const [data, setData] = useState<any | null>(null);
+  // requirement ข้อ 3 — ค่าเริ่มต้นนับเฉพาะ กก.8 กดสลับไปดูข้อมูลสำรองของ กก.1-7 ได้
+  const [includeArchived, setIncludeArchived] = useState(false);
   const [exportable, setExportable] = useState<{ reportKey: string; title: string; cadence: string }[]>([]);
 
   const load = async () => {
-    const res = await api.getNationalSummary(start, end, user?.token);
+    const res = await api.getNationalSummary(start, end, user?.token, includeArchived);
     if (res.status === 'success') setData(res.data);
   };
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [includeArchived]);
   useEffect(() => { api.getExportableReports(user?.token).then(setExportable); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   const ranking = useMemo(() => (data ? [...data.byDivision].sort((a, b) => b.arrestsCount - a.arrestsCount) : []), [data]);
@@ -78,7 +81,13 @@ export const HqAdminDashboard: React.FC = () => {
           )}
         </div>
 
-        {view === 'compare' && data && (
+        {view === 'compare' && data && (<>
+        <ScopeNotice
+          dashboardDivision={data?.dashboardDivision}
+          archivedDivisions={data?.archivedDivisions}
+          includesArchived={data?.includesArchived}
+          onToggleArchived={() => setIncludeArchived((v) => !v)}
+        />
           <div className="row g-4">
             <div className="col-12 col-lg-7"><div className="glass-card h-100"><h5 className="text-white mb-3"><i className="fa-solid fa-chart-column" style={{ color: '#c084fc' }}></i> เปรียบเทียบผลปฏิบัติ 8 กองกำกับการ</h5>
               <ReactApexChart type="bar" height={340} options={vBarOptions(ranking.map((d) => d.divName), ['#a855f7', '#ef4444', '#0dcaf0'])} series={[{ name: 'คดีอาญา', data: ranking.map((d) => d.arrestsCount) }, { name: 'อุบัติเหตุ', data: ranking.map((d) => d.accCount) }, { name: 'คดีจราจร', data: ranking.map((d) => d.v20Count) }]} /></div></div>
@@ -86,7 +95,7 @@ export const HqAdminDashboard: React.FC = () => {
               <div className="table-responsive"><table className="table table-sc table-bordered text-center align-middle"><thead><tr><th>#</th><th className="text-start">กก.</th><th>คดีอาญา</th><th>คดีจราจร</th></tr></thead><tbody>{ranking.map((d, i) => <tr key={d.div}><td className="fw-bold">{i + 1}</td><td className="text-start">{d.divName}</td><td>{d.arrestsCount}</td><td>{d.v20Count}</td></tr>)}</tbody></table></div>
             </div></div>
           </div>
-        )}
+        </>)}
 
         {view === 'users' && <UserDirectory />}
         {view === 'charges' && <ReferenceTableEditor kind="charges" />}

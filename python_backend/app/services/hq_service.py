@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.core.config import (
     MASTER_SHEET_ID,
+    check_station_match,
     get_division_stations,
     get_station_config,
     get_station_data,
@@ -386,10 +387,27 @@ def manpower_overview(station_id: str) -> Dict[str, Dict[str, Any]]:
     return summary
 
 
+class OutOfScope(PermissionError):
+    """แก้ข้อมูลของคนที่อยู่นอกขอบเขตที่บัญชีนั้นดูแล"""
+
+
 def update_manpower_status(
-    username: str, help_station: str, start: str, end: str, remark: str
+    username: str,
+    help_station: str,
+    start: str,
+    end: str,
+    remark: str,
+    allowed_station: str = "",
 ) -> str:
-    """ตั้ง/ยกเลิกสถานะช่วยราชการของเจ้าหน้าที่หนึ่งคน คืนชื่อที่แก้"""
+    """
+    ตั้ง/ยกเลิกสถานะช่วยราชการของเจ้าหน้าที่หนึ่งคน คืนชื่อที่แก้
+
+    `allowed_station` คือสถานีของคนที่กดแก้ ถ้าส่งมาจะบังคับว่าเจ้าหน้าที่ที่ถูกแก้
+    ต้องอยู่ในขอบเขตเดียวกัน ไม่งั้นขว้าง `OutOfScope`
+
+    ตารางนี้อยู่ในชีตกลางร่วมกันทั้ง 8 กก. และเดิมค้นด้วย Username อย่างเดียว
+    ฝอ.กก.5 จึงแก้สถานะของเจ้าหน้าที่ใน กก.1 ได้ ทั้งที่ไม่ได้ดูแลหน่วยนั้น
+    """
     target = str(help_station or "").strip()
     if target and target not in get_station_config():
         raise ValueError(f'รหัสสถานีไม่ถูกต้อง: "{target}"')
@@ -398,6 +416,13 @@ def update_manpower_status(
     for record in query_service.read_rows(MASTER_SHEET_ID, USERS_TABLE):
         if str(record.get("Username", "")).strip() != str(username).strip():
             continue
+
+        owner_station = str(record.get("Station_ID", "")).strip()
+        if allowed_station and not check_station_match(allowed_station, owner_station):
+            raise OutOfScope(
+                f"เจ้าหน้าที่รายนี้สังกัดสถานี {owner_station} ซึ่งอยู่นอกขอบเขตที่ท่านดูแล"
+            )
+
         row = record["_row"]
         sheets_service.with_backoff(
             worksheet.batch_update,

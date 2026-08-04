@@ -6,6 +6,7 @@ const ReactApexChart = ((ReactApexChartImport as any).default ?? ReactApexChartI
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { getNowDateLocal } from '../../utils/formHelpers';
+import { ScopeNotice } from './ScopeNotice';
 import { DashboardLayout } from './DashboardLayout';
 import { DeepSearchModal } from './DeepSearchModal';
 import { InvestDashboardPanel } from './InvestDashboardPanel';
@@ -49,11 +50,13 @@ export const SuperCommanderDashboard: React.FC<{ onViewDivision?: (station: stri
   const [start, setStart] = useState(recentStart());
   const [end, setEnd] = useState(getNowDateLocal());
   const [data, setData] = useState<any | null>(null);
+  // requirement ข้อ 3 — ค่าเริ่มต้นนับเฉพาะ กก.8 กดสลับไปดูข้อมูลสำรองของ กก.1-7 ได้
+  const [includeArchived, setIncludeArchived] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
     setLoading(true);
-    const res = await api.getNationalSummary(start, end, user?.token);
+    const res = await api.getNationalSummary(start, end, user?.token, includeArchived);
     setLoading(false);
     if (res.status === 'success') setData(res.data);
     else Swal.fire('เกิดข้อผิดพลาด', res.message || 'โหลดข้อมูลไม่สำเร็จ', 'error');
@@ -61,7 +64,7 @@ export const SuperCommanderDashboard: React.FC<{ onViewDivision?: (station: stri
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [includeArchived]);
 
   const ranking = useMemo(() => (data ? [...data.byDivision].sort((a, b) => b.arrestsCount - a.arrestsCount) : []), [data]);
   const totals = data?.totals || {};
@@ -146,6 +149,13 @@ export const SuperCommanderDashboard: React.FC<{ onViewDivision?: (station: stri
             <button className="btn btn-outline-warning btn-sm" onClick={order}><i className="fa-solid fa-bullhorn"></i> สั่งการ</button>
           </div>
         </div>
+
+        <ScopeNotice
+          dashboardDivision={data?.dashboardDivision}
+          archivedDivisions={data?.archivedDivisions}
+          includesArchived={data?.includesArchived}
+          onToggleArchived={() => setIncludeArchived((v) => !v)}
+        />
 
         {/* KPIs */}
         <div className="row g-3 mb-4">
