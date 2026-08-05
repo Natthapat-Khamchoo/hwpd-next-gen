@@ -7,7 +7,18 @@ import React from 'react';
  * แสดงตารางหรือบอกว่าไม่มีข้อมูล การเขียนซ้ำหกรอบทำให้แต่ละหน้าค่อย ๆ เพี้ยนจากกัน
  */
 
-export const today = () => new Date().toISOString().split('T')[0];
+/**
+ * วันที่วันนี้ตามเวลาไทย
+ *
+ * ห้ามใช้ `toISOString()` ตรง ๆ เพราะมันคืนวันที่ตาม UTC ไทยเร็วกว่า UTC เจ็ดชั่วโมง
+ * ทุกเช้าตั้งแต่เที่ยงคืนถึงเจ็ดโมง ค่านี้จึงคืน "เมื่อวาน" ผลคือช่วงวันที่ตั้งต้นของ
+ * ทุกหน้า ฝอ.กก. จบที่เมื่อวาน แล้วรายงานที่เวรดึกส่งเข้ามาระหว่างนั้นหายไปจากหน้าจอ
+ * ทั้งที่ลงชีตเรียบร้อยแล้ว — ช่วงเวลาที่พังคือช่วงที่เวรดึกทำงานพอดี
+ */
+export const today = () => {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+};
 
 /**
  * วันเริ่มต้นของช่วงวันที่ตั้งต้น = ย้อนหลัง 30 วัน
@@ -19,9 +30,9 @@ export const today = () => new Date().toISOString().split('T')[0];
 export const recentStart = () => {
   const d = new Date();
   d.setDate(d.getDate() - 29);
-  return d.toISOString().split('T')[0];
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
 };
-export const currentMonth = () => new Date().toISOString().slice(0, 7);
+export const currentMonth = () => today().slice(0, 7);
 
 export const num = (value: unknown): string =>
   Number(value || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 });
