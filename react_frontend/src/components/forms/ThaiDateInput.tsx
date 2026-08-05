@@ -32,6 +32,8 @@ export const ThaiDateInput: React.FC<Props> = ({ type = 'date', value, onChange,
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const desktop = useRef(isDesktop());
+  // ค่าล่าสุดที่ยัดเข้า flatpickr ไปแล้ว ใช้ตัดสินว่าต้องสั่ง setDate อีกไหม
+  const pushed = useRef(value);
 
   useEffect(() => {
     if (!desktop.current || !ref.current) return;
@@ -56,7 +58,7 @@ export const ThaiDateInput: React.FC<Props> = ({ type = 'date', value, onChange,
       altFormat: isDateTime ? 'th-datetime' : 'th-date',
       formatDate: thaiFormat,
       defaultDate: value || undefined,
-      onChange: (_sel, dateStr) => onChangeRef.current(dateStr),
+      onChange: (_sel, dateStr) => { pushed.current = dateStr; onChangeRef.current(dateStr); },
       onReady: (_s, _d, inst) => { if (inst.currentYearElement) inst.currentYearElement.value = String(inst.currentYear + 543); },
       onYearChange: (_s, _d, inst) => { if (inst.currentYearElement) inst.currentYearElement.value = String(inst.currentYear + 543); },
       onMonthChange: (_s, _d, inst) => { if (inst.currentYearElement) inst.currentYearElement.value = String(inst.currentYear + 543); },
@@ -66,12 +68,22 @@ export const ThaiDateInput: React.FC<Props> = ({ type = 'date', value, onChange,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type]);
 
-  // Reflect external value changes (e.g. the "เวลาปัจจุบัน" button) into flatpickr.
+  /*
+   * ดันค่าที่ฟอร์มเปลี่ยนจากข้างนอกเข้า flatpickr เช่นปุ่ม "เวลาปัจจุบัน" หรือร่างที่กู้คืนมา
+   *
+   * ห้ามเทียบกับ `fp.input.value` เพราะ input ตัวนั้นเป็นของ React (มี defaultValue อยู่)
+   * React เขียนค่าใหม่ลงไปตั้งแต่ตอน commit ซึ่งเกิดก่อน effect นี้เสมอ พอถึงตรงนี้
+   * ค่าจึงเท่ากันแล้วทุกครั้ง setDate เลยไม่เคยถูกเรียก ผลคือช่อง ISO ที่ซ่อนอยู่
+   * เปลี่ยนตาม แต่ช่องภาษาไทยที่เจ้าหน้าที่มองเห็นค้างวันเดิม — เห็นวันผิดโดยไม่รู้ตัว
+   *
+   * จำค่าที่เพิ่งดันเข้าไปเองแทน ตัวที่ผู้ใช้เลือกจากปฏิทินก็อัปเดตค่านี้ด้วย
+   * จะได้ไม่สั่ง setDate ทับสิ่งที่ผู้ใช้เพิ่งเลือก
+   */
   useEffect(() => {
     const fp = fpRef.current;
-    if (desktop.current && fp && value !== fp.input.value) {
-      fp.setDate(value || '', false);
-    }
+    if (!desktop.current || !fp || value === pushed.current) return;
+    pushed.current = value;
+    fp.setDate(value || '', false);
   }, [value]);
 
   if (!desktop.current) {

@@ -56,12 +56,12 @@ export const MyHistoryForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <i className="fa-solid fa-circle-info text-info"></i> หากพบว่ากรอกข้อมูลผิดพลาด กด <b className="text-info">"ดู / แก้ไข"</b> เพื่อแก้เฉพาะช่องที่ผิด หรือกด <b className="text-danger">"ยกเลิก"</b> เพื่อกรอกใหม่ทั้งใบ — ทำได้ก่อนที่สิบเวรจะอนุมัติเท่านั้น
         </div>
         <div className="table-responsive">
-          <table className="table table-hover align-middle" style={{ color: '#fff' }}>
+          <table className="table table-history table-hover align-middle">
             <thead>
               <tr>
-                <th style={{ color: 'var(--neon-blue)' }}>เวลาส่งรายงาน</th>
-                <th style={{ color: 'var(--neon-blue)' }}>หมวดหมู่รายงาน</th>
-                <th className="text-center" style={{ color: 'var(--neon-blue)' }}>จัดการ</th>
+                <th>เวลาส่งรายงาน</th>
+                <th>หมวดหมู่รายงาน</th>
+                <th className="text-center">จัดการ</th>
               </tr>
             </thead>
             <tbody>

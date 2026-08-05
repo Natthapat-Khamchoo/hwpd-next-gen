@@ -282,6 +282,16 @@ body {
 .table-sc, .table-sc td { background: rgba(15, 23, 42, 0.8) !important; color: #fff !important; border-color: rgba(255,255,255,0.05); vertical-align: middle; }
 .table-sc th { background: rgba(30, 41, 59, 0.9) !important; color: #facc15 !important; border-bottom: 2px solid #facc15; font-weight: 400; }
 
+/*
+  ตารางประวัติการส่งของฉัน — ยกมาจาก <style> ใน form_my_history.html ของ Apps Script
+  ตรง ๆ ต้นฉบับเขียนกฎนี้ scope ไว้ที่ #formMyHistory ตอนย้ายมา React เลยหล่นหาย
+  พอไม่มีกฎนี้ Bootstrap ใส่พื้นขาวทึบให้ td แล้วตัวหนังสือสีขาวเลยหายไปทั้งตาราง
+*/
+.table-history { background-color: transparent !important; color: #fff !important; border-collapse: separate; border-spacing: 0; }
+.table-history thead th { background-color: rgba(0, 0, 0, 0.2) !important; color: #00f2ff !important; border-bottom: 2px solid rgba(0, 242, 255, 0.3) !important; border-top: none !important; }
+.table-history tbody td { background-color: transparent !important; border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important; color: #e2e8f0 !important; vertical-align: middle; }
+.table-history tbody tr:hover td { background-color: rgba(255, 255, 255, 0.02) !important; }
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
