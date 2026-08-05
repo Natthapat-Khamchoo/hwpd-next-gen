@@ -42,6 +42,9 @@ DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.docu
 # พนักงานสอบสวนโดยไม่ทันสังเกต ช่องว่างอ่านออกว่ายังไม่ได้กรอก แต่ตัวยึดอ่านไม่ออก
 PLACEHOLDER_RE = re.compile(r"<<[^<>\n]{1,60}>>")
 
+#: namespace ของ WordprocessingML ใช้เดินหา element เองเมื่อ python-docx มองไม่เห็น
+_W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+
 
 class TemplateMissing(RuntimeError):
     """ไม่พบไฟล์แม่แบบในรีโป"""
@@ -66,6 +69,19 @@ def _spans(text: str, runs) -> List[Tuple[int, int, int]]:
     return out
 
 
+def _all_runs(paragraph):
+    """
+    ทุก run ในย่อหน้า **รวมที่อยู่ใน `<w:hyperlink>`**
+
+    `paragraph.runs` ของ python-docx คืนเฉพาะ `<w:r>` ที่เป็นลูกตรงของย่อหน้า
+    run ที่อยู่ใต้ hyperlink จึงตกสำรวจทั้งหมด ตัวยึดที่เผลอไปอยู่บนข้อความที่เป็นลิงก์
+    (เช่นอีเมลของหน่วยงาน) จะไม่ถูกแทนที่ แล้วค้างอยู่ในเอกสารโดยไม่มีอะไรฟ้อง
+    """
+    from docx.text.run import Run
+
+    return [Run(element, paragraph) for element in paragraph._p.findall(".//" + _W + "r")]
+
+
 def _replace_in_paragraph(paragraph, values: Dict[str, str]) -> int:
     """
     แทนที่ตัวยึดทุกตัวในย่อหน้าเดียว คืนจำนวนที่แทนไป
@@ -73,7 +89,7 @@ def _replace_in_paragraph(paragraph, values: Dict[str, str]) -> int:
     ทำงานบนข้อความที่ต่อจากทุก run แล้วเขียนกลับเฉพาะ run ที่ทับช่วงของตัวยึด
     เพื่อไม่ให้รูปแบบของส่วนอื่นในย่อหน้าหาย
     """
-    runs = paragraph.runs
+    runs = _all_runs(paragraph)
     if not runs:
         return 0
 
@@ -227,10 +243,26 @@ def build_arrest_documents(
 
     results: List[Dict[str, Any]] = []
 
+    # ตัวยึดภาษาไทยของแม่แบบบันทึกจับกุม
+    #
+    # เพิ่มตอนอุดข้อความที่ค้างมาจากคดีเดิม (5 ส.ค. 2569) — แม่แบบเดิมเขียนชื่อ
+    # ผู้บังคับบัญชา พนักงานสอบสวน และวันเวลาของคดีหนึ่งไว้ตายตัว ทุกคดีที่ออกเอกสาร
+    # จึงได้ข้อมูลของคดีนั้นติดไปด้วย ตอนนี้เป็นช่องให้กรอกแล้ว
+    #
+    # ค่าตั้งต้นเลือกให้เป็นข้อความที่ใช้ได้จริงเมื่อฟอร์มไม่ได้ส่งมา ไม่ใช่ปล่อยว่าง
+    # เพราะช่องว่างกลางเอกสารราชการอ่านเหมือนกรอกตกมากกว่าเหมือนไม่มีข้อมูล
     main_values = {
         **shared,
         "ALL_SUSPECTS": form_data.get("allSuspectsText", ""),
         "CIRCUMSTANCES": form_data.get("circumstances", ""),
+        "ผู้บังคับบัญชา": form_data.get("commanders") or "ผู้บังคับบัญชาตามลำดับชั้น",
+        "รวมชุดจับกุม": form_data.get("arrestTeam") or form_data.get("respOfficer", ""),
+        "รายการของกลาง": form_data.get("items", ""),
+        "คำให้การผู้ต้องหา": form_data.get("suspectPlea") or "ให้การรับสารภาพตลอดข้อกล่าวหา",
+        "ส่งผู้ต้องหาให้กับพนักงานสอบสวนที่ใด": form_data.get("forwarding", ""),
+        "วันที่เป็นพศ": record_date,
+        # ขึ้นต้นด้วยคำว่า "สำนักงานอัยการ" อยู่ในแม่แบบแล้ว ตรงนี้จึงเติมแค่ส่วนที่เหลือ
+        "รายงานอัยการจังหวัดใด": form_data.get("prosecutorOffice") or "……………………",
     }
     data = render(MAIN_TEMPLATE, main_values)
     results.append({
