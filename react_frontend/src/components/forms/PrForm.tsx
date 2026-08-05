@@ -28,7 +28,12 @@ const NEWS_TYPES = [
   'อื่นๆ',
 ];
 
-export const PrForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+/**
+ * `station` ส่งมาเมื่อคนกรอกไม่ได้สังกัด กก. ที่ข่าวจะไปลง — ฝ่ายประชาสัมพันธ์ส่วนกลาง
+ * อยู่สถานี "00" ซึ่งไม่ใช่ กก. ไหนเลย ถ้าปล่อยให้ใช้สถานีของตัวเองตามปกติ ทุกใบจะตอบ
+ * 400 ว่า "กองกำกับการ 0 ยังไม่ได้ตั้งค่าฐานข้อมูล" ผู้ปฏิบัติในหน่วยไม่ต้องส่งค่านี้
+ */
+export const PrForm: React.FC<{ onBack: () => void; station?: string }> = ({ onBack, station }) => {
   const { user } = useAuth();
 
   const blank: Record<string, string> = {
@@ -100,7 +105,7 @@ export const PrForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       ...f,
       source: 'internal',
       unitId: user?.unit,
-      stationId: user?.station,
+      stationId: station || user?.station,
       actionBy: user?.username,
       // ส่งค่าที่วัดจากเบราว์เซอร์ไปด้วย backend ตรวจภาพซ้ำเองแล้วใช้ค่าของตัวเองแทน
       mediaMeta: media,

@@ -268,6 +268,7 @@ def main() -> int:
     hq = login("hq5")
     cmd = login("cmd5")
     hqadm = login("hqadm")
+    pr = login("pr01")
 
     print("== POST รายงาน ==")
     for label, comp, path, body in REPORT_CASES:
@@ -477,6 +478,14 @@ def main() -> int:
             ("รายงานข่าวค้าง (สิบเวรสถานี)", "PrPanel", "GET", f"/pr/report/pending?station={ST}", adm, None),
             ("สิบเวรดูข้ามไป กก. ไม่ได้", "PrPanel", "GET", "/pr/report/pending?station=50", adm, None, 403),
             ("ผู้ปฏิบัติเปิดรายงานค้างไม่ได้", "PrPanel", "GET", "/pr/report/pending", token, None, 403),
+            # ฝ่าย ปชส. ส่วนกลาง — ทำงาน PR ได้เต็มวงจร แต่แตะอย่างอื่นไม่ได้เลย
+            ("ฝ่าย PR ดูรายชื่อ กก.", "PrCenterDashboard", "GET", "/pr/divisions", pr, None),
+            ("ฝ่าย PR ดูรายงานค้าง", "PrCenterDashboard", "GET", "/pr/report/pending?station=50", pr, None),
+            ("ฝ่าย PR ประกอบชิ้นงาน", "PrCenterDashboard", "POST", "/pr/news/compose", pr,
+             {"recordId": news_id, "station": ST, "template": "press"}),
+            ("ฝ่าย PR เปิดยอดทั้งประเทศไม่ได้", "-", "GET", "/national-summary?station=00", pr, None, 403),
+            ("ฝ่าย PR เปิดกำลังพลไม่ได้", "-", "GET", "/hq/manpower?station=50", pr, None, 403),
+            ("ฝ่าย PR เปิดทะเบียนผู้ใช้ไม่ได้", "-", "GET", "/admin/users", pr, None, 403),
         ]
         for case in pr_cases:
             label, comp, method, path, tok, body = case[:6]

@@ -5,7 +5,9 @@ export type UserRole =
   | 'Division_Admin'
   | 'Division_Commander'
   | 'HQ_Admin'
-  | 'Super_Commander';
+  | 'Super_Commander'
+  /** ฝ่ายประชาสัมพันธ์ ระดับ บก. ทำได้เฉพาะงาน PR (ดู PR_ONLY_ROLES ฝั่ง backend) */
+  | 'PR_Officer';
 
 export interface User {
   username: string;

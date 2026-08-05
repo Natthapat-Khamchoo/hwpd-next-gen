@@ -53,6 +53,7 @@ const HqDashboard = named(() => import('./components/dashboards/HqDashboard'), '
 const CommanderDashboard = named(() => import('./components/dashboards/CommanderDashboard'), 'CommanderDashboard');
 const SuperCommanderDashboard = named(() => import('./components/dashboards/SuperCommanderDashboard'), 'SuperCommanderDashboard');
 const HqAdminDashboard = named(() => import('./components/dashboards/HqAdminDashboard'), 'HqAdminDashboard');
+const PrCenterDashboard = named(() => import('./components/dashboards/PrCenterDashboard'), 'PrCenterDashboard');
 
 
 const Loading: React.FC = () => (
@@ -150,6 +151,7 @@ const MainContent: React.FC = () => {
         <SuperCommanderDashboard onViewDivision={(station, label) => drillTo('commander', station, label)} />
       );
       case 'hq_admin': return <HqAdminDashboard />;
+      case 'pr_center': return <PrCenterDashboard />;
       default: return <MainMenuGrid onSelectView={setCurrentView} />;
     }
   };

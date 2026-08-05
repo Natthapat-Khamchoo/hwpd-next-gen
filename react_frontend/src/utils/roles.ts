@@ -11,6 +11,10 @@ import type { UserRole } from '../types';
  * ไม่ใช่แค่เรื่องหน้าตา บัญชีระดับ บก. อยู่สถานี 00 ซึ่งไม่มีใน DB_ROUTER ทุกเมนู
  * ที่เขียนหรืออ่านฐานข้อมูลปฏิบัติการจึงตอบ 400 ว่า "กองกำกับการ 0 (สถานี 00) ยังไม่ได้
  * ตั้งค่าฐานข้อมูลปฏิบัติการ" การโชว์เมนูให้กดคือพาไปเจอ error ไม่ใช่พาไปทำงาน
+ *
+ * `PR_Officer` ไม่อยู่ในชุดนี้ด้วยเหตุผลที่ต่างออกไป — ไม่ใช่เพราะกดแล้วพัง แต่เพราะ
+ * บัญชีนั้นเรียก endpoint นอกงาน PR ไม่ได้จริง ๆ (`PR_ONLY_ALLOWED_PREFIXES` ฝั่ง
+ * backend) การซ่อนเมนูตรงนี้เป็นแค่การไม่พาไปกดของที่ยังไงก็ได้ 403
  */
 const MAIN_MENU_ROLES: ReadonlySet<UserRole> = new Set<UserRole>([
   'Unit_Staff',
@@ -42,6 +46,8 @@ export const roleHome = (role?: UserRole): string => {
       return 'super_commander';
     case 'HQ_Admin':
       return 'hq_admin';
+    case 'PR_Officer':
+      return 'pr_center';
     default:
       return 'main';
   }

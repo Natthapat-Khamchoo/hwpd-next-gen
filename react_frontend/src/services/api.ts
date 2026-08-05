@@ -559,6 +559,13 @@ export const api = {
   savePrKeyword: (body: Record<string, unknown>, token?: string) =>
     hqPost('/pr/keywords', body, token),
 
+  /** กก. ที่ฝ่ายประชาสัมพันธ์ส่วนกลางเลือกทำงานด้วยได้ */
+  getPrDivisions: async (token?: string): Promise<{ division: string; name: string; station: string }[]> => {
+    const res = await fetchReference('/pr/divisions', token);
+    const data = (res as { data?: unknown })?.data;
+    return Array.isArray(data) ? (data as { division: string; name: string; station: string }[]) : [];
+  },
+
   /** เทมเพลตชิ้นงาน PR ที่มีให้เลือก (FR-07) */
   getPrTemplates: async (token?: string): Promise<{ key: string; label: string }[]> => {
     const res = await fetchReference('/pr/templates', token);

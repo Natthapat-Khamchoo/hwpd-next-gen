@@ -231,6 +231,27 @@ NATIONAL_VIEW_ROLES = {"HQ_Admin", "Super_Commander"}
 # ฝอ.กก. ไม่อยู่ในชุดนี้ เพราะ requirement ระบุถึงผู้กำกับการอย่างเดียว
 CROSS_DIVISION_VIEW_ROLES = {"Division_Commander", "HQ_Admin", "Super_Commander"}
 
+# บทบาทที่ทำได้เฉพาะงานประชาสัมพันธ์ ไม่ใช่แอดมินของระบบที่บังเอิญดูงาน PR ด้วย
+PR_ONLY_ROLES = {"PR_Officer"}
+
+# เส้นทางที่บัญชี PR_ONLY_ROLES เรียกได้ นอกจากนี้ตอบ 403 ทั้งหมด
+#
+# ต้องกันที่นี่ ไม่ใช่แค่ซ่อนเมนู — ฝ่าย PR อยู่สถานี "00" ระดับ บก. ซึ่ง
+# check_station_match("00", สถานีอะไรก็ได้) คืน True เสมอ ด่านขอบเขตสถานีที่ endpoint
+# ฝั่งอ่านส่วนใหญ่ใช้จึงไม่กันบัญชีนี้เลยสักเส้น ถ้าไม่มีรายการนี้ คนที่เปิด DevTools เป็น
+# จะอ่านรายงานจับกุม ยอดน้ำมัน และกำลังพลของทั้งแปดกองได้ ทั้งที่หน้าจอไม่มีปุ่มให้กด
+#
+# เขียนเป็น allowlist ไม่ใช่ denylist เพราะ endpoint ใหม่ที่จะเพิ่มในอนาคตต้องถูกปิด
+# ไว้ก่อนโดยปริยาย ไม่ใช่เปิดแล้วรอให้มีคนนึกได้ว่าต้องไปเพิ่มในรายการที่ห้าม
+PR_ONLY_ALLOWED_PREFIXES = (
+    "/api/pr/",
+    "/api/logout",
+    "/api/change-password",
+)
+
+# เรียกได้แบบตรงตัวเท่านั้น ไม่นับ path ที่ขึ้นต้นด้วยค่าเหล่านี้
+PR_ONLY_ALLOWED_EXACT = frozenset({"/api/login", "/api/health", "/api/dropdowns/units"})
+
 # กันไม่ให้รอบรวมยอดสองรอบเขียนทับกันเองเมื่อถูก trigger ซ้อน
 _aggregate_lock = threading.Lock()
 
@@ -269,7 +290,25 @@ class ReportSubmissionRequest(BaseModel):
     missions: Optional[List[Any]] = None
 
 
-def current_session(x_token: Optional[str] = Header(None)) -> Dict[str, Any]:
+def _enforce_pr_only(session: Dict[str, Any], path: str) -> None:
+    """
+    บัญชีของฝ่ายประชาสัมพันธ์เรียกได้เฉพาะเส้นทางในรายการที่อนุญาต
+
+    ด่านนี้อยู่ที่ `current_session` เพราะเป็นจุดเดียวที่ทุก endpoint ซึ่งต้องล็อกอิน
+    วิ่งผ่านแน่นอน การไปเติมเงื่อนไขทีละ endpoint แปลว่า endpoint ที่เพิ่มวันหลัง
+    จะเปิดให้บัญชีนี้โดยปริยาย ซึ่งเป็นค่าตั้งต้นที่ผิดด้านสำหรับบัญชีที่ตั้งใจจำกัด
+    """
+    if str(session.get("r") or "") not in PR_ONLY_ROLES:
+        return
+    if path in PR_ONLY_ALLOWED_EXACT or path.startswith(PR_ONLY_ALLOWED_PREFIXES):
+        return
+    raise HTTPException(
+        status_code=403,
+        detail="บัญชีฝ่ายประชาสัมพันธ์ใช้ได้เฉพาะงานประชาสัมพันธ์เท่านั้น",
+    )
+
+
+def current_session(request: Request, x_token: Optional[str] = Header(None)) -> Dict[str, Any]:
     """ตรวจ Session Token ของทุก endpoint ที่เขียนข้อมูล"""
     session = verify_session_token(x_token or "")
     if not session:
@@ -277,6 +316,7 @@ def current_session(x_token: Optional[str] = Header(None)) -> Dict[str, Any]:
             status_code=401,
             detail="Session หมดอายุหรือไม่ถูกต้อง กรุณาเข้าสู่ระบบใหม่",
         )
+    _enforce_pr_only(session, request.url.path)
     return session
 
 
@@ -1498,7 +1538,13 @@ def submit_overweight_report(req: ReportSubmissionRequest, session: Dict[str, An
 # ------------------------------------------------------- โมดูลประชาสัมพันธ์ (ข้อ 13)
 
 # สิทธิ์อนุมัติข่าวและจัดการคำค้น (FR-09) — ชุดเดียวกับที่อนุมัติรายงานอื่นระดับสถานีขึ้นไป
-PR_ADMIN_ROLES = {"สิบเวร", "Station_Admin", "Division_Admin", "Division_Commander", "HQ_Admin", "Super_Commander"}
+PR_ADMIN_ROLES = {
+    "สิบเวร", "Station_Admin", "Division_Admin", "Division_Commander",
+    "HQ_Admin", "Super_Commander",
+    # ฝ่ายประชาสัมพันธ์ทำงานนี้เต็มวงจร แต่แตะอย่างอื่นในระบบไม่ได้เลย
+    # ดู PR_ONLY_ALLOWED_PREFIXES ซึ่งเป็นด่านที่บังคับข้อจำกัดนั้นจริง ๆ
+    *PR_ONLY_ROLES,
+}
 
 
 def _require_pr_admin(session: Dict[str, Any]) -> None:
@@ -1683,6 +1729,30 @@ def _pr_news_for_admin(
     if not check_station_match(station_id, record.get(query_service.COL_STATION_ID, "")):
         raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์จัดการข่าวของสถานีอื่น")
     return record
+
+
+@app.get("/api/pr/divisions")
+def pr_divisions(session: Dict[str, Any] = Depends(current_session)):
+    """
+    รายชื่อ กก. ที่ฝ่ายประชาสัมพันธ์เลือกทำงานด้วยได้
+
+    ฝ่าย PR อยู่ระดับ บก. สถานี "00" ซึ่งไม่ใช่ กก. ไหน หน้าจอจึงต้องให้เลือกกองก่อน
+    ไม่งั้นทุกคำขอจะไม่รู้ว่าต้องเปิดสเปรดชีตของใคร
+
+    ซ้ำกับ `/api/commander/divisions` โดยตั้งใจ ตัวนั้นอยู่ใต้ `CROSS_DIVISION_VIEW_ROLES`
+    ซึ่งเป็นชุดสิทธิ์ของฝ่ายบังคับบัญชา การยัดฝ่าย PR เข้าไปในชุดนั้นเพื่อให้ได้แค่รายชื่อ
+    กองจะพ่วงสิทธิ์อ่านสถิติข้ามกองไปด้วยทั้งชุด ซึ่งกว้างกว่าที่งานนี้ต้องใช้มาก
+
+    คืนเฉพาะกองที่ตั้งค่าฐานข้อมูลไว้แล้ว การโชว์กองที่ยังไม่มีฐานข้อมูลคือพาผู้ใช้ไปเจอ error
+    """
+    return {
+        "status": "success",
+        "data": [
+            {"division": division, "name": f"กก.{division}", "station": f"{division}0"}
+            for division, entry in sorted(get_db_router().items())
+            if division != "0" and entry.get("OPS")
+        ],
+    }
 
 
 @app.get("/api/pr/templates")

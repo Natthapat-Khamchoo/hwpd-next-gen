@@ -5,6 +5,7 @@
 
     00       บก.ทล. ส่วนกลาง   Super_Commander     username: hq
     00       ฝอ.บก.ทล.         HQ_Admin            username: fo0
+    00       ฝ่าย ปชส. บก.ทล.   PR_Officer          username: pr0
     {d}0     ผกก.กก.{d}        Division_Commander  username: pk{d}
     {d}0     ฝอ.กก.{d}         Division_Admin      username: fo{d}
     {d}{n}   ส.ทล.{n} กก.{d}   Station_Admin     username: st{d}{n}
@@ -112,6 +113,10 @@ def build_accounts() -> List[Dict[str, Any]]:
         # ฝอ.บก.ทล. อยู่สถานีเดียวกับ ผบก. แต่คนละบทบาท เห็นภาพรวมทั้ง 8 กก. เหมือนกัน
         # (ทั้งคู่อยู่ใน NATIONAL_VIEW_ROLES) ต่างกันตรงหน้าสั่งการซึ่งมีเฉพาะฝั่ง ผบก.
         add("00", "fo0", "HQ_Admin")
+        # ฝ่ายประชาสัมพันธ์ อยู่สถานีเดียวกับ ผบก. แต่ทำได้เฉพาะงาน PR
+        # ข้อจำกัดบังคับที่ backend (PR_ONLY_ALLOWED_PREFIXES ใน main.py)
+        # ไม่ใช่แค่การไม่มีเมนู เพราะสถานี 00 ผ่านด่านขอบเขตสถานีได้ทุกกอง
+        add("00", "pr0", "PR_Officer", "ฝ่ายประชาสัมพันธ์ บก.ทล.")
 
     for division in DIVISIONS:
         hq_id = f"{division}0"
