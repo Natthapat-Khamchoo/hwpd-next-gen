@@ -2362,7 +2362,19 @@ def commander_order(payload: Dict[str, Any], session: Dict[str, Any] = Depends(c
         (sent if result.get("status") == "success" else skipped).append(station_id)
 
     if not sent:
-        raise HTTPException(status_code=502, detail="ส่งไม่สำเร็จ ยังไม่ได้ผูกกลุ่ม LINE ของสถานีปลายทาง")
+        # บอกให้ครบว่าสถานีไหนบ้างและแก้ที่ไหน — ตอนเปิดใช้ทั้ง 8 กก. ยังไม่มีสถานีไหน
+        # ผูกกลุ่ม LINE เลย ผู้บังคับบัญชาทุกกองจะเจอข้อความนี้เป็นด่านแรก ถ้าเขียนแค่
+        # "ส่งไม่สำเร็จ" จะอ่านเหมือนระบบพัง แล้วโทรตามผู้ดูแลโดยไม่มีข้อมูลอะไรติดมือ
+        names = ", ".join(skipped[:8]) + (" ..." if len(skipped) > 8 else "")
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"ยังไม่ได้ผูกกลุ่ม LINE ของสถานีปลายทาง จึงยังส่งคำสั่งไม่ได้ "
+                f"({len(skipped)} สถานี: {names}) "
+                "ผู้ดูแลระบบต้องใส่ lineGroupId ของแต่ละสถานีใน STATION_SECRETS_JSON ก่อน "
+                "ระหว่างนี้รายงานและงานอื่นยังใช้ได้ตามปกติ"
+            ),
+        )
 
     # requirement ข้อ 2 — คืนเบอร์ติดต่อของหัวหน้าหน่วยที่ได้รับคำสั่ง ให้ผู้สั่งการ
     # โทรตามได้ทันทีโดยไม่ต้องไปเปิดทำเนียบกำลังพลอีกหน้า
