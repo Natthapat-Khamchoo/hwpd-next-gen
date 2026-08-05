@@ -133,6 +133,71 @@ export const ArrestForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     }
   };
 
+  const generateAutoDocs = async () => {
+    if (suspects.some((s) => !s.name)) {
+      return Swal.fire('แจ้งเตือน', 'กรุณาระบุชื่อผู้ต้องหาอย่างน้อย 1 คน', 'warning');
+    }
+    loadingModal('กำลังดึงแม่แบบและสร้างเอกสารจับกุม...');
+    const combinedSuspectsText = suspects
+      .map((s, i) => `${i + 1}. ${s.name || '...'} อายุ ${s.age || '...'} ปี เลขบัตรประจำตัวประชาชน ${s.idCard || '...'} สัญชาติ ${s.nat || '...'} ที่อยู่ ${s.address || '...'}`)
+      .join('\n');
+    const payload = {
+      recordDate: f.reportDateTime,
+      arrestDate: f.actionDateTime,
+      offense: chargeRows.map((c) => (c.value === '__OTHER__' ? c.other : c.value)).filter(Boolean).join(', '),
+      arrestLocation: f.location,
+      detentionLocation: f.location,
+      circumstances: f.circumstances,
+      briefCircumstances: f.circumstances,
+      allSuspectsText: combinedSuspectsText,
+      respOfficer: user?.fullName || '',
+      respPhone: '',
+      forwarding: f.forwarding,
+    };
+    const res = await api.submitReport('auto-arrest', payload, user?.token, { suspectArray: suspects });
+    if (res.status !== 'success') {
+      Swal.fire('เกิดข้อผิดพลาด', res.message || 'สร้างเอกสารไม่สำเร็จ', 'error');
+      return;
+    }
+
+    /*
+     * backend สร้างไฟล์ .docx ในเครื่องแล้วส่งไบต์กลับมาเลย (`files`) ไม่ต้องแวะ Drive
+     * เครื่องที่ยังไม่ได้ลง python-docx จะถอยไปใช้ Google Docs แล้วส่ง `links` มาแทน
+     * จึงรองรับทั้งสองแบบ ไม่งั้นการ deploy ที่ไลบรารียังไม่ครบจะกลายเป็นปุ่มที่กดแล้วเงียบ
+     */
+    const files: { name: string; filename: string; mime: string; data: string }[] = res.files || [];
+    const links: { url: string; name: string }[] = res.links || [];
+
+    if (files.length) {
+      files.forEach((file) => {
+        const bytes = Uint8Array.from(atob(file.data), (ch) => ch.charCodeAt(0));
+        const url = URL.createObjectURL(new Blob([bytes], { type: file.mime }));
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = file.filename;
+        anchor.click();
+        URL.revokeObjectURL(url);
+      });
+    }
+
+    const listHtml = files.length
+      ? `<div class="text-start mt-3">${files.map((f) => `<div class="small text-success"><i class="fa-solid fa-check"></i> ${f.filename}</div>`).join('')}</div>`
+      : links.length
+        ? `<div class="text-start mt-3">${links.map((l) => `<a href="${l.url}" target="_blank" class="btn btn-outline-success btn-sm w-100 mb-2"><i class="fa-solid fa-download"></i> โหลด: ${l.name}</a>`).join('')}</div>`
+        : '<p class="small text-white-50 mt-2">(ยังไม่ได้ตั้งค่าแม่แบบเอกสาร ระบบเตรียมข้อมูลไว้พร้อมแล้ว)</p>';
+
+    const warnHtml = res.warning
+      ? `<p class="small text-warning mt-2"><i class="fa-solid fa-triangle-exclamation"></i> ${res.warning}</p>`
+      : '';
+
+    await Swal.fire({
+      icon: 'success',
+      title: files.length ? 'ดาวน์โหลดเอกสารแล้ว' : 'สร้างเอกสารจับกุมสำเร็จ!',
+      html: `${files.length ? 'ไฟล์ถูกบันทึกลงเครื่องแล้ว' : 'ระบบได้สร้างไฟล์บันทึกจับกุมและเอกสาร ม.22-23 เรียบร้อยแล้ว'}${listHtml}${warnHtml}`,
+      confirmButtonColor: '#00f2ff',
+    });
+  };
+
   return (
     <FormShell title="รายงานการจับกุม" onBack={onBack} maxWidth={900}>
       <div className="glass-card w-100" style={{ borderTop: '4px solid #dc3545' }}>
@@ -257,7 +322,8 @@ export const ArrestForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <div className="col-12"><label className="form-label small text-white-50">การดำเนินการส่งต่อ</label><input type="text" className="form-control" placeholder="เช่น ส่ง พงส.สภ.เมืองตาก ดำเนินคดีตามกฎหมาย" value={f.forwarding} onChange={(e) => set('forwarding', e.target.value)} /></div>
 
           <div className="col-12 mt-3"><label className="form-label small text-white-50">แนบภาพประกอบ/บันทึกจับกุม (เลือกได้หลายไฟล์)</label><input type="file" className="form-control" multiple accept="image/*,application/pdf" onChange={(e) => setFiles(e.target.files)} /></div>
-          <div className="col-12 mt-4"><button type="button" className="btn btn-danger w-100 py-2 fw-bold" style={{ borderRadius: 10 }} onClick={submit}><i className="fa-solid fa-paper-plane"></i> ตรวจสอบข้อมูลก่อนส่งรายงาน</button></div>
+          <div className="col-12 col-md-6 mt-4"><button type="button" className="btn btn-outline-info w-100 py-2 fw-bold" style={{ borderRadius: 10 }} onClick={generateAutoDocs}><i className="fa-solid fa-file-word"></i> ออกเอกสารจับกุมอัตโนมัติ (ม.22-23)</button></div>
+          <div className="col-12 col-md-6 mt-4"><button type="button" className="btn btn-danger w-100 py-2 fw-bold" style={{ borderRadius: 10 }} onClick={submit}><i className="fa-solid fa-paper-plane"></i> ตรวจสอบข้อมูลก่อนส่งรายงาน</button></div>
         </div>
       </div>
     </FormShell>

@@ -3,6 +3,7 @@ HWPD Next Gen - Python FastAPI Backend Entry Point
 Exposes REST Endpoints matching the Google Apps Script RPC contracts.
 """
 
+import base64
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -70,6 +71,7 @@ from app.services import (
     storage_service,
     user_service,
 )
+from app.services import docx_service  # noqa: E402  แยกบรรทัดเพราะเป็นทางเลือกที่อาจไม่มีไลบรารี
 from app.services.docs_service import DocumentError, TemplateNotConfigured
 from app.services.query_service import RecordNotFound
 from app.services.reference_service import ReferenceDataUnavailable
@@ -1396,13 +1398,49 @@ def submit_mission_summary(req: ReportSubmissionRequest, session: Dict[str, Any]
 @app.post("/api/reports/auto-arrest")
 def submit_auto_arrest(req: ReportSubmissionRequest, session: Dict[str, Any] = Depends(current_session)):
     """
-    สร้างเอกสารจับกุมจากแม่แบบ Google Docs — ไม่เขียนลงตาราง คืนลิงก์ดาวน์โหลด
+    สร้างเอกสารจับกุม — ไม่เขียนลงตาราง คืนไฟล์ .docx กลับไปให้ดาวน์โหลดเลย
 
     รายการนี้ไม่ผูกกับสถานีในชีต จึงตรวจแค่ว่ามี session ที่ใช้ได้ ไม่ต้องมี stationId
+
+    **สร้างในเครื่อง ไม่ผ่าน Google Docs** (`docx_service`) ของเดิมคัดลอกแม่แบบบน Drive
+    แล้วสั่ง Docs API แทนที่ข้อความ ซึ่งต้องต่อเน็ตออก Google กินโควตาที่ทั้งระบบใช้ร่วมกัน
+    ทิ้งสำเนาไว้บน Drive ทุกครั้งที่กดปุ่ม และผูกกับบัญชี OAuth บัญชีเดียว
+
+    ยังเหลือทางเดิมไว้เผื่อเครื่องไหนยังไม่ได้ลง python-docx — ถ้าตัวสร้างในเครื่องใช้ไม่ได้
+    จะถอยไปใช้ Google Docs แล้วคืน `links` แบบเดิม หน้าเว็บรองรับทั้งสองรูปแบบ
     """
     if not req.suspectArray:
         raise HTTPException(status_code=400, detail="กรุณาระบุผู้ต้องหาอย่างน้อยหนึ่งคน")
 
+    if docx_service.is_available():
+        try:
+            documents = docx_service.build_arrest_documents(req.formData, req.suspectArray)
+        except docx_service.TemplateMissing as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+        # ตัวยึดที่ค้างแปลว่าแม่แบบกับโค้ดหลุดจากกัน บอกไปตามตรง อย่าปล่อยให้เจ้าหน้าที่
+        # ไปเจอ <<OFFENSE>> เองตอนพิมพ์เอกสารส่งพนักงานสอบสวน
+        leftover = sorted({p for doc in documents for p in doc["leftover"]})
+        warning = (
+            f"แม่แบบมีช่องที่ระบบยังไม่ได้ส่งค่าให้ {len(leftover)} ช่อง: {', '.join(leftover)}"
+            if leftover else None
+        )
+        return {
+            "status": "success",
+            "message": f"สร้างเอกสารเรียบร้อยแล้ว {len(documents)} ฉบับ",
+            "warning": warning,
+            "files": [
+                {
+                    "name": doc["name"],
+                    "filename": doc["filename"],
+                    "mime": docx_service.DOCX_MIME,
+                    "data": base64.b64encode(doc["data"]).decode("ascii"),
+                }
+                for doc in documents
+            ],
+        }
+
+    logger.warning("ไม่มี python-docx หรือไฟล์แม่แบบ ถอยไปใช้ Google Docs")
     try:
         links = docs_service.generate_arrest_documents(req.formData, req.suspectArray)
     except TemplateNotConfigured as exc:
