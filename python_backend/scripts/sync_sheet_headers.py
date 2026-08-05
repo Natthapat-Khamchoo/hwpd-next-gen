@@ -33,6 +33,26 @@ from app.services import sheets_service  # noqa: E402
 MASTER_TABLES = ("tb_National_Summary", "tb_Charges", "tb_ReportCatalog")
 SKIP_TABLES = ("tb_Users",)
 
+# หลักฐานประกอบการใช้ --force-tables เมื่อ 5 ส.ค. 2569
+#
+# ชีตของ กก.1 ถือชื่อหัวคอลัมน์รุ่นเก่าไว้สี่แท็บ สคริปต์จึงตีเป็น conflict และข้ามให้
+# ก่อนตัดสินใจเขียนทับ ได้ดึงค่าจริงในคอลัมน์นั้นมาดูทีละช่อง ผลคือ **ข้อมูลตรงกับ
+# ความหมายของ schema อยู่แล้วทุกจุด ผิดแค่ป้ายชื่อหัว** ไม่มีคอลัมน์ไหนเลื่อน
+#
+#   tb_DailyReport ช่อง 14  ป้าย "รถวิทยุตรวจเขต" แต่ข้อมูลจริงคือ "พ.ต.ท.พิชญา ทวิชศรี สว."
+#                           ซึ่งเป็นชื่อและยศ ตรงกับ schema "พลขับ (ชื่อและยศ)"
+#   tb_Arrests     ช่อง 27  ป้าย "Structured_Items" แต่ข้อมูลจริงคือ "ไม่ใช่หมายจับ"
+#                           ซึ่งเป็นขอบเขตหมาย ตรงกับ schema "ขอบเขตหมาย"
+#   tb_StationDuty ช่อง 12/14/16  ป้าย "เบอร์โทร" เหมือนกันหมด ข้อมูลจริงเป็นเบอร์โทร
+#                           schema แค่ระบุให้ชัดว่าเป็นเบอร์ของใคร
+#   tb_HQ_Escorts  ช่อง 11/12/14  ตารางยังไม่มีข้อมูลสักแถว ไม่มีอะไรให้เสีย
+#
+# การเขียนทับจึงแก้ป้ายที่ผิดให้ถูกด้วยซ้ำ — ช่อง 14 ของ tb_DailyReport เขียนว่า
+# "รถวิทยุตรวจเขต" แต่เก็บชื่อพลขับ ใครเปิดชีตดูตรง ๆ จะเข้าใจผิดทันที
+#
+# **ห้ามใช้ flag นี้กับแท็บที่ยังไม่ได้ตรวจข้อมูลจริง** ถ้าคอลัมน์เลื่อนจริง การเขียนหัว
+# ทับจะทำให้ข้อมูลเก่าถูกตีความผิดถาวรโดยไม่มีอะไรฟ้อง
+
 
 def plan_for_worksheet(spreadsheet, table_name):
     """
@@ -67,7 +87,7 @@ def plan_for_worksheet(spreadsheet, table_name):
     return "update", current, columns
 
 
-def sync_spreadsheet(spreadsheet_id, tables, label, dry_run):
+def sync_spreadsheet(spreadsheet_id, tables, label, dry_run, force_tables=()):
     """อัปเดตหัวคอลัมน์ทุกแท็บในสเปรดชีตเดียว คืนจำนวนที่แก้กับจำนวนที่ติดปัญหา"""
     spreadsheet = sheets_service.open_spreadsheet(spreadsheet_id)
     updated = conflicts = 0
@@ -80,15 +100,27 @@ def sync_spreadsheet(spreadsheet_id, tables, label, dry_run):
         if status == "missing":
             print(f"  - {table_name}: ยังไม่มีแท็บนี้ ข้ามไป (จะถูกสร้างเองตอนมีคนบันทึกครั้งแรก)")
             continue
-        if status == "conflict":
+        if status == "conflict" and table_name not in force_tables:
             conflicts += 1
             print(f"  ! {table_name}: หัวตารางในชีตไม่ตรงกับ schema แบบที่แก้อัตโนมัติไม่ได้")
             print(f"      ในชีต ({len(current)} ช่อง): {current}")
             print(f"      schema ({len(columns)} ช่อง): {columns}")
             continue
 
-        added = columns[len(current):]
-        print(f"  + {table_name}: เพิ่มหัวคอลัมน์ {len(added)} ช่อง -> {added}")
+        if status == "conflict":
+            # เขียนทับทั้งที่ชื่อหัวไม่ตรง — ทำได้เฉพาะเมื่อ **ตรวจข้อมูลจริงในคอลัมน์นั้นแล้ว**
+            # ว่าตรงกับความหมายของ schema ดูเหตุผลรายคอลัมน์ที่ FORCE_EVIDENCE ข้างบน
+            renamed = [
+                f"ช่อง {i + 1}: \"{current[i]}\" -> \"{columns[i]}\""
+                for i in range(min(len(current), len(columns)))
+                if current[i] != columns[i]
+            ]
+            print(f"  * {table_name}: เขียนทับชื่อหัวที่ไม่ตรง {len(renamed)} ช่อง")
+            for line in renamed:
+                print(f"      {line}")
+        else:
+            added = columns[len(current):]
+            print(f"  + {table_name}: เพิ่มหัวคอลัมน์ {len(added)} ช่อง -> {added}")
         updated += 1
 
         if not dry_run:
@@ -108,6 +140,12 @@ def main():
     parser.add_argument("--divisions", default="", help="เลข กก. คั่นด้วยลูกน้ำ เว้นว่าง = ทุก กก. ที่ตั้งค่าไว้")
     parser.add_argument("--dry-run", action="store_true", help="แสดงสิ่งที่จะทำโดยไม่เขียนจริง")
     parser.add_argument("--skip-master", action="store_true", help="ไม่ต้องแตะสเปรดชีตกลาง")
+    parser.add_argument(
+        "--force-tables",
+        default="",
+        help="ชื่อแท็บคั่นด้วยลูกน้ำ ที่ยอมให้เขียนหัวทับแม้ชื่อไม่ตรง "
+             "ใช้ได้ต่อเมื่อตรวจข้อมูลจริงในคอลัมน์นั้นแล้ว (ดูหมายเหตุ FORCE ในไฟล์นี้)",
+    )
     args = parser.parse_args()
 
     if args.dry_run:
@@ -117,6 +155,9 @@ def main():
     wanted = [d.strip() for d in args.divisions.split(",") if d.strip()] or sorted(router)
 
     division_tables = [t for t in TABLE_COLUMNS if t not in MASTER_TABLES and t not in SKIP_TABLES]
+    force = tuple(t.strip() for t in args.force_tables.split(",") if t.strip())
+    if force:
+        print(f"โหมดเขียนทับหัวที่ไม่ตรง: {', '.join(force)}\n")
     total_updated = total_conflicts = 0
 
     for division in wanted:
@@ -125,13 +166,13 @@ def main():
             print(f"กก.{division}: ยังไม่ได้ตั้งค่า DB_ROUTER ข้ามไป")
             continue
         print(f"กก.{division} ({sheet_id})")
-        updated, conflicts = sync_spreadsheet(sheet_id, division_tables, f"กก.{division}", args.dry_run)
+        updated, conflicts = sync_spreadsheet(sheet_id, division_tables, f"กก.{division}", args.dry_run, force)
         total_updated += updated
         total_conflicts += conflicts
 
     if not args.skip_master:
         print(f"\nสเปรดชีตกลาง ({MASTER_SHEET_ID})")
-        updated, conflicts = sync_spreadsheet(MASTER_SHEET_ID, MASTER_TABLES, "ส่วนกลาง", args.dry_run)
+        updated, conflicts = sync_spreadsheet(MASTER_SHEET_ID, MASTER_TABLES, "ส่วนกลาง", args.dry_run, force)
         total_updated += updated
         total_conflicts += conflicts
 
