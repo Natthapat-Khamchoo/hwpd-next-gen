@@ -1,12 +1,14 @@
 """
 HWPD Next Gen - โมดูลประชาสัมพันธ์ (requirement ข้อ 13)
 
-รอบนี้ทำแกนหลักห้าส่วน — FR-01 รับข่าว, FR-02 กรองคำค้นและตรวจคุณภาพสื่อ,
-FR-04 ตารางรวมข่าว, FR-05 เก็บถาวรแบบ soft delete พร้อม audit, FR-09 สิทธิ์อนุมัติ
+FR-01 รับข่าว, FR-02 กรองคำค้นและตรวจคุณภาพสื่อ, FR-04 ตารางรวมข่าว,
+FR-05 เก็บถาวรแบบ soft delete พร้อม audit, FR-07 ประกอบชิ้นงานตามเทมเพลต,
+FR-08 ลิงก์สาธารณะ, FR-09 สิทธิ์อนุมัติ, FR-10 รายงานข่าวค้างอนุมัติแยกตามสังกัด
 
-ส่วนที่ยังไม่ทำในรอบนี้ (แจ้งไว้ในแผนหัวข้อ 6): FR-03 ตั้งเวลาเผยแพร่จริง,
-FR-06 AI เกลาข้อความ, FR-07/08 สร้างลิงก์แชร์, FR-10 รายงานสรุป
-คอลัมน์ `Post_ID` / `Permalink` / `วันเวลาที่เผยแพร่` เว้นไว้รอ FR-03 แล้ว
+ที่ยังไม่ได้ทำ: FR-03 ตั้งเวลาเผยแพร่จริง (รอ Facebook App Review) กับ FR-06
+AI เกลาข้อความ (รอ API key) คอลัมน์ `Post_ID` / `Permalink` / `วันเวลาที่เผยแพร่`
+เว้นไว้รอ FR-03 ส่วน `เนื้อหาที่เรียบเรียงแล้ว` รอ FR-06 — `compose()` หยิบไปใช้
+เองอยู่แล้วเมื่อช่องนั้นมีค่า จึงไม่ต้องกลับมาแก้เทมเพลตอีกรอบ
 
 **เกณฑ์คุณภาพสื่อ (BR-01)** ต่ำกว่า 1080p ไม่ได้แปลว่าปฏิเสธ แต่แปลว่าเข้าคิวรอ
 พิจารณา ข่าวจึงถูกบันทึกเสมอ ไม่ทิ้งงานของเจ้าหน้าที่เพราะภาพความละเอียดต่ำ
@@ -20,7 +22,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.core.config import MASTER_SHEET_ID, get_target_db_id
 from app.core.sanitization import sanitize_form_data
 from app.services import query_service, sheets_service
-from app.services.report_service import generate_record_id
+from app.services.report_service import format_thai_date, generate_record_id
 
 logger = logging.getLogger(__name__)
 
@@ -230,6 +232,10 @@ def prepare_news(
         "",                                   # Post_ID — รอ FR-03
         "",                                   # Permalink — รอ FR-03
         "",                                   # วันเวลาที่เผยแพร่ — รอ FR-03
+        "",                                   # เทมเพลตชิ้นงาน PR — เติมตอนสร้างลิงก์ (FR-07)
+        "",                                   # Share_File_ID — เติมตอนสร้างลิงก์ (FR-08)
+        "",                                   # Share_Url — เติมตอนสร้างลิงก์ (FR-08)
+        "",                                   # วันเวลาที่สร้างลิงก์ — เติมตอนสร้างลิงก์ (FR-08)
     ]
 
     return {
@@ -305,7 +311,17 @@ def _news_item(record: Dict[str, Any]) -> Dict[str, Any]:
         "reviewNote": record.get("หมายเหตุการตรวจ", ""),
         "attachments": record.get("Attachment_Folder", ""),
         "permalink": record.get("Permalink", ""),
+        "polishedContent": record.get("เนื้อหาที่เรียบเรียงแล้ว", ""),
+        "shareTemplate": record.get("เทมเพลตชิ้นงาน PR", ""),
+        "shareFileId": record.get("Share_File_ID", ""),
+        "shareUrl": record.get("Share_Url", ""),
+        "sharedAt": record.get("วันเวลาที่สร้างลิงก์", ""),
     }
+
+
+def news_item(record: Dict[str, Any]) -> Dict[str, Any]:
+    """แถวข่าวดิบจากชีต → รูปที่หน้าเว็บกับ `compose()` ใช้ร่วมกัน"""
+    return _news_item(record)
 
 
 def list_news(
@@ -399,6 +415,195 @@ def summarize(items: List[Dict[str, Any]]) -> Dict[str, Any]:
         "approved": sum(1 for i in items if i["status"] == STATUS_APPROVED),
         "needsMediaReview": sum(1 for i in items if i["needsMediaReview"]),
         "bySource": by_source,
+    }
+
+
+# ------------------------------------------- ประกอบชิ้นงาน PR ตามเทมเพลต (FR-07)
+
+
+# เทมเพลตชิ้นงาน PR — ปลายทางคนละที่ กติกาการเขียนจึงคนละแบบ
+#
+# ทั้งสามอันประกอบจากข่าวใบเดียวกัน ต่างกันที่ความยาวและน้ำเสียง ไม่ได้ต่างที่ข้อมูล
+# แยกเป็นสามแบบเพราะการเอาข้อความแถลงข่าวไปโพสต์เพจตรง ๆ ยาวเกินกว่าที่คนจะอ่านจบ
+# ส่วนการเอาข้อความสั้นแบบเพจไปใช้เป็นเอกสารแถลงข่าวก็ขาดข้อมูลที่สื่อมวลชนต้องใช้
+PR_TEMPLATES: Dict[str, str] = {
+    "press": "ข่าวแจกสื่อมวลชน",
+    "facebook": "โพสต์เพจ",
+    "line": "ข้อความแจ้งกลุ่มไลน์",
+}
+DEFAULT_TEMPLATE = "press"
+
+# ท้ายชิ้นงานทุกแบบ — ให้คนที่รับข่าวไปรู้ว่าถามกลับได้ที่ไหน
+CONTACT_LINE = "กองบังคับการตำรวจทางหลวง (บก.ทล.) โทร. 1193 ตลอด 24 ชั่วโมง"
+
+
+def _hashtags(item: Dict[str, Any]) -> str:
+    """คำค้นที่ระบบจับได้ + แท็บประจำหน่วย แปลงเป็นแฮชแท็กสำหรับโพสต์เพจ"""
+    words = ["ตำรวจทางหลวง", "1193"]
+    words += [str(k).strip().replace(" ", "") for k in item.get("matchedKeywords", []) if str(k).strip()]
+
+    seen: List[str] = []
+    for word in words:
+        if word and word not in seen:
+            seen.append(word)
+    return " ".join(f"#{word}" for word in seen)
+
+
+def compose(item: Dict[str, Any], template: str = DEFAULT_TEMPLATE) -> str:
+    """
+    ประกอบข่าวหนึ่งใบเป็นชิ้นงาน PR ตามเทมเพลต (FR-07)
+
+    ใช้ `เนื้อหาที่เรียบเรียงแล้ว` ก่อนถ้ามี ไม่งั้นใช้เนื้อหาดิบ — ช่องแรกเป็นของ FR-06
+    ที่ยังไม่ได้ทำ แต่พอทำเมื่อไหร่ชิ้นงานจะหยิบไปใช้เองโดยไม่ต้องแก้ตรงนี้อีก
+
+    คืนข้อความล้วน ไม่ใช่ HTML เพราะปลายทางคือช่องแปะข้อความของเพจ ของไลน์
+    และของอีเมลถึงสื่อ ทั้งสามที่รับ markup ไม่เหมือนกันสักที่
+    """
+    key = str(template or DEFAULT_TEMPLATE).strip().lower()
+    if key not in PR_TEMPLATES:
+        raise PRError(f'ไม่รู้จักเทมเพลต "{template}" มีให้เลือก: {", ".join(PR_TEMPLATES)}')
+
+    title = str(item.get("title") or "").strip()
+    body = str(item.get("polishedContent") or item.get("content") or "").strip() or "(ไม่มีเนื้อหา)"
+    date_text = format_thai_date(str(item.get("date") or "")) or "-"
+    unit = str(item.get("unit") or "").strip()
+    reporter = str(item.get("reporter") or "").strip()
+    news_type = str(item.get("newsType") or "").strip()
+
+    if key == "facebook":
+        parts = [title, "", body, "", _hashtags(item)]
+        return "\n".join(parts).strip() + "\n"
+
+    if key == "line":
+        parts = [
+            f"[ประชาสัมพันธ์ {news_type}]".replace(" ]", "]"),
+            title,
+            f"วันที่ {date_text}" + (f" · {unit}" if unit else ""),
+            "",
+            body,
+            "",
+            CONTACT_LINE,
+        ]
+        return "\n".join(parts).strip() + "\n"
+
+    # press — ข่าวแจกสื่อมวลชน ข้อมูลครบที่สุดในสามแบบ
+    header = "ข่าวประชาสัมพันธ์ กองบังคับการตำรวจทางหลวง"
+    parts = [
+        header,
+        "=" * len(header),
+        "",
+        f"เรื่อง  {title}",
+        f"วันที่  {date_text}",
+    ]
+    if unit:
+        parts.append(f"หน่วย   {unit}")
+    if news_type:
+        parts.append(f"ประเภท  {news_type}")
+    parts += ["", body, ""]
+    if reporter:
+        parts.append(f"ผู้ให้ข่าว  {reporter}")
+    parts.append(CONTACT_LINE)
+    return "\n".join(parts).strip() + "\n"
+
+
+def artifact_filename(record_id: str, template: str) -> str:
+    """ชื่อไฟล์ชิ้นงาน PR บน Drive — ขึ้นต้นด้วยรหัสข่าวเพื่อให้เรียงตามข่าวในโฟลเดอร์"""
+    return f"{record_id}_PR_{str(template or DEFAULT_TEMPLATE).strip().lower()}.txt"
+
+
+# --------------------------------- รายงานข่าวค้างอนุมัติแยกตามสังกัด (FR-10)
+
+
+# ช่วงอายุของข่าวที่ยังค้างคิว — เป็นวัน นับจากวันที่ส่ง
+#
+# แบ่งช่วงเพราะยอดรวมอย่างเดียวไม่บอกว่าปัญหาอยู่ตรงไหน ข่าวค้าง 20 ใบที่เพิ่งส่ง
+# วันนี้คือคิวปกติ แต่ค้าง 3 ใบมาเจ็ดวันแปลว่ามีคนลืม สองกรณีนี้ต้องแยกกันให้เห็น
+AGING_BUCKETS = (
+    ("today", "ภายในวันนี้", 0, 0),
+    ("d1_3", "1-3 วัน", 1, 3),
+    ("d4_7", "4-7 วัน", 4, 7),
+    ("over7", "เกิน 7 วัน", 8, 10**6),
+)
+
+
+def _age_in_days(date_value: str, today: Optional[str] = None) -> int:
+    """จำนวนวันที่ข่าวค้างอยู่ คืน 0 เมื่ออ่านวันที่ไม่ได้ เพื่อไม่ให้ข้อมูลเสียดันยอดค้างนาน"""
+    reference = today or datetime.now().date().isoformat()
+    try:
+        start = datetime.fromisoformat(str(date_value or "")[:10]).date()
+        end = datetime.fromisoformat(reference[:10]).date()
+    except ValueError:
+        return 0
+    return max((end - start).days, 0)
+
+
+def _bucket_of(days: int) -> str:
+    for key, _label, low, high in AGING_BUCKETS:
+        if low <= days <= high:
+            return key
+    return AGING_BUCKETS[-1][0]
+
+
+def pending_report(
+    station_id: str,
+    start: str = "",
+    end: str = "",
+    today: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    ข่าวที่ยังรออนุมัติ จัดกลุ่มตามสังกัด (FR-10)
+
+    "สังกัด" ใช้ `Data_UnitID` ก่อน เพราะเป็นหน่วยที่เจ้าหน้าที่สังกัดจริง ข่าวที่ไม่มี
+    หน่วยกำกับไว้ตกไปอยู่กลุ่มของสถานี ไม่ถูกทิ้ง — ข่าวที่หายจากรายงานค้างอนุมัติ
+    คือข่าวที่ไม่มีใครอนุมัติให้ตลอดกาล
+
+    เรียงกลุ่มตามใบที่ค้างนานที่สุดก่อน ไม่ใช่ตามจำนวน คนอ่านรายงานนี้เพื่อหาว่าต้อง
+    ไปตามใคร ไม่ใช่เพื่อดูว่าหน่วยไหนส่งข่าวเยอะ
+    """
+    items = list_news(station_id, start=start, end=end, status=STATUS_PENDING)
+
+    groups: Dict[str, Dict[str, Any]] = {}
+    buckets = {key: 0 for key, _label, _low, _high in AGING_BUCKETS}
+
+    for item in items:
+        days = _age_in_days(item.get("date", ""), today)
+        bucket = _bucket_of(days)
+        buckets[bucket] += 1
+
+        name = str(item.get("unit") or "").strip() or f'สถานี {item.get("station") or "ไม่ระบุ"}'
+        group = groups.setdefault(
+            name,
+            {
+                "unit": name,
+                "station": item.get("station", ""),
+                "total": 0,
+                "needsMediaReview": 0,
+                "oldestDays": 0,
+                "items": [],
+            },
+        )
+        group["total"] += 1
+        group["needsMediaReview"] += 1 if item.get("needsMediaReview") else 0
+        group["oldestDays"] = max(group["oldestDays"], days)
+        group["items"].append({**item, "waitingDays": days, "bucket": bucket})
+
+    for group in groups.values():
+        group["items"].sort(key=lambda i: i["waitingDays"], reverse=True)
+
+    ordered = sorted(groups.values(), key=lambda g: (-g["oldestDays"], -g["total"], g["unit"]))
+
+    return {
+        "groups": ordered,
+        "totals": {
+            "pending": len(items),
+            "units": len(ordered),
+            "needsMediaReview": sum(g["needsMediaReview"] for g in ordered),
+            "oldestDays": max((g["oldestDays"] for g in ordered), default=0),
+        },
+        "aging": [
+            {"key": key, "label": label, "count": buckets[key]}
+            for key, label, _low, _high in AGING_BUCKETS
+        ],
     }
 
 

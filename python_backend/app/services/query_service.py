@@ -744,27 +744,22 @@ class NotEditable(PermissionError):
     """รายการนี้แก้ไม่ได้แล้ว (ถูกอนุมัติหรือยกเลิกไปแล้ว)"""
 
 
-def update_record(
+def write_columns(
     record: Dict[str, Any],
     table_name: str,
     updates: Dict[str, Any],
 ) -> Dict[str, Dict[str, Any]]:
     """
-    แก้ค่าบางช่องของรายการที่ยังรออนุมัติ คืนส่วนต่างในรูป {ช่อง: {"from":..,"to":..}}
-    (requirement ข้อ 10)
+    เขียนทับบางช่องของแถวที่มีอยู่แล้ว คืนส่วนต่างในรูป {ช่อง: {"from":..,"to":..}}
 
-    **แก้ได้เฉพาะรายการที่ยังเป็น Pending** เมื่ออนุมัติแล้วตัวเลขถูกนับเข้ารายงาน
-    ของหน่วยไปแล้ว การแก้ย้อนหลังจะทำให้ยอดที่ส่งขึ้นไปกับยอดในระบบไม่ตรงกัน
-    โดยไม่มีใครรู้ ถ้าต้องแก้จริงต้องยกเลิกแล้วส่งใหม่ ซึ่งเห็นร่องรอยชัดกว่า
+    ตัวนี้**ไม่ดูสถานะของรายการ** เป็นชั้นล่างสุดที่รู้แค่วิธีเขียนลงชีตอย่างปลอดภัย
+    กติกาว่าใครแก้อะไรได้ตอนไหนเป็นของชั้นบน — `update_record` ห้ามแก้รายการที่
+    อนุมัติแล้ว ส่วนงานอย่างการติดลิงก์ชิ้นงาน PR (FR-08) ต้องเขียนหลังอนุมัติเสมอ
+    ทั้งสองกรณีจึงใช้ตัวนี้ร่วมกันได้โดยไม่ต้องผ่อนกฎของอีกฝั่ง
 
     เขียนเฉพาะช่องที่ค่าเปลี่ยนจริง ทีละช่วงใน batch เดียว ไม่เขียนทับทั้งแถว
     เพราะการอ่านมาแล้วเขียนกลับทั้งแถวจะทับค่าที่คนอื่นเพิ่งแก้ระหว่างนั้น
     """
-    if record.get(COL_STATUS, "") != STATUS_PENDING:
-        raise NotEditable(
-            f"แก้ไขได้เฉพาะรายการที่ยังรออนุมัติ (สถานะปัจจุบัน: {record.get(COL_STATUS) or 'ไม่ทราบ'})"
-        )
-
     columns = get_columns(table_name)
     known = set(columns)
 
@@ -800,6 +795,25 @@ def update_record(
     invalidate_cache(record["_spreadsheetId"], table_name)
     logger.info("แก้ไข %s ใน %s จำนวน %d ช่อง", record.get(COL_RECORD_ID, ""), table_name, len(diff))
     return diff
+
+
+def update_record(
+    record: Dict[str, Any],
+    table_name: str,
+    updates: Dict[str, Any],
+) -> Dict[str, Dict[str, Any]]:
+    """
+    แก้ค่าบางช่องของรายการที่ยังรออนุมัติ (requirement ข้อ 10)
+
+    **แก้ได้เฉพาะรายการที่ยังเป็น Pending** เมื่ออนุมัติแล้วตัวเลขถูกนับเข้ารายงาน
+    ของหน่วยไปแล้ว การแก้ย้อนหลังจะทำให้ยอดที่ส่งขึ้นไปกับยอดในระบบไม่ตรงกัน
+    โดยไม่มีใครรู้ ถ้าต้องแก้จริงต้องยกเลิกแล้วส่งใหม่ ซึ่งเห็นร่องรอยชัดกว่า
+    """
+    if record.get(COL_STATUS, "") != STATUS_PENDING:
+        raise NotEditable(
+            f"แก้ไขได้เฉพาะรายการที่ยังรออนุมัติ (สถานะปัจจุบัน: {record.get(COL_STATUS) or 'ไม่ทราบ'})"
+        )
+    return write_columns(record, table_name, updates)
 
 
 def set_status(record: Dict[str, Any], table_name: str, status: str, active: bool) -> None:

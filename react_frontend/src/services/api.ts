@@ -559,6 +559,29 @@ export const api = {
   savePrKeyword: (body: Record<string, unknown>, token?: string) =>
     hqPost('/pr/keywords', body, token),
 
+  /** เทมเพลตชิ้นงาน PR ที่มีให้เลือก (FR-07) */
+  getPrTemplates: async (token?: string): Promise<{ key: string; label: string }[]> => {
+    const res = await fetchReference('/pr/templates', token);
+    const data = (res as { data?: unknown })?.data;
+    return Array.isArray(data) ? (data as { key: string; label: string }[]) : [];
+  },
+
+  /** ประกอบชิ้นงาน PR ตามเทมเพลตเพื่อดูก่อน ยังไม่แชร์ (FR-07) */
+  composePrNews: (body: Record<string, unknown>, token?: string) =>
+    hqPost('/pr/news/compose', body, token),
+
+  /** อัปชิ้นงานขึ้น Drive แล้วคืนลิงก์สาธารณะแบบอ่านอย่างเดียว (FR-08) */
+  sharePrNews: (body: Record<string, unknown>, token?: string) =>
+    hqPost('/pr/news/share', body, token),
+
+  /** ถอนลิงก์สาธารณะที่เคยสร้างไว้ (FR-08) */
+  revokePrShare: (body: Record<string, unknown>, token?: string) =>
+    hqPost('/pr/news/share/revoke', body, token),
+
+  /** รายงานข่าวค้างอนุมัติแยกตามสังกัด (FR-10) */
+  prPendingReport: (params: Record<string, string>, token?: string) =>
+    hqGet('/pr/report/pending', params, token),
+
   /** รายละเอียดเต็มของรายการ พร้อมไฟล์แนบ (requirement ข้อ 9) */
   getRecordDetail: async (
     sheetName: string,

@@ -67,6 +67,7 @@ from app.services import (
     report_export_service,
     search_service,
     sheets_service,
+    storage_service,
     user_service,
 )
 from app.services.docs_service import DocumentError, TemplateNotConfigured
@@ -1628,22 +1629,10 @@ def decide_pr_news(payload: Dict[str, Any], session: Dict[str, Any] = Depends(cu
     approve = bool(payload.get("approve"))
     note = str(payload.get("note") or "").strip()
 
-    if not record_id:
-        raise HTTPException(status_code=400, detail="ไม่พบรหัสข่าว")
     if not approve and not note:
         raise HTTPException(status_code=400, detail="การปฏิเสธข่าวต้องระบุเหตุผล")
 
-    station_id = str(session.get("s") or "").strip()
-    try:
-        record = query_service.find_record(station_id, pr_service.NEWS_TABLE, record_id)
-    except RecordNotFound as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except SheetWriteError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    if not check_station_match(station_id, record.get(query_service.COL_STATION_ID, "")):
-        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์จัดการข่าวของสถานีอื่น")
-
+    record = _pr_news_for_admin(record_id, session, payload.get("station"))
     before = record.get(query_service.COL_STATUS, "")
     status = query_service.STATUS_APPROVED if approve else query_service.STATUS_CANCELED
 
@@ -1662,6 +1651,230 @@ def decide_pr_news(payload: Dict[str, Any], session: Dict[str, Any] = Depends(cu
         station_id=record.get(query_service.COL_STATION_ID),
     )
     return {"status": "success", "message": "อนุมัติข่าวแล้ว" if approve else "ปฏิเสธข่าวแล้ว"}
+
+
+def _pr_news_for_admin(
+    record_id: str,
+    session: Dict[str, Any],
+    station: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    หาแถวข่าวที่แอดมินคนนี้มีสิทธิ์จัดการ ใช้ร่วมกันทุกเส้นทางที่แตะข่าวรายใบ
+
+    **ต้องรับรหัสสถานีจากหน้าเว็บ ไม่ใช่ยึดจาก session อย่างเดียว** แอดมินส่วนกลาง
+    อยู่สถานี "00" ซึ่งไม่ใช่ กก. ไหนเลย การเอา "00" ไปหาสเปรดชีตจึงล้มพร้อมข้อความ
+    "กองกำกับการ 0 ยังไม่ได้ตั้งค่าฐานข้อมูล" ที่ทั้งผิดและตามหาต้นเหตุไม่เจอ
+
+    ใช้ `authorized_station_id` ไม่ใช่ `authorized_station_for_stats` เพราะสามเส้นทาง
+    ที่เรียกตัวนี้เป็นการ**เขียน** ตัวหลังปล่อยให้ ผกก. ข้ามกองได้ซึ่งจะทำให้ ผกก. กก.5
+    อนุมัติและแจกลิงก์ข่าวของ กก.1 ได้ ตรงข้ามกับ requirement ข้อ 1 พอดี
+    """
+    if not str(record_id or "").strip():
+        raise HTTPException(status_code=400, detail="ไม่พบรหัสข่าว")
+
+    station_id = authorized_station_id(station, session)
+    try:
+        record = query_service.find_record(station_id, pr_service.NEWS_TABLE, record_id.strip())
+    except RecordNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    if not check_station_match(station_id, record.get(query_service.COL_STATION_ID, "")):
+        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์จัดการข่าวของสถานีอื่น")
+    return record
+
+
+@app.get("/api/pr/templates")
+def pr_templates(session: Dict[str, Any] = Depends(current_session)):
+    """เทมเพลตชิ้นงาน PR ที่มีให้เลือก (FR-07)"""
+    return {
+        "status": "success",
+        "data": [{"key": key, "label": label} for key, label in pr_service.PR_TEMPLATES.items()],
+    }
+
+
+@app.post("/api/pr/news/compose")
+def compose_pr_news(payload: Dict[str, Any], session: Dict[str, Any] = Depends(current_session)):
+    """
+    ประกอบชิ้นงาน PR ตามเทมเพลตแล้วคืนข้อความ ยังไม่แตะ Drive (FR-07)
+
+    แยกจากขั้นสร้างลิงก์เพราะเจ้าหน้าที่ต้องได้อ่านก่อนว่าจะแจกอะไรออกไป การอัปไฟล์
+    แล้วเปิดสาธารณะทันทีตั้งแต่กดปุ่มแรกทำให้ทุกครั้งที่ลองดูเฉย ๆ กลายเป็นการเผยแพร่จริง
+    """
+    _require_pr_admin(session)
+
+    record = _pr_news_for_admin(str(payload.get("recordId") or ""), session, payload.get("station"))
+    template = str(payload.get("template") or pr_service.DEFAULT_TEMPLATE)
+    item = pr_service.news_item(record)
+
+    try:
+        content = pr_service.compose(item, template)
+    except pr_service.PRError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "status": "success",
+        "data": {
+            "recordId": item["recordId"],
+            "template": template,
+            "templateLabel": pr_service.PR_TEMPLATES.get(template, template),
+            "content": content,
+            "shareUrl": item["shareUrl"],
+        },
+    }
+
+
+@app.post("/api/pr/news/share")
+def share_pr_news(payload: Dict[str, Any], session: Dict[str, Any] = Depends(current_session)):
+    """
+    อัปชิ้นงาน PR ขึ้น Drive แล้วคืนลิงก์สาธารณะ (FR-08)
+
+    **เฉพาะข่าวที่อนุมัติแล้ว** ลิงก์นี้ใครถือก็เปิดได้โดยไม่ต้องล็อกอิน ข่าวที่ยังรอ
+    ตรวจหรือถูกปฏิเสธไปแล้วจึงต้องแจกไม่ได้ ไม่งั้นคิวอนุมัติของ FR-09 ก็ข้ามได้
+    ด้วยการกดปุ่มแชร์แทน
+
+    สิทธิ์ที่ให้คือ reader และให้ที่ตัวไฟล์ชิ้นงานเท่านั้น ไม่ใช่ที่โฟลเดอร์ไฟล์แนบ
+    ซึ่งมีภาพจากที่เกิดเหตุปนอยู่ (ดู `storage_service.PUBLIC_PERMISSION`)
+    """
+    _require_pr_admin(session)
+
+    record = _pr_news_for_admin(str(payload.get("recordId") or ""), session, payload.get("station"))
+    item = pr_service.news_item(record)
+
+    if item["status"] != query_service.STATUS_APPROVED:
+        raise HTTPException(
+            status_code=409,
+            detail=f"สร้างลิงก์สาธารณะได้เฉพาะข่าวที่อนุมัติแล้ว (สถานะปัจจุบัน: {item['status'] or 'ไม่ทราบ'})",
+        )
+
+    template = str(payload.get("template") or pr_service.DEFAULT_TEMPLATE)
+    try:
+        content = pr_service.compose(item, template)
+    except pr_service.PRError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    station_id = str(record.get(query_service.COL_STATION_ID, "") or session.get("s") or "")
+    uploaded = storage_service.store_public_text(
+        content,
+        pr_service.artifact_filename(item["recordId"], template),
+        station_id,
+    )
+    if not uploaded["stored"]:
+        raise HTTPException(status_code=502, detail=uploaded["warning"])
+
+    # ลำดับสามขั้นนี้สลับกันไม่ได้ — อัป, บันทึกลงชีต, แล้วค่อยถอนของเก่า
+    #
+    # ไฟล์ที่เปิดสาธารณะแล้วแต่รหัสไม่ได้ลงชีต คือไฟล์ที่กดถอนจากหน้าเว็บไม่ได้อีกเลย
+    # เพราะไม่มีใครรู้ว่ามันอยู่ที่ไหน ถ้าเขียนชีตพลาดจึงต้องถอนตัวที่เพิ่งอัปทิ้งทันที
+    # แล้วปล่อยให้ลิงก์เดิม (ที่ชีตยังชี้อยู่) ทำงานต่อ ระบบจะได้กลับไปอยู่สภาพเดิมทั้งใบ
+    now = datetime.now().isoformat()
+    try:
+        query_service.write_columns(
+            record,
+            pr_service.NEWS_TABLE,
+            {
+                "เทมเพลตชิ้นงาน PR": template,
+                "Share_File_ID": uploaded["fileId"],
+                "Share_Url": uploaded["url"],
+                "วันเวลาที่สร้างลิงก์": now,
+            },
+        )
+    except SheetWriteError as exc:
+        storage_service.revoke_public_link(uploaded["fileId"])
+        logger.error("บันทึกลิงก์ของ %s ลงชีตไม่สำเร็จ ถอนไฟล์ที่เพิ่งอัปแล้ว: %s", item["recordId"], exc)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    # ชีตชี้ไปที่ไฟล์ใหม่แล้ว ของเก่าจึงตามไปปิดได้ปลอดภัย ถ้าถอนตั้งแต่ก่อนเขียนชีต
+    # แล้วเขียนพลาด ข่าวใบนี้จะเหลือลิงก์ที่ตายแล้วหนึ่งอันกับลิงก์ที่ตามไม่ได้อีกหนึ่งอัน
+    previous_id = str(item["shareFileId"] or "").strip()
+    if previous_id and previous_id != uploaded["fileId"]:
+        storage_service.revoke_public_link(previous_id)
+
+    audit_service.record(
+        session, audit_service.ACTION_PUBLISH, pr_service.NEWS_TABLE, item["recordId"],
+        before={"Share_Url": item["shareUrl"]},
+        after={"Share_Url": uploaded["url"], "เทมเพลตชิ้นงาน PR": template},
+        note=f'สร้างลิงก์สาธารณะแบบ "{pr_service.PR_TEMPLATES.get(template, template)}"',
+        station_id=record.get(query_service.COL_STATION_ID),
+    )
+
+    return {
+        "status": "success",
+        "message": "สร้างลิงก์สาธารณะแล้ว ทุกคนที่มีลิงก์เปิดอ่านได้ แต่แก้ไขไม่ได้",
+        "data": {
+            "recordId": item["recordId"],
+            "template": template,
+            "templateLabel": pr_service.PR_TEMPLATES.get(template, template),
+            "content": content,
+            "shareUrl": uploaded["url"],
+            "shareFileId": uploaded["fileId"],
+            "sharedAt": now,
+        },
+    }
+
+
+@app.post("/api/pr/news/share/revoke")
+def revoke_pr_news_share(payload: Dict[str, Any], session: Dict[str, Any] = Depends(current_session)):
+    """
+    ถอนลิงก์สาธารณะของชิ้นงาน PR (FR-08)
+
+    ต้องมีทางปิดที่กดได้จากหน้าเว็บ ไม่ใช่ต้องเข้า Drive ไปไล่หาไฟล์เอง ลิงก์ที่แจกผิด
+    แล้วปิดไม่เป็นคือลิงก์ที่เปิดค้างตลอดไป ตัวไฟล์ไม่ถูกลบ เพื่อให้ตามย้อนได้ว่าเคยแจกอะไร
+    """
+    _require_pr_admin(session)
+
+    record = _pr_news_for_admin(str(payload.get("recordId") or ""), session, payload.get("station"))
+    item = pr_service.news_item(record)
+
+    file_id = str(item["shareFileId"] or "").strip()
+    if not file_id:
+        raise HTTPException(status_code=404, detail="ข่าวใบนี้ยังไม่มีลิงก์สาธารณะให้ถอน")
+
+    result = storage_service.revoke_public_link(file_id)
+    if not result["revoked"]:
+        raise HTTPException(status_code=502, detail=result["warning"])
+
+    try:
+        query_service.write_columns(
+            record,
+            pr_service.NEWS_TABLE,
+            {"Share_File_ID": "", "Share_Url": "", "วันเวลาที่สร้างลิงก์": ""},
+        )
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    audit_service.record(
+        session, audit_service.ACTION_UPDATE, pr_service.NEWS_TABLE, item["recordId"],
+        before={"Share_Url": item["shareUrl"]}, after={"Share_Url": ""},
+        note="ถอนลิงก์สาธารณะของชิ้นงาน PR",
+        station_id=record.get(query_service.COL_STATION_ID),
+    )
+    return {"status": "success", "message": "ถอนลิงก์สาธารณะแล้ว ลิงก์เดิมเปิดไม่ได้อีก"}
+
+
+@app.get("/api/pr/report/pending")
+def pr_pending_report(
+    station: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    session: Dict[str, Any] = Depends(current_session),
+):
+    """
+    รายงานข่าวค้างอนุมัติแยกตามสังกัด (FR-10) — เฉพาะแอดมิน ชุดเดียวกับที่อนุมัติข่าวได้
+
+    เป็นรายงานสำหรับคนที่ต้องไปตามข่าวค้าง ไม่ใช่ตัวเลขสาธารณะ ผู้ปฏิบัติเห็นคิว
+    ของตัวเองผ่านหน้าประวัติการส่งอยู่แล้ว
+    """
+    _require_pr_admin(session)
+    station_id = authorized_station_for_stats(station, session)
+    try:
+        return {
+            "status": "success",
+            "data": pr_service.pending_report(station_id, start=start or "", end=end or ""),
+        }
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.get("/api/pr/keywords")

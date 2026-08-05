@@ -46,3 +46,21 @@ token.json
 .DS_Store
 Thumbs.db
 *.log
+
+# ผลรันของ harness ทดสอบ (dev_server_fake_sheets / sweep_endpoints)
+python_backend/scripts/_fake_sheet_writes.jsonl
+python_backend/scripts/_sweep_result.json
+
+# แบบฟอร์ม .xlsx ที่ scripts/generate_*_excel.py สร้างขึ้น
+#
+# ตอนนี้เป็นแบบฟอร์มเปล่าที่มีแค่เบอร์ตัวอย่าง 0812345678 แต่จุดประสงค์ของมันคือ
+# ส่งให้แต่ละหน่วยกรอกชื่อจริงกับเบอร์จริงกลับมา ไฟล์ที่กรอกแล้วมักถูกวางทับที่เดิม
+# ซึ่งจะกลายเป็นข้อมูลส่วนบุคคลของเจ้าหน้าที่ทั้งกองในรีโปสาธารณะ
+# ตัวสคริปต์ที่สร้างไฟล์ยัง commit ตามปกติ สร้างใหม่ได้ทุกเมื่อ
+แบบฟอร์ม*.xlsx
+แบบฟอร์ม*/
+*_บก.ทล.xlsx
+
+# ภาพหน้าจอที่แนบมาระหว่างแจ้งบั๊ก และไฟล์ทดลองชั่วคราว
+Screenshot *.png
+test_*.xlsx

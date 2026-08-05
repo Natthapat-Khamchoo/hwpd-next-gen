@@ -268,5 +268,141 @@ class TestNewsListing(PRTestCase):
         self.assertEqual(len(rows), 3)   # หัวตาราง + 2 แถว
 
 
+class TestContentTemplates(PRTestCase):
+    """FR-07 — ประกอบข่าวหนึ่งใบเป็นชิ้นงาน PR ตามเทมเพลต"""
+
+    ITEM = {
+        "recordId": "PR-1",
+        "title": "จับกุมขบวนการลักลอบขนสินค้าหนีภาษี",
+        "content": "เจ้าหน้าที่ตรวจยึดของกลางจำนวนมากบนทางหลวงหมายเลข 1",
+        "date": "2026-08-04",
+        "unit": "ส.ทล.1 กก.5",
+        "reporter": "ด.ต. ทดสอบ ระบบ",
+        "newsType": "ผลการจับกุม",
+        "matchedKeywords": ["ลักลอบ"],
+    }
+
+    def test_every_template_keeps_the_headline_and_the_body(self):
+        for key in pr_service.PR_TEMPLATES:
+            with self.subTest(template=key):
+                text = pr_service.compose(self.ITEM, key)
+                self.assertIn(self.ITEM["title"], text)
+                self.assertIn(self.ITEM["content"], text)
+
+    def test_press_release_carries_the_date_in_the_thai_calendar(self):
+        # ข่าวแจกสื่อมวลชนที่ลง ค.ศ. คือข่าวที่ต้องแก้ก่อนส่งทุกใบ
+        self.assertIn("04/08/2569", pr_service.compose(self.ITEM, "press"))
+
+    def test_facebook_post_turns_matched_keywords_into_hashtags(self):
+        text = pr_service.compose(self.ITEM, "facebook")
+        self.assertIn("#ลักลอบ", text)
+        self.assertIn("#ตำรวจทางหลวง", text)
+
+    def test_facebook_post_stays_short_and_skips_the_letterhead(self):
+        text = pr_service.compose(self.ITEM, "facebook")
+        self.assertNotIn("ข่าวประชาสัมพันธ์ กองบังคับการตำรวจทางหลวง", text)
+
+    def test_line_message_carries_the_hotline(self):
+        self.assertIn("1193", pr_service.compose(self.ITEM, "line"))
+
+    def test_polished_content_wins_over_the_raw_one_when_fr06_fills_it_in(self):
+        # ช่องนี้ยังว่างอยู่จนกว่าจะทำ FR-06 แต่พอมีค่าแล้วต้องถูกหยิบไปใช้เอง
+        item = {**self.ITEM, "polishedContent": "เนื้อหาที่ผ่านการเกลาแล้ว"}
+        text = pr_service.compose(item, "press")
+        self.assertIn("เนื้อหาที่ผ่านการเกลาแล้ว", text)
+        self.assertNotIn(self.ITEM["content"], text)
+
+    def test_an_unknown_template_is_rejected_by_name(self):
+        with self.assertRaises(pr_service.PRError) as caught:
+            pr_service.compose(self.ITEM, "tiktok")
+        self.assertIn("tiktok", str(caught.exception))
+
+    def test_news_without_content_still_composes(self):
+        # ข่าวที่กรอกแต่หัวข้อมาก็ต้องได้ชิ้นงาน ไม่ใช่ error ที่ไม่มีใครแก้ได้ตอนนั้น
+        text = pr_service.compose({**self.ITEM, "content": ""}, "press")
+        self.assertIn(self.ITEM["title"], text)
+
+    def test_filename_starts_with_the_record_id(self):
+        name = pr_service.artifact_filename("PR-20260804-001", "press")
+        self.assertTrue(name.startswith("PR-20260804-001"))
+        self.assertTrue(name.endswith(".txt"))
+
+
+class TestPendingReport(PRTestCase):
+    """FR-10 — ข่าวค้างอนุมัติแยกตามสังกัด"""
+
+    TODAY = "2026-08-10"
+
+    def rows(self):
+        def make(record_id, unit, date, status=query_service.STATUS_PENDING, review=""):
+            return {
+                query_service.COL_RECORD_ID: record_id,
+                query_service.COL_TIMESTAMP: f"{date}T09:00:00",
+                query_service.COL_STATUS: status,
+                query_service.COL_IS_ACTIVE: "TRUE",
+                query_service.COL_ACTUAL_DATE: date,
+                query_service.COL_STATION_ID: "51",
+                query_service.COL_UNIT_ID: unit,
+                "หัวข้อข่าว": f"ข่าว {record_id}",
+                "ประเภทข่าว": "ผลการจับกุม",
+                "แหล่งที่มา": "internal",
+                "เนื้อหาดิบ": "เนื้อหา",
+                "คำค้นที่ตรวจพบ": "",
+                "ผู้ส่ง (ยศ ชื่อ สกุล)": "ด.ต. ทดสอบ",
+                "ต้องตรวจคุณภาพสื่อ": review,
+                "หมายเหตุการตรวจ": "",
+                "Attachment_Folder": "",
+            }
+
+        return [
+            make("PR-1", "สามเงา", "2026-08-10"),                  # วันนี้
+            make("PR-2", "สามเงา", "2026-08-08"),                  # 2 วัน
+            make("PR-3", "แม่สอด", "2026-08-01", review="TRUE"),   # 9 วัน
+            make("PR-4", "แม่สอด", "2026-08-09", status=query_service.STATUS_APPROVED),
+            make("PR-5", "", "2026-08-06"),                        # ไม่มีหน่วยกำกับ
+        ]
+
+    def report(self):
+        with mock.patch.object(query_service, "cached_rows", return_value=self.rows()):
+            return pr_service.pending_report("51", today=self.TODAY)
+
+    def test_approved_news_is_not_in_the_backlog(self):
+        found = [i["recordId"] for g in self.report()["groups"] for i in g["items"]]
+        self.assertNotIn("PR-4", found)
+        self.assertEqual(self.report()["totals"]["pending"], 4)
+
+    def test_the_unit_waiting_longest_comes_first(self):
+        # คนเปิดรายงานนี้เปิดเพื่อหาว่าต้องไปตามใคร ไม่ใช่เพื่อดูว่าใครส่งเยอะ
+        groups = self.report()["groups"]
+        self.assertEqual(groups[0]["unit"], "แม่สอด")
+        self.assertEqual(groups[0]["oldestDays"], 9)
+
+    def test_news_without_a_unit_falls_back_to_its_station_instead_of_vanishing(self):
+        units = [g["unit"] for g in self.report()["groups"]]
+        self.assertIn("สถานี 51", units)
+
+    def test_waiting_days_land_in_the_right_bucket(self):
+        items = {i["recordId"]: i for g in self.report()["groups"] for i in g["items"]}
+        self.assertEqual(items["PR-1"]["bucket"], "today")
+        self.assertEqual(items["PR-2"]["bucket"], "d1_3")
+        self.assertEqual(items["PR-3"]["bucket"], "over7")
+
+    def test_aging_buckets_add_up_to_the_backlog(self):
+        report = self.report()
+        self.assertEqual(sum(b["count"] for b in report["aging"]), report["totals"]["pending"])
+
+    def test_media_review_backlog_is_counted_per_unit(self):
+        groups = {g["unit"]: g for g in self.report()["groups"]}
+        self.assertEqual(groups["แม่สอด"]["needsMediaReview"], 1)
+        self.assertEqual(groups["สามเงา"]["needsMediaReview"], 0)
+
+    def test_an_unreadable_date_does_not_inflate_the_waiting_time(self):
+        # วันที่เสียหนึ่งแถวต้องไม่ทำให้รายงานขึ้นว่าค้างมาห้าหมื่นวัน
+        self.assertEqual(pr_service._age_in_days("ไม่ใช่วันที่", self.TODAY), 0)
+
+    def test_a_future_date_is_zero_not_negative(self):
+        self.assertEqual(pr_service._age_in_days("2026-09-01", self.TODAY), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

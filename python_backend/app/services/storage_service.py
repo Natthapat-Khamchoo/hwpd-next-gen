@@ -158,6 +158,122 @@ def upload_file(service: Any, folder_id: str, item: Dict[str, Any]) -> str:
     return created["id"]
 
 
+# --------------------------------------------- ชิ้นงาน PR ที่แชร์สาธารณะ (FR-07/08)
+
+# สิทธิ์ที่ให้กับลิงก์สาธารณะ — **อ่านอย่างเดียวเสมอ**
+#
+# `docs/แผนย้ายไปฐานข้อมูลจริง.md` หัวข้อ 8 บันทึกไว้ว่ามีไฟล์ 20 รายการที่ตั้งเป็น
+# "ทุกคนที่มีลิงก์แก้ไขได้" ซึ่งรวมแท็บที่เก็บชื่อจริงกับเบอร์โทรเจ้าหน้าที่ ฟีเจอร์นี้
+# สร้างลิงก์สาธารณะเพิ่ม จึงต้องไม่ทำซ้ำรอยเดิม writer ไม่มีเหตุผลรองรับสักกรณีเดียว
+PUBLIC_PERMISSION = {"type": "anyone", "role": "reader"}
+
+# นามสกุลของชิ้นงาน PR — ข้อความล้วน เปิดได้ทุกเครื่องโดยไม่ต้องมีโปรแกรมเฉพาะ
+PR_ARTIFACT_MIME = "text/plain"
+
+
+def share_publicly(service: Any, file_id: str) -> None:
+    """ตั้งไฟล์ให้ทุกคนที่มีลิงก์ **อ่านได้อย่างเดียว** (FR-08)"""
+    service.permissions().create(
+        fileId=file_id,
+        body=PUBLIC_PERMISSION,
+        fields="id",
+        supportsAllDrives=True,
+    ).execute()
+
+
+def store_public_text(
+    text: str,
+    filename: str,
+    station_id: str,
+    folder_id: str = "",
+) -> Dict[str, Any]:
+    """
+    เขียนชิ้นงาน PR เป็นไฟล์ข้อความบน Drive แล้วคืนลิงก์ที่เปิดได้โดยไม่ต้องล็อกอิน
+
+    ไฟล์ถูกวางในโฟลเดอร์ของ กก. เดียวกับไฟล์แนบ แต่**สิทธิ์สาธารณะให้ที่ตัวไฟล์เท่านั้น
+    ไม่ใช่ที่โฟลเดอร์** โฟลเดอร์นั้นมีภาพจากที่เกิดเหตุและเอกสารของหน่วยปนอยู่ การเปิด
+    ทั้งโฟลเดอร์เพื่อแชร์ข่าวใบเดียวคือการเปิดของที่ไม่เกี่ยวข้องไปด้วยทั้งกอง
+
+    คืน `stored=False` พร้อมเหตุผลเมื่อยังไม่ได้ตั้งค่าโฟลเดอร์หรืออัปไม่สำเร็จ
+    แทนที่จะขว้าง เพราะข่าวที่อนุมัติไปแล้วต้องไม่พังเพราะสร้างลิงก์ไม่ได้
+    """
+    body = str(text or "").encode("utf-8")
+    if not body:
+        return {"stored": False, "fileId": "", "url": "", "warning": "ชิ้นงาน PR ว่างเปล่า ไม่ได้สร้างไฟล์"}
+
+    parent_id = folder_id or get_division_folder_id(station_id)
+    if not parent_id:
+        division = str(station_id or "").strip()[:1] or "?"
+        logger.warning("สร้างลิงก์ชิ้นงาน PR ไม่ได้ เพราะ กก.%s ยังไม่ได้ตั้งค่าโฟลเดอร์ Drive", division)
+        return {
+            "stored": False,
+            "fileId": "",
+            "url": "",
+            "warning": f"กก.{division} ยังไม่ได้ตั้งค่าโฟลเดอร์ Drive จึงยังสร้างลิงก์สาธารณะไม่ได้",
+        }
+
+    try:
+        from googleapiclient.http import MediaInMemoryUpload
+
+        service = drive_service()
+        created = (
+            service.files()
+            .create(
+                body={"name": safe_filename(filename, fallback="pr_content.txt"), "parents": [parent_id]},
+                media_body=MediaInMemoryUpload(body, mimetype=PR_ARTIFACT_MIME, resumable=False),
+                fields="id,webViewLink",
+                supportsAllDrives=True,
+            )
+            .execute()
+        )
+        share_publicly(service, created["id"])
+    except Exception as exc:  # noqa: BLE001 — ข่าวที่อนุมัติแล้วต้องไม่พังเพราะแชร์ไม่สำเร็จ
+        logger.error("สร้างลิงก์ชิ้นงาน PR ของ %s ไม่สำเร็จ: %s", filename, exc)
+        return {
+            "stored": False,
+            "fileId": "",
+            "url": "",
+            "warning": "อัปโหลดชิ้นงาน PR ขึ้น Drive ไม่สำเร็จ กรุณาแจ้งผู้ดูแลระบบ",
+        }
+
+    url = created.get("webViewLink") or f"https://drive.google.com/file/d/{created['id']}/view"
+    logger.info("สร้างลิงก์สาธารณะของชิ้นงาน PR %s แล้ว: %s", filename, url)
+    return {"stored": True, "fileId": created["id"], "url": url, "warning": None}
+
+
+def revoke_public_link(file_id: str) -> Dict[str, Any]:
+    """
+    ถอนสิทธิ์ "ทุกคนที่มีลิงก์" ออกจากไฟล์ชิ้นงาน PR
+
+    ลบเฉพาะ permission ที่เป็น `anyone` ไม่แตะสิทธิ์ของคนในหน่วย และไม่ลบตัวไฟล์
+    ลิงก์ที่แจกออกไปแล้วจะเปิดไม่ได้ทันที แต่ต้นฉบับยังอยู่ให้ตามย้อนได้ว่าเคยแจกอะไร
+    """
+    if not str(file_id or "").strip():
+        return {"revoked": False, "warning": "ไม่มีรหัสไฟล์ให้ถอนสิทธิ์"}
+
+    try:
+        service = drive_service()
+        permissions = (
+            service.permissions()
+            .list(fileId=file_id, fields="permissions(id,type)", supportsAllDrives=True)
+            .execute()
+        )
+        removed = 0
+        for permission in permissions.get("permissions", []):
+            if permission.get("type") != "anyone":
+                continue
+            service.permissions().delete(
+                fileId=file_id, permissionId=permission["id"], supportsAllDrives=True
+            ).execute()
+            removed += 1
+    except Exception as exc:  # noqa: BLE001
+        logger.error("ถอนสิทธิ์สาธารณะของไฟล์ %s ไม่สำเร็จ: %s", file_id, exc)
+        return {"revoked": False, "warning": f"ถอนสิทธิ์สาธารณะไม่สำเร็จ: {exc}"}
+
+    logger.info("ถอนสิทธิ์สาธารณะของไฟล์ %s แล้ว %d รายการ", file_id, removed)
+    return {"revoked": True, "removed": removed, "warning": None}
+
+
 def store_attachments(
     files: Optional[List[Dict[str, Any]]],
     station_id: str,
