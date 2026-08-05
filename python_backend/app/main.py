@@ -158,6 +158,33 @@ def handle_value_error(request: Request, exc: ValueError) -> JSONResponse:
     return JSONResponse(status_code=400, content={"status": "error", "message": str(exc)})
 
 
+try:
+    from gspread.exceptions import GSpreadException
+
+    @app.exception_handler(GSpreadException)
+    def handle_gspread_error(request: Request, exc: Exception) -> JSONResponse:
+        """
+        gspread โยน error ของตัวเอง (`SpreadsheetNotFound`, `APIError`) ที่ไม่ได้สืบทอด
+        `SheetWriteError` ของโปรเจกต์ ทุก endpoint จึงจับไม่ติดแล้วกลายเป็น 500
+        "Internal Server Error" เปล่า ๆ ที่ไม่บอกอะไรกับคนหน้างานเลย
+
+        รอบก่อนแก้ปัญหานี้ทีละ endpoint ที่ `/api/health/database` แต่ต้นเหตุเป็นของทั้งระบบ
+        — สเปรดชีตที่ยังไม่ได้แชร์ให้บัญชีบริการ หรือรหัสชีตผิด ล้มแบบเดียวกันทุกเส้นทาง
+        ตอบ 502 เพราะเป็นความล้มเหลวของบริการต้นทาง ไม่ใช่คำขอของผู้ใช้ผิด
+        """
+        logger.error("gspread ล้มที่ %s: %s: %s", request.url.path, type(exc).__name__, exc)
+        return JSONResponse(
+            status_code=502,
+            content={
+                "status": "error",
+                "message": f"ติดต่อฐานข้อมูล Google Sheets ไม่สำเร็จ ({type(exc).__name__}) "
+                           "กรุณาลองใหม่ ถ้ายังไม่ได้ให้แจ้งผู้ดูแลระบบ",
+            },
+        )
+except ImportError:  # pragma: no cover — เครื่องที่ยังไม่ได้ติดตั้ง gspread
+    logger.warning("ไม่พบ gspread จึงไม่ได้ลงทะเบียนตัวจัดการ error ของมัน")
+
+
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -1682,7 +1709,12 @@ def database_health(session: Dict[str, Any] = Depends(current_session)):
     """
     ตรวจว่าฐานข้อมูลของแต่ละ กก. ต่อติดจริงหรือไม่ ใช้ยืนยันว่าข้อมูลไหลไปถูกที่
     คืนสถานะรายกองกำกับ พร้อมรายชื่อแท็บที่มีอยู่จริงในสเปรดชีตนั้น
+
+    จำกัดที่ระดับส่วนกลาง เพราะสิ่งที่ตอบกลับคือผังฐานข้อมูลทั้งระบบ — รหัสสเปรดชีต
+    ของทุกกอง อีเมลบัญชีบริการ และชื่อแท็บทั้งหมด ผู้ปฏิบัติหนึ่งคนไม่มีเหตุต้องรู้
+    หน้าเดียวที่เรียก endpoint นี้คือหน้าผู้บังคับการอยู่แล้ว
     """
+    _require_hq(session)
     configured = sheets_service.is_configured()
     report: Dict[str, Any] = {
         "credentialsConfigured": configured,
@@ -1711,6 +1743,12 @@ def database_health(session: Dict[str, Any] = Depends(current_session)):
                 )
             except (SheetNotConfigured, SheetWriteError) as exc:
                 row.update(status="error", message=str(exc))
+            except Exception as exc:  # noqa: BLE001
+                # gspread โยน SpreadsheetNotFound / APIError ตรง ๆ ไม่ผ่าน error ของเรา
+                # ปล่อยให้หลุดขึ้นไปจะทำให้หน้าตรวจสุขภาพพังทั้งหน้า ทั้งที่มันมีไว้บอก
+                # ว่ากองไหนเปิดไม่ได้ ยิ่งกองเดียวเสียยิ่งต้องเห็นอีกเจ็ดกองที่ยังดีอยู่
+                logger.warning("เปิดสเปรดชีตของ กก.%s ไม่สำเร็จ: %s", division, exc)
+                row.update(status="error", message=f"{type(exc).__name__}: {exc}")
         elif sheet_id:
             row["status"] = "credentials_missing"
 
