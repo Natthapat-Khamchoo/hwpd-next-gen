@@ -192,11 +192,31 @@ def generate_arrest_documents(
             "ARREST_LOCATION": form_data.get("arrestLocation", ""),
             "DETENTION_LOCATION": form_data.get("detentionLocation", ""),
             "CIRCUMSTANCES": form_data.get("circumstances", ""),
+            # Thai placeholders for กก.7 template
+            "สถานที่ทำบันทึก": form_data.get("detentionLocation") or form_data.get("recordLocation", ""),
+            "วันที่เป็นพศ": record_date,
+            "เวลาจับกุม": form_data.get("arrestTime") or (str(form_data.get("arrestDate", "")).split("T")[1] if "T" in str(form_data.get("arrestDate", "")) else ""),
+            "สถานที่จับกุม": form_data.get("arrestLocation", ""),
+            "ผู้บังคับบัญชา": form_data.get("commanders", "ผู้บังคับบัญชาตามลำดับชั้น"),
+            "สถานี": form_data.get("stationName", form_data.get("stationId", "")),
+            "รวมชุดจับกุม": form_data.get("arrestTeam", form_data.get("respOfficer", "")),
+            "คำนำหน้าชื่อผู้ต้องหา": form_data.get("suspectTitle", ""),
+            "ชื่อ-สกุล ผู้ต้องหา": form_data.get("allSuspectsText", ""),
+            "รายการของกลาง": form_data.get("items", ""),
+            "ข้อหาสุทธิ": form_data.get("offense", ""),
+            "พฤติการณ์สุทธิ": form_data.get("circumstances", ""),
+            "พฤติการณ์โดยย่อ": form_data.get("briefCircumstances", form_data.get("circumstances", "")),
+            "คำให้การผู้ต้องหา": form_data.get("suspectPlea", "ให้การรับสารภาพตลอดข้อกล่าวหา"),
+            "ผู้ควบคุมตัว": form_data.get("respOfficer", ""),
+            "เบอร์โทรผู้ควบคุมตัว": form_data.get("respPhone", ""),
+            "ส่งผู้ต้องหาให้กับพนักงานสอบสวนที่ใด": form_data.get("forwarding", ""),
+            "รายงานอัยการจังหวัดใด": form_data.get("prosecutorOffice", ""),
             **officers,
         }, "บันทึกจับกุม (รวมทุกคน)")
 
         for person in people:
             name = str(person.get("name", "")).strip()
+            title = person.get("title", "") or ("นาย" if not name.startswith("นาย") and not name.startswith("นาง") else "")
             build(settings["m22"], f"บันทึก_ม22_23_{name}", {
                 "RECORD_DATE": record_date,
                 "ARREST_DATE": arrest_date,
@@ -209,6 +229,23 @@ def generate_arrest_documents(
                 "BRIEF_CIRCUM": form_data.get("briefCircumstances", ""),
                 "DETENTION_LOCATION": form_data.get("detentionLocation", ""),
                 "ARREST_LOCATION": form_data.get("arrestLocation", ""),
+                # Thai placeholders for กก.7 template
+                "คำนำหน้าชื่อผู้ต้องหา": title,
+                "ชื่อ-สกุล ผู้ต้องหา": name,
+                "อายุผู้ต้องหา": person.get("age", ""),
+                "เลขประจำตัวประชาชนผู้ต้องหา": person.get("idCard", ""),
+                "ที่อยู่ตามบัตรประชาชนผู้ต้องหา": person.get("address", ""),
+                "วันเกิดผู้ต้องหา": person.get("dob", "-"),
+                "ตำหนิรูปพรรณผู้ถูกจับ": person.get("distinguishingMarks", "ไม่ปรากฏตำหนิเด่นชัด"),
+                "วันที่เป็นพศ": arrest_date,
+                "สถานที่จับกุม": form_data.get("arrestLocation", ""),
+                "ข้อหาสุทธิ": form_data.get("offense", ""),
+                "รายการของกลาง": form_data.get("items", ""),
+                "พฤติการณ์โดยย่อ": form_data.get("briefCircumstances", form_data.get("circumstances", "")),
+                "ผู้ควบคุมตัว": form_data.get("respOfficer", ""),
+                "เบอร์โทรผู้ควบคุมตัว": form_data.get("respPhone", ""),
+                "ส่งผู้ต้องหาให้กับพนักงานสอบสวนที่ใด": form_data.get("forwarding", ""),
+                "รายงานอัยการจังหวัดใด": form_data.get("prosecutorOffice", ""),
                 **officers,
             }, f"ม.22,23 ของ {name}")
     except Exception as exc:
