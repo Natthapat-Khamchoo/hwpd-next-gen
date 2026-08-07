@@ -75,7 +75,7 @@ export const MissionForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const res = await api.submitReport('mission', payload, user?.token, { files: attachments, selectedUnits });
     if (res.status === 'success') {
       clearDraft();
-      await showLineCopyResult(res.message || 'แจ้งภารกิจสำเร็จ', res.lineText || previewText, copied);
+      await showLineCopyResult(res.message || 'แจ้งภารกิจสำเร็จ', res.lineText || previewText, copied ? previewText : undefined);
       onBack();
     } else {
       Swal.fire('ผิดพลาด', res.message || 'บันทึกไม่สำเร็จ', 'error');

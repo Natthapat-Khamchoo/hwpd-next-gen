@@ -23,6 +23,13 @@ const LOCATIONS = [
   'หน้าหน่วยฯ คลองขลุง ทล.1 กม. 414-415 ต.คลองขลุง อ.คลองขลุง จ.กำแพงเพชร',
 ];
 
+/** เวลาปัจจุบัน + n ชั่วโมง ในรูปแบบเดียวกับช่อง datetime-local */
+const hoursFromNow = (n: number): string => {
+  const t = new Date(Date.now() + n * 3600 * 1000);
+  const pad = (v: number) => String(v).padStart(2, '0');
+  return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T${pad(t.getHours())}:${pad(t.getMinutes())}`;
+};
+
 export const CheckpointForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { user } = useAuth();
   const { units, users, phoneMap } = useStationData();
@@ -36,6 +43,10 @@ export const CheckpointForm: React.FC<{ onBack: () => void }> = ({ onBack }) => 
     locationOther: '',
     lat: '',
     lng: '',
+    // ช่วงเวลาที่ด่านเปิดจริง หน้าภาพรวมระดับประเทศใช้ค่านี้ตัดสินว่าหมุดไหน
+    // ยังตั้งอยู่ ตั้งค่าเริ่มต้นเป็นตอนนี้ถึงอีกสามชั่วโมงซึ่งเป็นผลัดปกติ
+    startTime: getNowDateTimeLocal(),
+    endTime: hoursFromNow(3),
   };
   const [f, setF, draft] = useFormDraft('checkpoint', blank, user?.username);
   const [files, setFiles] = useState<FileList | null>(null);
@@ -43,7 +54,7 @@ export const CheckpointForm: React.FC<{ onBack: () => void }> = ({ onBack }) => 
 
   const resetForm = () => {
     draft.clear();
-    setF({ ...blank, reportDateTime: getNowDateTimeLocal() });
+    setF({ ...blank, reportDateTime: getNowDateTimeLocal(), startTime: getNowDateTimeLocal(), endTime: hoursFromNow(3) });
   };
 
   const getLocation = () => {
@@ -77,6 +88,15 @@ export const CheckpointForm: React.FC<{ onBack: () => void }> = ({ onBack }) => 
       Swal.fire('ยังไม่ได้ระบุพิกัด', 'กรุณากดปักหมุดบนแผนที่ หรือดึงพิกัดปัจจุบันของจุดตั้งด่าน', 'warning');
       return;
     }
+    // หน้าภาพรวมของ ผบก. ใช้ช่วงเวลานี้ตัดสินว่าด่านไหนยังตั้งอยู่ ปล่อยว่างไม่ได้
+    if (!f.startTime || !f.endTime) {
+      Swal.fire('ยังไม่ได้ระบุช่วงเวลา', 'กรุณาระบุเวลาที่เริ่มตั้งด่านและเวลาที่เลิกด่าน', 'warning');
+      return;
+    }
+    if (f.endTime <= f.startTime) {
+      Swal.fire('ช่วงเวลาไม่ถูกต้อง', 'เวลาเลิกด่านต้องอยู่หลังเวลาเริ่มตั้งด่าน', 'warning');
+      return;
+    }
     const st = getFrontendStationData(user?.station);
     const finalLocation = f.location === 'อื่นๆ' ? f.locationOther : f.location;
     const dateText = formatPreviewDate(f.reportDateTime);
@@ -84,7 +104,9 @@ export const CheckpointForm: React.FC<{ onBack: () => void }> = ({ onBack }) => 
       `เรียน ผู้บังคับบัญชา\nกองบัญชาการตำรวจสอบสวนกลาง(CIB)​\nโดย ${st.f} (${st.p})\nวันนี้ ${dateText}\n` +
       `หน่วยบริการฯตำรวจทางหลวง ${f.unitId}\nรถวิทยุ ${f.carNumber}\n` +
       `${f.dutyOfficer} พร้อมพวกรวม ${f.totalPersonnel} นาย ตั้ง ว.43 อาญา/จราจร \n` +
-      `บริเวณ ${finalLocation} ผลการปฏิบัติจะรายงานให้ทราบต่อไป\n\nจึงเรียนมาเพื่อโปรดทราบ\n    (${st.p})\n` +
+      `บริเวณ ${finalLocation} ผลการปฏิบัติจะรายงานให้ทราบต่อไป\n` +
+      `ตั้งด่านตั้งแต่เวลา ${formatPreviewDate(f.startTime)} ถึง ${formatPreviewDate(f.endTime)}\n` +
+      `\nจึงเรียนมาเพื่อโปรดทราบ\n    (${st.p})\n` +
       `ไฟล์แนบ: [ระบบจะแนบลิงก์ไฟล์อัตโนมัติ]`;
 
     const { confirmed, copied } = await confirmLinePreview(previewText);
@@ -96,7 +118,7 @@ export const CheckpointForm: React.FC<{ onBack: () => void }> = ({ onBack }) => 
     if (res.status === 'success') {
       // ล้างร่างทันทีที่บันทึกสำเร็จ ไม่งั้นค่าที่ส่งไปแล้วจะกลับมาอีกรอบตอนเปิดฟอร์มใหม่
       draft.clear();
-      await showLineCopyResult(res.message || 'บันทึกรายงานด่านสำเร็จ', res.lineText || previewText, copied);
+      await showLineCopyResult(res.message || 'บันทึกรายงานด่านสำเร็จ', res.lineText || previewText, copied ? previewText : undefined);
       onBack();
     } else {
       Swal.fire('ผิดพลาด', res.message || 'บันทึกไม่สำเร็จ', 'error');
@@ -168,6 +190,24 @@ export const CheckpointForm: React.FC<{ onBack: () => void }> = ({ onBack }) => 
               <input type="text" className="form-control border-info" placeholder="กรอกสถานที่" value={f.locationOther} onChange={(e) => set('locationOther', e.target.value)} />
             </div>
           )}
+
+          <div className="col-12"><hr className="border-secondary" /></div>
+          <div className="col-12">
+            <span className="badge bg-info text-dark mb-2">
+              <i className="fa-solid fa-clock"></i> ช่วงเวลาที่ตั้งด่าน
+            </span>
+            <div className="small text-white-50 mb-2">
+              หน้าภาพรวมของ ผบก.ทล. จะแสดงหมุดสีเขียวเฉพาะด่านที่ยังอยู่ในช่วงเวลานี้
+            </div>
+          </div>
+          <div className="col-12 col-md-6">
+            <label className="form-label small text-white-50">เริ่มตั้งด่าน *</label>
+            <ThaiDateInput type="datetime-local" value={f.startTime} onChange={(v) => set('startTime', v)} />
+          </div>
+          <div className="col-12 col-md-6">
+            <label className="form-label small text-white-50">เลิกด่าน *</label>
+            <ThaiDateInput type="datetime-local" value={f.endTime} onChange={(v) => set('endTime', v)} />
+          </div>
 
           <div className="col-12"><hr className="border-secondary" /></div>
           <div className="col-12 col-md-4">

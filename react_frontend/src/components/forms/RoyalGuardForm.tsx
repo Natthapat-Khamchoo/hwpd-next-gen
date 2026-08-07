@@ -96,7 +96,7 @@ export const RoyalGuardForm: React.FC<{ onBack: () => void }> = ({ onBack }) => 
     const res = await api.submitReport('royal-guard', payload, user?.token, { files: attachments });
     if (res.status === 'success') {
       clearDraft();
-      await showLineCopyResult(res.message || 'บันทึกรายงานรับเสด็จสำเร็จ', res.lineText || previewText, copied);
+      await showLineCopyResult(res.message || 'บันทึกรายงานรับเสด็จสำเร็จ', res.lineText || previewText, copied ? previewText : undefined);
       onBack();
     } else {
       Swal.fire('เกิดข้อผิดพลาด', res.message || 'บันทึกไม่สำเร็จ', 'error');

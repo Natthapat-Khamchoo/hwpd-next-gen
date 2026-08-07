@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { getNowDateLocal } from '../../utils/formHelpers';
 import { ScopeNotice } from './ScopeNotice';
+import { NationalCheckpointMapLazy } from './NationalCheckpointMapLazy';
 import { DashboardLayout } from './DashboardLayout';
 import { DeepSearchModal } from './DeepSearchModal';
 import { InvestDashboardPanel } from './InvestDashboardPanel';
@@ -78,7 +79,45 @@ export const SuperCommanderDashboard: React.FC<{ onViewDivision?: (station: stri
   };
   const order = async () => {
     const { value } = await Swal.fire({ title: 'สั่งการทั่วประเทศ', input: 'textarea', inputPlaceholder: 'ข้อความคำสั่งการ...', showCancelButton: true, confirmButtonText: 'ส่งคำสั่งการ', confirmButtonColor: '#facc15', cancelButtonText: 'ยกเลิก' });
-    if (value) Swal.fire('ส่งคำสั่งการ', 'ข้อความจะถูกส่งเข้า LINE กลุ่มเป้าหมาย (เชื่อมต่อ backend เพื่อส่งจริง)', 'success');
+    const message = String(value || '').trim();
+    if (!message) return;
+
+    // คำสั่งเข้ากลุ่ม LINE ของทุกสถานีทั่วประเทศทันทีและถอนคืนไม่ได้ จึงถามยืนยันก่อน
+    // เหมือนหน้าผู้กำกับการ
+    const confirm = await Swal.fire({
+      title: 'ยืนยันการสั่งการ',
+      html: 'ข้อความจะถูกส่งเข้ากลุ่ม LINE ของ <b>ทุกสถานีทั่วประเทศ</b> ทันที และเรียกคืนไม่ได้',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'ส่งคำสั่ง',
+      cancelButtonText: 'ยกเลิก',
+      confirmButtonColor: '#facc15',
+    });
+    if (!confirm.isConfirmed) return;
+
+    Swal.fire({ title: 'กำลังส่งคำสั่งการ...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    const res = await api.commanderOrder({ target: 'ALL', message, commanderName: user?.fullName }, user?.token);
+    if (res.status !== 'success') {
+      Swal.fire('ส่งไม่สำเร็จ', res.message || 'ส่งคำสั่งการไม่สำเร็จ', 'error');
+      return;
+    }
+
+    // requirement ข้อ 2 — คืนเบอร์หัวหน้าหน่วยที่ได้รับคำสั่งจริง ให้โทรตามได้ทันที
+    const contacts = res.contacts || [];
+    const rows = contacts
+      .map((c) => {
+        const heads = c.heads
+          .map((h) => `${h.name}${h.phone ? ` <a href="tel:${h.phone}">${h.phone}</a>` : ' (ไม่มีเบอร์ในระบบ)'}`)
+          .join('<br>');
+        return `<div style="margin-bottom:.6rem"><b>${c.stationName}</b><br>${heads || '<span style="color:#dc3545">ยังไม่มีข้อมูลหัวหน้าหน่วยในระบบ</span>'}</div>`;
+      })
+      .join('');
+    await Swal.fire({
+      icon: 'success',
+      title: 'ส่งคำสั่งแล้ว',
+      html: `<p>${res.message || ''}</p>${rows ? `<hr><div style="text-align:left"><b>ผู้รับคำสั่งที่ติดต่อได้</b><br>${rows}</div>` : ''}`,
+      confirmButtonColor: '#facc15',
+    });
   };
 
   return (
@@ -178,6 +217,9 @@ export const SuperCommanderDashboard: React.FC<{ onViewDivision?: (station: stri
             </div>
           ))}
         </div>
+
+        {/* ด่านที่ตั้งอยู่ตอนนี้ อยู่เหนือกราฟย้อนหลัง เพราะเป็นภาพสถานการณ์ปัจจุบัน */}
+        <NationalCheckpointMapLazy />
 
         {loading && <div className="text-center text-warning py-5"><span className="spinner-border"></span></div>}
 

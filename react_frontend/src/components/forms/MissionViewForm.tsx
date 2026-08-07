@@ -50,7 +50,7 @@ export const MissionViewForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
     if (!confirmed) return;
     loadingModal('กำลังส่งข้อมูลเข้า LINE...');
     const res = await api.submitReport('mission-summary', { stationId: user?.station, unitName: unit, startDate: start, endDate: end, reportDateTime }, user?.token, { missions });
-    await showLineCopyResult(res.message || 'ส่งสรุปภารกิจสำเร็จ', res.lineText || previewText, copied);
+    await showLineCopyResult(res.message || 'ส่งสรุปภารกิจสำเร็จ', res.lineText || previewText, copied ? previewText : undefined);
     onBack();
   };
 
