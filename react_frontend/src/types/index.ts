@@ -78,6 +78,34 @@ export interface MapPointsData {
   skippedInvalidCoordinates: number;
 }
 
+/** หมุดจุดตั้งด่านบนแผนที่ระดับประเทศของ ผบก.ทล. */
+export interface NationalCheckpoint {
+  recordId: string;
+  division: string;
+  divName: string;
+  station: string;
+  unit: string;
+  lat: number;
+  lng: number;
+  title: string;
+  detail: string;
+  /** ช่วงเวลาที่ตั้งด่าน รูปแบบ YYYY-MM-DDTHH:MM */
+  start: string;
+  end: string;
+  /** ยังตั้งอยู่ ณ เวลาที่ backend ตรวจ — หมุดสีเขียว */
+  active: boolean;
+}
+
+export interface NationalCheckpointsData {
+  points: NationalCheckpoint[];
+  activeCount: number;
+  totalCount: number;
+  /** เวลาที่ backend ใช้ตัดสินสถานะ ให้หน้าเว็บบอกผู้ใช้ว่าข้อมูล ณ เวลาไหน */
+  checkedAt: string;
+  /** กก. ที่อ่านฐานข้อมูลไม่ได้ในรอบนี้ */
+  unavailableDivisions: string[];
+}
+
 export interface NationalAnalytics {
   totals: {
     arrestsCount: number;

@@ -151,6 +151,21 @@ def prepare_daily_report(
     }
 
 
+def _checkpoint_window_text(start_time: Any, end_time: Any) -> str:
+    """
+    บรรทัด "ตั้งด่านตั้งแต่ ... ถึง ..." สำหรับข้อความ LINE
+
+    คืนสตริงว่างเมื่อยังไม่ได้กรอกช่วงเวลา เพื่อไม่ให้ข้อความมีบรรทัดที่เว้นค่าไว้
+    """
+    start = str(start_time or "").strip()
+    end = str(end_time or "").strip()
+    if not start or not end:
+        return ""
+    # ใช้ format_thai_datetime ไม่ใช่ format_thai_date เพราะบรรทัดนี้มีค่าอยู่ที่ "เวลา"
+    # วันที่อย่างเดียวตอบไม่ได้ว่าด่านเปิดกี่โมง
+    return f"ตั้งด่านตั้งแต่เวลา {format_thai_datetime(start)} ถึง {format_thai_datetime(end)}\n"
+
+
 def prepare_checkpoint_report(
     form_data: Dict[str, Any],
     folder_url: str = "ไม่มีไฟล์แนบ",
@@ -184,7 +199,13 @@ def prepare_checkpoint_report(
         folder_url,
         form.get("lat", ""),
         form.get("lng", ""),
+        form.get("startTime", ""),
+        form.get("endTime", ""),
     ]
+
+    # ช่วงเวลาที่ตั้งด่าน เขียนเป็นบรรทัดเดียวเมื่อกรอกครบ ถ้ายังไม่กรอกก็ไม่ต้องมี
+    # บรรทัดนี้เลย ดีกว่าโชว์ "ตั้งแต่ - ถึง -" ให้ผู้บังคับบัญชาอ่าน
+    duty_window = _checkpoint_window_text(form.get("startTime", ""), form.get("endTime", ""))
 
     message = (
         f'"เรียน ผู้บังคับบัญชา"\n'
@@ -194,8 +215,9 @@ def prepare_checkpoint_report(
         f"หน่วยบริการฯตำรวจทางหลวง {form.get('unitId', '')}\n"
         f"รถวิทยุ {form.get('carNumber', '')}\n"
         f"{form.get('dutyOfficer', '')} พร้อมพวกรวม {form.get('totalPersonnel', 1)} นาย ตั้ง ว.43 อาญา/จราจร \n"
-        f"บริเวณ {location} ผลการปฏิบัติจะรายงานให้ทราบต่อไป\n\n"
-        f"จึงเรียนมาเพื่อโปรดทราบ\n“ ({st_data.get('province', '')})\"\n"
+        f"บริเวณ {location} ผลการปฏิบัติจะรายงานให้ทราบต่อไป\n"
+        f"{duty_window}"
+        f"\nจึงเรียนมาเพื่อโปรดทราบ\n“ ({st_data.get('province', '')})\"\n"
         f"ไฟล์แนบ: {folder_url}"
     )
 

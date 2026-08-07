@@ -119,12 +119,22 @@ export const confirmLinePreview = async (
 };
 
 /** Success modal that offers the LINE text for the officer to paste into the group chat. */
+/**
+ * กล่องผลลัพธ์หลังบันทึก พร้อมคัดลอกข้อความจริงที่ backend ประกอบไว้ให้
+ *
+ * `alreadyCopiedText` คือข้อความที่ถูกคัดลอกไปแล้วตอนกดยืนยัน (ร่างของหน้าเว็บ)
+ * ถ้าไม่ตรงกับข้อความจริง ต้องคัดลอกทับเสมอ ไม่งั้นคลิปบอร์ดจะค้างร่างที่ยังมีตัวยึด
+ * "[ระบบจะแนบลิงก์ไฟล์อัตโนมัติ]" อยู่ แล้วเจ้าหน้าที่เอาไปวางในกลุ่ม LINE ทั้งอย่างนั้น
+ *
+ * ถ้าคัดลอกทับไม่สำเร็จ (เบราว์เซอร์ถือว่าพ้นจังหวะการกดของผู้ใช้ไปแล้ว) จะขึ้นเตือน
+ * ให้กดปุ่มคัดลอกเอง ดีกว่าบอกว่าคัดลอกแล้วทั้งที่ในคลิปบอร์ดเป็นข้อความคนละฉบับ
+ */
 export const showLineCopyResult = async (
   successMsg: string,
   lineText: string,
-  alreadyCopied?: boolean,
+  alreadyCopiedText?: string,
 ): Promise<void> => {
-  const copied = typeof alreadyCopied === 'boolean' ? alreadyCopied : await copyTextToClipboard(lineText);
+  const copied = alreadyCopiedText === lineText ? true : await copyTextToClipboard(lineText);
   const r = await Swal.fire({
     title: 'บันทึกสำเร็จ!',
     html: `<p class="mb-2">${escapeHtml(successMsg)}</p>
@@ -142,8 +152,9 @@ export const showLineCopyResult = async (
     width: '600px',
   });
   if (r.dismiss === Swal.DismissReason.cancel) {
+    // ปุ่ม "คัดลอกอีกครั้ง" เกิดจากการกดของผู้ใช้โดยตรง จึงคัดลอกได้แน่นอนกว่ารอบแรก
     const copiedAgain = await copyTextToClipboard(lineText);
-    return showLineCopyResult(successMsg, lineText, copiedAgain);
+    return showLineCopyResult(successMsg, lineText, copiedAgain ? lineText : undefined);
   }
 };
 

@@ -16,8 +16,6 @@ import {
   confirmLinePreview,
   showLineCopyResult,
   loadingModal,
-  copyWithToast,
-  buildV20CopyText,
 } from '../../utils/formHelpers';
 import Swal from 'sweetalert2';
 
@@ -82,12 +80,13 @@ const composeVolunteerLines = (o: Record<string, any>): string => {
   return lines.length ? '\n' + lines.join('\n') : '';
 };
 
+// หน่วยขอตัดแท็บสรุปผล (เดิมเป็นข้อ 4) ออก คงเลข id ของ ว.4 อื่นๆ ไว้ที่ 5 ตามเดิม
+// เปลี่ยนเฉพาะเลขที่แสดง เพื่อไม่ต้องไล่แก้เงื่อนไข tab === 5 ทั้งไฟล์
 const TABS = [
   { id: 1, icon: 'fa-clipboard-check', label: '1. เวรผลัด' },
   { id: 2, icon: 'fa-chart-pie', label: '2. ผลปฏิบัติ' },
   { id: 3, icon: 'fa-building-shield', label: '3. เวรสิบเวร' },
-  { id: 4, icon: 'fa-chart-line', label: '4. สรุปผล' },
-  { id: 5, icon: 'fa-car-side', label: '5. ว.4 อื่นๆ' },
+  { id: 5, icon: 'fa-car-side', label: '4. ว.4 อื่นๆ' },
 ];
 
 // Module-scope field components (stable identity → inputs keep focus while typing).
@@ -182,7 +181,7 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
       user?.token,
       { files: await filesToBase64(files.f1), officers: extraCrew },
     );
-    if (res.status === 'success') { d1.clear(); d1crew.clear(); await showLineCopyResult(res.message || 'บันทึกสำเร็จ', res.lineText || previewText, copied); onBack(); }
+    if (res.status === 'success') { d1.clear(); d1crew.clear(); await showLineCopyResult(res.message || 'บันทึกสำเร็จ', res.lineText || previewText, copied ? previewText : undefined); onBack(); }
     else Swal.fire('เกิดข้อผิดพลาด!', res.message || 'บันทึกไม่สำเร็จ', 'error');
   };
 
@@ -229,7 +228,7 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
     if (!confirmed) return;
     loadingModal('กำลังบันทึก...');
     const res = await api.submitReport('daily-result', { ...t2, unitName: 'หน่วยบริการฯ ' + t2.unitId, stationId: user?.station, actionBy: user?.username }, user?.token, { files: await filesToBase64(files.f2), charges: validCharges });
-    if (res.status === 'success') { d2.clear(); d2charges.clear(); await showLineCopyResult(res.message || 'บันทึกสำเร็จ', res.lineText || previewText, copied); onBack(); }
+    if (res.status === 'success') { d2.clear(); d2charges.clear(); await showLineCopyResult(res.message || 'บันทึกสำเร็จ', res.lineText || previewText, copied ? previewText : undefined); onBack(); }
     else Swal.fire('เกิดข้อผิดพลาด!', res.message || 'บันทึกไม่สำเร็จ', 'error');
   };
 
@@ -251,31 +250,8 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
     if (!confirmed) return;
     loadingModal('กำลังส่ง...');
     const res = await api.submitReport('station-duty', { ...t3, unitId: user?.unit, stationId: user?.station, actionBy: user?.username }, user?.token);
-    if (res.status === 'success') { d3.clear(); await showLineCopyResult(res.message || 'บันทึกสำเร็จ', res.lineText || previewText, copied); onBack(); }
+    if (res.status === 'success') { d3.clear(); await showLineCopyResult(res.message || 'บันทึกสำเร็จ', res.lineText || previewText, copied ? previewText : undefined); onBack(); }
     else Swal.fire('เกิดข้อผิดพลาด!', res.message || 'บันทึกไม่สำเร็จ', 'error');
-  };
-
-  // ---------- Tab 4 ----------
-  const [t4, setT4] = useState<Record<string, string>>({ reportDateTime: getNowDateTimeLocal(), startDate: today, endDate: today });
-  const [summary, setSummary] = useState<any | null>(null);
-  const fetchSummary = async () => {
-    if (!t4.startDate || !t4.endDate) return Swal.fire('แจ้งเตือน', 'เลือกวันที่ให้ครบ', 'warning');
-    loadingModal('กำลังคำนวณ...');
-    const res = await api.getDailySummary(user?.station || '', t4.startDate, t4.endDate, user?.token);
-    Swal.close();
-    if (res.status === 'success') setSummary(res.data);
-    else Swal.fire('ผิดพลาด', res.message || 'ดึงข้อมูลไม่สำเร็จ', 'error');
-  };
-  const submitT4 = async () => {
-    if (!t4.reportDateTime || !summary) return Swal.fire('แจ้งเตือน', 'ระบุวันที่รายงานและดึงข้อมูลก่อน', 'warning');
-    const chargeSection = summary.chargesText && summary.chargesText.trim() ? `แบ่งเป็น\n${summary.chargesText.trim()}` : '';
-    const previewText = `${st.f} สรุปผลการปฏิบัติประจำวัน\nวันที่ ${formatPreviewDate(t4.reportDateTime)}\nการดำเนินการ\nว.43 = ${summary.v43}\nบริการ = ${summary.service}\nว.42 = ${summary.v42}\nว.20 = ${summary.v20}\n${chargeSection}`;
-    const { confirmed, copied } = await confirmLinePreview(previewText);
-    if (!confirmed) return;
-    loadingModal('กำลังส่ง...');
-    const res = await api.submitReport('daily-summary', { stationId: user?.station, reportDateTime: t4.reportDateTime, ...summary }, user?.token);
-    if (res.status === 'success') { await showLineCopyResult(res.message || 'ส่งสรุปสำเร็จ', res.lineText || previewText, copied); onBack(); }
-    else Swal.fire('เกิดข้อผิดพลาด!', res.message || 'ส่งไม่สำเร็จ', 'error');
   };
 
   // ---------- Tab 5 ----------
@@ -300,7 +276,7 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
     if (!confirmed) return;
     loadingModal('กำลังบันทึก...');
     const res = await api.submitReport('other-duty', { ...t5, stationId: user?.station, actionBy: user?.username }, user?.token, { files: await filesToBase64(files.f5), officers: offs });
-    if (res.status === 'success') { d5.clear(); d5officers.clear(); await showLineCopyResult(res.message || 'บันทึกสำเร็จ', res.lineText || previewText, copied); onBack(); }
+    if (res.status === 'success') { d5.clear(); d5officers.clear(); await showLineCopyResult(res.message || 'บันทึกสำเร็จ', res.lineText || previewText, copied ? previewText : undefined); onBack(); }
     else Swal.fire('เกิดข้อผิดพลาด!', res.message || 'บันทึกไม่สำเร็จ', 'error');
   };
 
@@ -521,56 +497,6 @@ export const DailyReportForm: React.FC<{ onBack: () => void }> = ({ onBack }) =>
             <div className="col-12 col-md-6"><label className="form-label small text-white-50">ปฏิบัติหน้าที่ตั้งแต่ (ว/ด/ป)</label><ThaiDateInput type="date" value={t3.startTime} onChange={(v) => s3('startTime', v)} /></div>
             <div className="col-12 col-md-6"><label className="form-label small text-white-50">ถึงวันที่ (ว/ด/ป)</label><ThaiDateInput type="date" value={t3.endTime} onChange={(v) => s3('endTime', v)} /></div>
             <div className="col-12 mt-4"><button type="button" className="btn-primary-custom" onClick={submitT3}><i className="fa-solid fa-paper-plane"></i> ตรวจสอบข้อมูลก่อนส่ง</button></div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 4 */}
-      {tab === 4 && (
-        <div className="glass-card w-100">
-          <h5 className="text-center text-info mb-4">4. สรุปผลประจำวัน (Auto-Summary)</h5>
-          <div className="row g-3">
-            <div className="col-12"><label className="form-label small text-white-50">วันที่เวลาที่รายงาน</label><div className="d-flex gap-2"><ThaiDateInput type="datetime-local" value={t4.reportDateTime} onChange={(v) => setT4((p) => ({ ...p, reportDateTime: v }))} /><button type="button" className="btn btn-outline-info" onClick={() => setT4((p) => ({ ...p, reportDateTime: getNowDateTimeLocal() }))}><i className="fa-solid fa-clock-rotate-left"></i></button></div></div>
-            <div className="col-12"><hr className="border-secondary" /></div>
-            <div className="col-12"><span className="badge bg-warning text-dark mb-2">กำหนดช่วงเวลาที่ต้องการดึงข้อมูลสรุป</span></div>
-            <div className="col-12 col-md-5"><label className="form-label small text-white-50">เรียกข้อมูลตั้งแต่</label><ThaiDateInput type="date" value={t4.startDate} onChange={(v) => setT4((p) => ({ ...p, startDate: v }))} /></div>
-            <div className="col-12 col-md-5"><label className="form-label small text-white-50">ถึงวันที่</label><ThaiDateInput type="date" value={t4.endDate} onChange={(v) => setT4((p) => ({ ...p, endDate: v }))} /></div>
-            <div className="col-12 col-md-2 d-flex align-items-end"><button type="button" className="btn btn-warning w-100 fw-bold" onClick={fetchSummary}>ดึงข้อมูล <i className="fa-solid fa-sync"></i></button></div>
-            {summary && (
-              <div className="col-12 mt-4">
-                <div className="p-3 rounded" style={{ background: 'rgba(0, 242, 255, 0.1)', border: '1px solid var(--neon-blue)' }}>
-                  <h6 className="text-neon mb-3"><i className="fa-solid fa-calculator"></i> ผลการคำนวณยอดรวมสถานี</h6>
-                  <div className="row text-center mb-3">
-                    <div className="col-3"><div className="small text-white-50">ว.43</div><h5 className="m-0">{summary.v43}</h5></div>
-                    <div className="col-3"><div className="small text-white-50">บริการ</div><h5 className="m-0">{summary.service}</h5></div>
-                    <div className="col-3"><div className="small text-white-50">ว.42</div><h5 className="m-0">{summary.v42}</h5></div>
-                    <div className="col-3"><div className="small text-white-50 text-warning">ว.20</div><h5 className="m-0 text-warning">{summary.v20}</h5></div>
-                  </div>
-                  {/* requirement ข้อ 15 — สองยอดนี้เป็นส่วนย่อยของ ว.20 ไม่ใช่ยอดเพิ่ม */}
-                  <div className="row text-center mb-3">
-                    <div className="col-6"><div className="small text-white-50">จับตามหมายจับ</div><h6 className="m-0 text-info">{summary.v20Warrant ?? 0} ราย</h6></div>
-                    <div className="col-6"><div className="small text-white-50">จับซึ่งหน้า</div><h6 className="m-0 text-danger">{summary.v20Flagrante ?? 0} ราย</h6></div>
-                  </div>
-                  <div className="small text-white-50">สรุปข้อหา ว.20:</div>
-                  <pre className="text-white bg-dark p-2 rounded" style={{ whiteSpace: 'pre-wrap', fontFamily: 'Kanit', fontSize: '0.9rem' }}>{summary.chargesText || 'ไม่มีข้อมูลข้อหา'}</pre>
-                  <button
-                    type="button"
-                    className="btn btn-outline-info w-100 mt-2"
-                    onClick={() => copyWithToast(buildV20CopyText({
-                      stationName: st.f,
-                      dateText: formatPreviewDate(t4.reportDateTime),
-                      warrant: summary.v20Warrant ?? 0,
-                      flagrante: summary.v20Flagrante ?? 0,
-                      v20: summary.v20 ?? 0,
-                      chargesText: summary.chargesText,
-                    }))}
-                  >
-                    <i className="fa-solid fa-copy"></i> คัดลอกข้อความสรุป ว.20
-                  </button>
-                  <button type="button" className="btn-primary-custom mt-2" onClick={submitT4}><i className="fa-solid fa-paper-plane"></i> ยืนยันส่งสรุปผลเข้า LINE</button>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}

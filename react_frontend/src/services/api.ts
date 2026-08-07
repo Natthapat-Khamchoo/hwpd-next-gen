@@ -1,4 +1,4 @@
-import type { MapPointsData, RecordDetail, User } from '../types';
+import type { MapPointsData, NationalCheckpointsData, RecordDetail, User } from '../types';
 
 // Set VITE_API_BASE_URL on the host (e.g. Vercel) to point at a deployed backend.
 // Falls back to localhost for dev; if unreachable, api.* methods use offline demo data.
@@ -637,6 +637,32 @@ export const api = {
       return await res.json();
     } catch {
       if (DEMO_MODE) return { status: 'success', message: 'อนุมัติรายการเรียบร้อย (โหมดสาธิต)' };
+      return { status: 'error', message: OFFLINE_MESSAGE };
+    }
+  },
+
+  /**
+   * จุดตั้งด่านทั่วประเทศพร้อมสถานะว่ายังตั้งอยู่หรือเลิกแล้ว ใช้กับแผนที่หน้า ผบก.ทล.
+   *
+   * ไม่มีข้อมูลสำรองในโหมดสาธิต เพราะหมุดปลอมบนแผนที่ที่บอกว่า "ด่านตั้งอยู่" อันตราย
+   * กว่าการขึ้นว่าต่อเซิร์ฟเวอร์ไม่ได้
+   */
+  getNationalCheckpoints: async (
+    token?: string,
+    days = 3,
+  ): Promise<{ status: string; data?: NationalCheckpointsData; message?: string }> => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/national/checkpoints?days=${days}`, {
+        headers: { 'x-token': token || '' },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) return body;
+      if (res.status === 401) {
+        onSessionExpired();
+        return { status: 'error', message: SESSION_EXPIRED_MESSAGE };
+      }
+      return { status: 'error', message: errorMessage(body, 'ดึงจุดตั้งด่านไม่สำเร็จ') };
+    } catch {
       return { status: 'error', message: OFFLINE_MESSAGE };
     }
   },

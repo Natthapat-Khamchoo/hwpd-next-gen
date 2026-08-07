@@ -15,9 +15,10 @@ HWPD Next Gen - Map points service (requirement ข้อ 4)
 """
 
 import logging
+from datetime import datetime, timedelta
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from app.core.config import get_division_stations, get_target_db_id
+from app.core.config import get_db_router, get_division_stations, get_target_db_id
 from app.services import query_service
 
 logger = logging.getLogger(__name__)
@@ -206,4 +207,112 @@ def map_points(
         # จำนวนรายการที่มีค่าในช่องพิกัดแต่ใช้ไม่ได้ (พิมพ์ผิด/นอกกรอบประเทศไทย)
         # ส่งกลับไปให้หน้าเว็บบอกผู้ใช้ ไม่ใช่ซ่อนไว้เงียบ ๆ
         "skippedInvalidCoordinates": skipped,
+    }
+
+
+# ---------------------------------------------------------------- ด่านทั่วประเทศ
+
+COL_CHECKPOINT_START = "เวลาเริ่มตั้งด่าน"
+COL_CHECKPOINT_END = "เวลาเลิกด่าน"
+
+
+def parse_local_datetime(raw: Any) -> Optional[datetime]:
+    """
+    แปลงค่าเวลาที่ฟอร์มส่งมา (`YYYY-MM-DDTHH:MM`) เป็น datetime
+
+    ชีตอาจคืนค่ามาเป็นรูปแบบอื่นได้ถ้ามีคนไปแก้ด้วยมือ จึงคืน None แทนที่จะโยน
+    error — ด่านหนึ่งใบที่เวลาเพี้ยนไม่ควรทำให้แผนที่ทั้งประเทศว่าง
+    """
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    text = text.replace(" ", "T")
+    for length in (16, 19):
+        try:
+            return datetime.fromisoformat(text[:length])
+        except ValueError:
+            continue
+    return None
+
+
+def checkpoint_is_open(record: Dict[str, Any], now: datetime) -> bool:
+    """ด่านใบนี้ยังตั้งอยู่ ณ เวลา `now` หรือไม่ — ไม่มีช่วงเวลา = ตอบว่าไม่"""
+    start = parse_local_datetime(record.get(COL_CHECKPOINT_START))
+    end = parse_local_datetime(record.get(COL_CHECKPOINT_END))
+    if start is None or end is None:
+        return False
+    return start <= now <= end
+
+
+def national_checkpoints(
+    now: Optional[datetime] = None,
+    days: int = 3,
+    divisions: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    จุดตั้งด่านทั่วประเทศสำหรับหน้าภาพรวมของ ผบก.ทล. พร้อมสถานะว่ายังตั้งอยู่หรือไม่
+
+    อ่าน `tb_Checkpoints` ของทุก กก. ที่ตั้งค่าฐานข้อมูลไว้ — ตารางเดียวต่อกอง จึงเป็น
+    8 คำขอ ไม่ใช่ 8x6 แบบภาพรวมยอดรวมที่ต้องไปอ่านจาก `tb_National_Summary` แทน
+    และยังผ่านแคชแถวของ `query_service` อีกชั้น
+
+    กองที่อ่านไม่ได้จะถูกข้ามพร้อมเขียน log ไม่ใช่ทำให้ทั้งแผนที่ล้ม ผู้บังคับการต้องการ
+    เห็นด่านของกองที่เหลือมากกว่าได้หน้าว่าง
+    """
+    now = now or datetime.now()
+    cutoff = (now - timedelta(days=max(1, days))).date().isoformat()
+    targets = divisions or sorted(d for d, entry in get_db_router().items() if d != "0" and entry.get("OPS"))
+
+    points: List[Dict[str, Any]] = []
+    failed: List[str] = []
+
+    for division in targets:
+        try:
+            spreadsheet_id = get_target_db_id(f"{division}0")
+            rows = query_service.cached_rows(spreadsheet_id, "tb_Checkpoints")
+        except Exception as exc:
+            logger.warning("อ่านจุดตั้งด่านของ กก.%s ไม่ได้ ข้ามไป: %s", division, exc)
+            failed.append(division)
+            continue
+
+        for record in rows:
+            if str(record.get(query_service.COL_STATUS, "")) not in COUNTED_STATUSES:
+                continue
+            if not query_service.is_active(record.get(query_service.COL_IS_ACTIVE)):
+                continue
+            if str(record.get(query_service.COL_ACTUAL_DATE, "") or "")[:10] < cutoff:
+                continue
+
+            lat = parse_coordinate(record.get("ละติจูด"))
+            lng = parse_coordinate(record.get("ลองจิจูด"))
+            if lat is None or lng is None or not within_thailand(lat, lng):
+                continue
+
+            points.append(
+                {
+                    "recordId": record.get(query_service.COL_RECORD_ID, ""),
+                    "division": division,
+                    "divName": f"กก.{division}",
+                    "station": record.get(query_service.COL_STATION_ID, ""),
+                    "unit": record.get(query_service.COL_UNIT_ID, ""),
+                    "lat": lat,
+                    "lng": lng,
+                    "title": str(record.get("สถานที่/จุดตรวจ", "") or "จุดตั้งด่าน"),
+                    "detail": _detail_of("checkpoint", record),
+                    "start": str(record.get(COL_CHECKPOINT_START, "") or ""),
+                    "end": str(record.get(COL_CHECKPOINT_END, "") or ""),
+                    "active": checkpoint_is_open(record, now),
+                }
+            )
+
+    # ด่านที่ยังตั้งอยู่ขึ้นก่อน เพราะเป็นสิ่งที่ผู้บังคับการเปิดหน้านี้มาเพื่อดู
+    points.sort(key=lambda p: (not p["active"], str(p.get("start", ""))), reverse=False)
+
+    return {
+        "points": points[:MAX_POINTS_PER_LAYER],
+        "activeCount": sum(1 for p in points if p["active"]),
+        "totalCount": len(points),
+        "checkedAt": now.isoformat(timespec="minutes"),
+        # กองที่อ่านไม่ได้ ส่งกลับไปให้หน้าเว็บบอกผู้ใช้ ไม่ใช่ทำเป็นว่าไม่มีด่าน
+        "unavailableDivisions": failed,
     }

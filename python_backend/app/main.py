@@ -439,6 +439,13 @@ def submission_response(
         "status": "success",
         "message": warning or message,
         "recordId": prepared["recordId"],
+        # ข้อความจริงที่ประกอบเสร็จแล้ว ให้ฟอร์มเอาไปแสดงในกล่องคัดลอกแทนข้อความร่าง
+        #
+        # ของเดิมไม่ส่งกลับ ฟอร์มจึงถอยไปใช้ร่างที่ตัวเองประกอบก่อนกดส่ง ซึ่งยังเป็น
+        # ตัวยึด "[ระบบจะแนบลิงก์ไฟล์อัตโนมัติ]" แทนลิงก์โฟลเดอร์จริง และเว้นวงเล็บ
+        # ท้ายข้อความไว้ว่างเพราะหน้าเว็บไม่รู้จังหวัดของสถานี ส่วนรายงานอุบัติเหตุ
+        # ร่างตัดข้อมูลออกเกือบหมดแล้วเขียนว่าฉบับเต็มจะมาหลังบันทึก ซึ่งไม่เคยมา
+        "lineText": prepared.get("lineMessage", ""),
         "attachmentsStored": attachments.get("stored", True),
         "attachmentCount": attachments.get("count", 0),
         "savedTo": {
@@ -750,6 +757,27 @@ def national_summary(
 
     try:
         data = national_service.national_summary(start or "", end or "", include_archived=includeArchived)
+    except SheetWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"status": "success", "data": data}
+
+
+@app.get("/api/national/checkpoints")
+def national_checkpoints(
+    days: int = 3,
+    session: Dict[str, Any] = Depends(current_session),
+):
+    """
+    จุดตั้งด่านทั่วประเทศพร้อมสถานะว่ายังตั้งอยู่หรือเลิกแล้ว สำหรับแผนที่หน้า ผบก.ทล.
+
+    ต่างจาก `/api/national-summary` ตรงที่อ่านชีตของแต่ละ กก. สด ๆ เพราะ "ตั้งอยู่
+    ตอนนี้ไหม" เป็นคำถามที่ยอดรวมรายวันตอบไม่ได้ แต่แตะแค่ตารางเดียวต่อกอง
+    """
+    if str(session.get("r") or "") not in NATIONAL_VIEW_ROLES:
+        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์ดูภาพรวมระดับประเทศ")
+
+    try:
+        data = map_service.national_checkpoints(days=max(1, min(days, 30)))
     except SheetWriteError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {"status": "success", "data": data}
@@ -2368,7 +2396,14 @@ def commander_order(payload: Dict[str, Any], session: Dict[str, Any] = Depends(c
         raise HTTPException(status_code=400, detail="กรุณาพิมพ์ข้อความก่อนส่ง")
 
     own_station = str(session.get("s") or "").strip()
-    allowed = set(get_division_stations(own_station, include_hq=True)) | {"00"}
+    # ผบก.ทล. สังกัดสถานี "00" ซึ่ง get_division_stations จะคืนแค่ "00" ตัวเดียว การสั่งการ
+    # ทั่วประเทศจึงต้องเอารายชื่อสถานีทั้งหมดมาเอง ไม่ใช่ไล่จากเลขกองของตัวเอง
+    if str(session.get("r") or "") == "Super_Commander":
+        allowed = set(get_station_config().keys()) | {"00"}
+        outside_message = "ไม่มีสิทธิ์ส่งคำสั่งไปยังสถานีที่ไม่มีในระบบ"
+    else:
+        allowed = set(get_division_stations(own_station, include_hq=True)) | {"00"}
+        outside_message = "ไม่มีสิทธิ์ส่งคำสั่งไปยังสถานีนอกกองกำกับการของท่าน"
     target = str(payload.get("target") or "ALL").strip()
 
     if target == "ALL":
@@ -2376,7 +2411,7 @@ def commander_order(payload: Dict[str, Any], session: Dict[str, Any] = Depends(c
     elif target in allowed:
         targets = [target]
     else:
-        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์ส่งคำสั่งไปยังสถานีนอกกองกำกับการของท่าน")
+        raise HTTPException(status_code=403, detail=outside_message)
 
     stamp = datetime.now().strftime("%d/%m/%Y %H:%M")
     commander = str(payload.get("commanderName") or session.get("u") or "")

@@ -7,6 +7,7 @@ import { FormShell } from './FormShell';
 import { DraftNotice } from './DraftNotice';
 import { LocationPickerButton } from '../common/LocationPickerButton';
 import { ChargeSelect, ChargeGroupToggle } from './ChargeSelect';
+import { chargeList, missingArrestFields } from './arrestValidation';
 import { ThaiDateInput } from './ThaiDateInput';
 import {
   getNowDateTimeLocal,
@@ -81,19 +82,22 @@ export const ArrestForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     if (lines.length) set('items', lines.join('\n'));
   };
 
-  const submit = async () => {
-    const teamArr = team.filter(Boolean);
-    if (teamArr.length === 0) return Swal.fire('แจ้งเตือน', 'กรุณาระบุชุดจับกุมอย่างน้อย 1 นาย', 'warning');
-    const chargeArr = chargeRows.map((c) => (c.value === '__OTHER__' ? c.other.trim() : c.value)).filter(Boolean);
-    if (chargeArr.length === 0) return Swal.fire('แจ้งเตือน', 'กรุณาระบุข้อหาอย่างน้อย 1 ข้อหา', 'warning');
-    if (suspects.some((s) => !s.name || !s.idCard || !s.nat || !s.age || !s.address))
-      return Swal.fire('แจ้งเตือน', 'กรุณากรอกข้อมูลผู้ต้องหาให้ครบ', 'warning');
-    if (!f.category || !f.location || !f.lat || !f.lng || !f.items || !f.circumstances || !f.forwarding)
-      return Swal.fire('ข้อมูลไม่ครบ', 'กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน', 'warning');
+  const missingFields = () => missingArrestFields({ team, chargeRows, suspects, f });
 
-    const isWarrant = ['จับตามหมาย', 'จับหมาย Bigdata', 'จับหมาย Bodyworn'].includes(f.arrestType) || f.warrantType !== 'ไม่ใช่หมายจับ';
-    if (isWarrant && (!f.warrantScope || f.warrantScope === 'ไม่ใช่หมายจับ'))
-      return Swal.fire('แจ้งเตือน', 'การจับตามหมาย ต้องระบุขอบเขตหมาย: หมายใน (บช.ก.) หรือ หมายนอก', 'warning');
+  const warnMissing = (missing: string[]) =>
+    Swal.fire({
+      icon: 'warning',
+      title: 'ข้อมูลไม่ครบ',
+      html: `<div class="text-start">ยังขาดข้อมูลต่อไปนี้<ul class="mt-2 mb-0">${missing.map((m) => `<li>${m}</li>`).join('')}</ul></div>`,
+      confirmButtonColor: '#dc3545',
+    });
+
+  const submit = async () => {
+    const missing = missingFields();
+    if (missing.length) return warnMissing(missing);
+
+    const teamArr = team.filter(Boolean);
+    const chargeArr = chargeList(chargeRows);
 
     const st = getFrontendStationData(user?.station);
     const actionDateStr = formatPreviewDate(f.actionDateTime.split('T')[0]);
@@ -126,7 +130,7 @@ export const ArrestForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     });
     if (res.status === 'success') {
       clearDraft();
-      await showLineCopyResult(res.message || 'บันทึกรายงานจับกุมสำเร็จ', res.lineText || previewText, copied);
+      await showLineCopyResult(res.message || 'บันทึกรายงานจับกุมสำเร็จ', res.lineText || previewText, copied ? previewText : undefined);
       onBack();
     } else {
       Swal.fire('ผิดพลาด', res.message || 'บันทึกไม่สำเร็จ', 'error');
@@ -134,9 +138,8 @@ export const ArrestForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   };
 
   const generateAutoDocs = async () => {
-    if (suspects.some((s) => !s.name)) {
-      return Swal.fire('แจ้งเตือน', 'กรุณาระบุชื่อผู้ต้องหาอย่างน้อย 1 คน', 'warning');
-    }
+    const missing = missingFields();
+    if (missing.length) return warnMissing(missing);
     loadingModal('กำลังดึงแม่แบบและสร้างเอกสารจับกุม...');
     const combinedSuspectsText = suspects
       .map((s, i) => `${i + 1}. ${s.name || '...'} อายุ ${s.age || '...'} ปี เลขบัตรประจำตัวประชาชน ${s.idCard || '...'} สัญชาติ ${s.nat || '...'} ที่อยู่ ${s.address || '...'}`)

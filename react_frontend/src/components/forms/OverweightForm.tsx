@@ -136,7 +136,7 @@ export const OverweightForm: React.FC<{ onBack: () => void }> = ({ onBack }) => 
     const res = await api.submitReport('overweight', payload, user?.token, { files: await filesToBase64(files) });
     if (res.status === 'success') {
       draft.clear();
-      await showLineCopyResult(res.message || 'บันทึกรายงานเรียบร้อย', res.lineText || previewText, copied);
+      await showLineCopyResult(res.message || 'บันทึกรายงานเรียบร้อย', res.lineText || previewText, copied ? previewText : undefined);
       onBack();
     } else {
       Swal.fire('ผิดพลาด', res.message || 'บันทึกไม่สำเร็จ', 'error');

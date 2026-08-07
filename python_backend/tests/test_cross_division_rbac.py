@@ -16,6 +16,7 @@ os.environ.setdefault("SESSION_SECRET", "test-secret-for-rbac-tests")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from app.core import config as config_module  # noqa: E402
 from app.core.security import create_session_token  # noqa: E402
 from app import main  # noqa: E402
 
@@ -163,6 +164,52 @@ class TestWriteHelpersStayStrict(unittest.TestCase):
         with self.assertRaises(main.HTTPException) as ctx:
             main.authorized_station_for_stats("52", session)
         self.assertEqual(ctx.exception.status_code, 403)
+
+
+class TestSuperCommanderOrdersNationwide(RbacTestCase):
+    """
+    ผบก.ทล. สังกัดสถานี "00" ซึ่งไล่ตามเลขกองแล้วได้แค่ตัวเอง คำสั่ง "ทั่วประเทศ" จึงเคย
+    ออกไปถึงสถานีเดียว ตรงนี้ตรวจว่าปลายทางเป็นทุกสถานีที่มีในระบบจริง
+    """
+
+    STATIONS = {"00": {}, "11": {}, "50": {}, "51": {}, "81": {}}
+
+    def send(self, user, payload):
+        """ยิงคำสั่งจริงผ่าน API แล้วคืนสถานีปลายทางที่ระบบพยายามส่งไปถึง"""
+        reached = []
+        heads = [{"name": "พ.ต.ท. หัวหน้า", "role": "Station_Admin", "phone": "0810000000", "station": "51"}]
+
+        def station_data(station_id):
+            reached.append(station_id)
+            return {"lineGroupId": "G1", "fullName": f"สถานี {station_id}"}
+
+        with mock.patch.object(main, "get_station_config", return_value=self.STATIONS), \
+             mock.patch.object(config_module, "get_station_config", return_value=self.STATIONS), \
+             mock.patch.object(main, "get_station_data", side_effect=station_data), \
+             mock.patch.object(main, "push_line_message", return_value={"status": "success"}), \
+             mock.patch.object(main.user_service, "station_heads", return_value=heads):
+            res = self.post("/api/commander/order", user, payload)
+        return res, reached
+
+    def test_an_order_to_all_reaches_every_station_in_the_country(self):
+        commander = {"username": "cmdhq", "role": "Super_Commander", "station": "00"}
+        res, reached = self.send(commander, {"target": "ALL", "message": "ทดสอบ"})
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(set(self.STATIONS) - set(reached), set())
+
+    def test_a_station_outside_the_country_wide_list_is_still_refused(self):
+        commander = {"username": "cmdhq", "role": "Super_Commander", "station": "00"}
+        res, reached = self.send(commander, {"target": "99", "message": "ทดสอบ"})
+        self.assertEqual(res.status_code, 403)
+        self.assertEqual(reached, [])
+
+    def test_a_division_commander_is_still_limited_to_their_own_division(self):
+        # กันไม่ให้ทางลัดของ ผบก. เผลอเปิดให้ ผกก. สั่งข้ามกองไปด้วย
+        res, reached = self.send(COMMANDER_5, {"target": "ALL", "message": "ทดสอบ"})
+        self.assertEqual(res.status_code, 200)
+        self.assertNotIn("11", reached)
+        self.assertNotIn("81", reached)
+        self.assertIn("51", reached)
 
 
 if __name__ == "__main__":

@@ -91,7 +91,7 @@ export const AccidentForm: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const res = await api.submitReport('accident', payload, user?.token, { files: attachments });
     if (res.status === 'success') {
       draft.clear();
-      await showLineCopyResult(res.message || 'บันทึกรายงานอุบัติเหตุสำเร็จ', res.lineText || previewText, copied);
+      await showLineCopyResult(res.message || 'บันทึกรายงานอุบัติเหตุสำเร็จ', res.lineText || previewText, copied ? previewText : undefined);
       onBack();
     } else {
       Swal.fire('ผิดพลาด', res.message || 'บันทึกไม่สำเร็จ', 'error');
